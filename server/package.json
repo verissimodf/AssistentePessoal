@@ -1,0 +1,17 @@
+{
+  "name": "jarvis-local-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Serviço local do Jarvis: API, memória, agentes, bots, voz e ações no host.",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --no-warnings index.js",
+    "mcp": "node --no-warnings mcp.js",
+    "test": "node --no-warnings --test ../tests/hostpolicy.test.mjs"
+  },
+  "dependencies": {
+    "imapflow": "^1.0.170",
+    "nodemailer": "^6.9.16"
+  }
+}
