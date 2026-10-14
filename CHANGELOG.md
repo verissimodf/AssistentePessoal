@@ -1,4 +1,8 @@
-# Changelog
+# 📝 Changelog
+
+Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O formato é baseado no [Keep a Changelog](https://keepachangelog.com) e este projeto adere ao [Semantic Versioning](https://semver.org).
+
+---
 
 ## [1.0.2] — 2026-10-13
 ### Corrigido
@@ -52,3 +56,28 @@
 - Bots autônomos com agenda, intervalo, arquivo, mensagem e frase de voz.
 - Gmail/Outlook (IMAP/SMTP), agenda ICS, Telegram, WhatsApp, Signal.
 - Scripts de instalação para Windows e Linux; CI em Ubuntu e Windows.
+
+## - 2026-10-14
+
+### ✨ Adicionado
+- **Interface Web Imersiva:** Painel construído com React, TanStack e Tailwind CSS rodando por padrão em `http://localhost:8080`.
+- **Núcleo Holográfico 3D:** Renderização de avatar interativo utilizando Three.js que reage visualmente aos estados de áudio (escutando, pensando, falando).
+- **Mecanismos de Ativação Multi-Modais:** Suporte para ativação via palmas duplas (calibráveis), palavra de ativação (*Wake Word* "Jarvis"), atalho de teclado `Ctrl+Shift+J` e *Push-to-Talk*.
+- **Clonagem de Voz Local/Nuvem:** Integração nativa com XTTS-v2 (local via Python) e ElevenLabs (nuvem).
+- **Ecossistema de IA Híbrido:** Suporte extensível para Ollama (100% offline), Anthropic, OpenAI, Gemini, Groq, OpenRouter e qualquer provedor compatível com a API da OpenAI.
+- **Protocolo MCP:** Integração de agentes externos via Claude Desktop (Model Context Protocol).
+- **Memória Semântica:** Armazenamento de fatos e notas utilizando busca vetorial local baseada em embeddings (Ollama ou OpenAI).
+- **Canais de Comunicação:** Módulos de integração integrados para Gmail, Outlook (IMAP/SMTP), arquivos de agenda (.ics), Telegram, WhatsApp Cloud API e Signal.
+
+### ⚙️ Modificado
+- **Arquitetura de Banco de Dados:** Migração para o motor SQLite embutido do Node.js 22+, eliminando a necessidade de compilação nativa no host e simplificando o processo de instalação.
+
+### 🔒 Segurança
+- **Isolamento de Rede:** Restrição rígida de escuta do serviço local apenas para a interface de loopback (`127.0.0.1`), recusando origens externas por padrão.
+- **Criptografia de Dados:** Implementação de algoritmo AES-256-GCM para cifragem de chaves e dados sensíveis persistidos no diretório `data/`.
+- **Ações do Host Protegidas:** Sistema de execução de comandos locais vem desligado por padrão, operando sob uma lista de permissões estrita (*whitelist*) e registro em log de auditoria.
+
+---
+
+*Nota: Os lançamentos anteriores a este marco estão consolidados na árvore de commits do Git.*
+
