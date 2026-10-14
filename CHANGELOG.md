@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.2] — 2026-10-13
+### Corrigido
+- `server/llm.js`: `callOpenAI` passa a enviar `stream: false`. Gateways compatíveis com OpenAI
+  (Omniroute, entre outros) respondem em `text/event-stream` por padrão, e o `r.json()` quebrava
+  com `Unexpected token 'd', "data: {...` — a conversa falhava mesmo com o provedor OK.
+
+### Documentação
+- Primeiro uso: trocar o provedor/modelo **do agente** é passo obrigatório (ligar um provedor em
+  Configurações não troca o do agente, que nasce no Ollama), e o painel deve ser aberto por
+  `localhost`, não pelo IP da máquina.
+- Solução de problemas: `ECONNREFUSED` em `11434` com outro provedor ligado, resposta SSE,
+  “Modo demonstração” por origem não confiável, microfone `not-allowed`/`abort`/`network` por
+  falta de contexto seguro, campo de API Key vazio após salvar (mascaramento esperado) e a porta
+  7777 não servir páginas.
+
 ## [1.0.1] — 2026-10-13
 ### Segurança
 - `nodemailer` atualizado de `^6.9.16` para `^10.1.0`, zerando um alerta de severidade alta que

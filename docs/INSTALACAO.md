@@ -44,9 +44,19 @@ curl http://127.0.0.1:7777/api/health
 Resposta esperada: `{"ok":true,"version":"1.0.0","name":"Jarvis","platform":"win32"}`.
 
 ## 4. Primeiro uso
+
+Abra o painel sempre por **`http://localhost:8080`**, não pelo IP da máquina: o serviço só aceita
+origens `localhost`/`127.0.0.1`, e pelo IP o painel cai em **Modo demonstração** e o microfone é
+negado pelo navegador (a Web Speech API exige contexto seguro).
+
 1. Abra `http://localhost:8080` — o indicador deve mostrar **Conectado ao Jarvis local**.
 2. Em **Configurações → Provedores de IA**, ligue um provedor (ex.: Ollama) e clique **Testar**.
-3. Em **Agentes**, confira o provedor/modelo do agente ativo (estrela).
+   O campo da chave fica vazio depois de salvar — é proposital, a chave é cifrada e não volta ao
+   navegador. O **Testar** é a confirmação de que ela foi guardada.
+3. Em **Agentes**, mude o **provedor e o modelo** do agente ativo (estrela) para o que você ligou
+   no passo 2. Esse passo é obrigatório: o agente nasce apontando para o Ollama, e ligar outro
+   provedor em Configurações **não** troca o provedor do agente. Sem isso a conversa falha com
+   `ECONNREFUSED` em `localhost:11434`.
 4. Na **Conversa**, clique no microfone ou ligue **Métodos de ativação** e bata palmas duas vezes.
 
 ## 5. Voz local e clonada (opcional)

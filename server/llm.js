@@ -25,7 +25,10 @@ function toolSchemas(names, defs) {
 }
 
 async function callOpenAI(cfg, model, system, messages, tools) {
-  const body = { model, messages: [{ role: "system", content: system }, ...messages] };
+  // stream: false explícito — gateways compatíveis com OpenAI (ex.: Omniroute) podem responder
+  // em text/event-stream por padrão, e aí o r.json() abaixo quebra com
+  // "Unexpected token 'd', \"data: {...\" is not valid JSON".
+  const body = { model, stream: false, messages: [{ role: "system", content: system }, ...messages] };
   if (tools.length) body.tools = tools.map((t) => ({ type: "function", function: t }));
   const r = await fetch(`${cfg.baseUrl}/chat/completions`, {
     signal: AbortSignal.timeout(300000),
