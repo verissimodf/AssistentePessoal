@@ -1,6 +1,15 @@
 # Changelog
 
 ## [1.0.1] — 2026-10-13
+### Segurança
+- `nodemailer` atualizado de `^6.9.16` para `^10.1.0`, zerando um alerta de severidade alta que
+  agrupava 15 advisories: injeção de comando SMTP via CRLF (nome do transporte, `envelope.size`,
+  cabeçalhos `List-*`), entrega a domínio não pretendido por erro de interpretação e por bypass de
+  IDN/punycode, leitura arbitrária de arquivo e SSRF pela opção `raw` e por `resolveContent()`,
+  vazamento de credencial SMTP entre transportes pelo cache global de DNS, e vários DoS no
+  `addressparser`. A v10 pede Node >=20, abaixo do mínimo do projeto (22.13), e o uso em
+  `server/comms.js` (`createTransport` + `sendMail`) não mudou de contrato.
+
 ### Corrigido
 - `scripts/instalar-voz.cmd` e `instalar-voz.sh`: a seleção do Python procurava só pelo launcher
   (`where py`) e, quando nenhum 3.10–3.12 estava instalado, caía no `python` do PATH — em geral
