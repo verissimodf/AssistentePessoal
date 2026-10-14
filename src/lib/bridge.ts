@@ -3,7 +3,10 @@
 // so the interface still works in the online preview.
 import { useEffect, useState } from "react";
 
-export const DEFAULT_BRIDGE = "http://localhost:7777";
+export const DEFAULT_BRIDGE =
+  typeof window !== "undefined" && window.location?.hostname
+    ? `${window.location.protocol}//${window.location.hostname}:7777`
+    : "http://localhost:7777";
 export const bridgeUrl = () =>
   (typeof localStorage !== "undefined" && localStorage.getItem("jarvis.bridge")) || DEFAULT_BRIDGE;
 

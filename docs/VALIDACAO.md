@@ -11,6 +11,11 @@
 | Painel responde | `curl -o /dev/null -w "%{http_code}" http://localhost:8080` | 200 |
 | Conversa com Ollama/Anthropic/OpenAI | depende das suas chaves/modelos | validar localmente |
 | Voz clonada XTTS | depende do serviço Python (Python 3.10–3.12) | validar localmente |
+| Ações no host | Configurações → Geral → Ações no host; `run_command` pede aprovação no painel | OK |
+| `context7_docs` (Context7 MCP) | `POST /api/chat` pedindo docs de uma lib | OK |
+| `crawl_page` (crawl4ai) | `POST /api/chat` pedindo para ler uma URL | OK |
+| `openhands_task` (OpenHands) | `POST /api/chat` delegando uma tarefa | OK (1ª chamada monta a imagem de runtime) |
+| Acesso Tailscale | `curl http://<IP-tailscale>:7777/api/health` | OK |
 
 Validado em Windows 11 com **Node 24.20.0** e npm 11.19.0 (o mínimo continua sendo o 22.13).
 O `npm install` reporta 1 vulnerabilidade de severidade alta em dependência transitiva do painel;

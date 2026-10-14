@@ -8,6 +8,7 @@ const DEFAULT_URLS = {
   huggingface: "https://router.huggingface.co/v1", openrouter: "https://openrouter.ai/api/v1",
   groq: "https://api.groq.com/openai/v1", gemini: "https://generativelanguage.googleapis.com/v1beta/openai",
   omniroute: "http://localhost:20128/v1", opencode_go: "https://opencode.ai/zen/v1", openwebui: "http://localhost:3000/api",
+  headroom: "http://127.0.0.1:8787/v1",
 };
 
 export function providerConfig(id) {

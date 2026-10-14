@@ -17,6 +17,9 @@ export const TOOL_DEFS = {
   send_email: { description: "Send an email via gmail or outlook.", params: { account: "string", to: "string", subject: "string", body: "string" } },
   read_email: { description: "Read the latest emails from gmail or outlook inbox.", params: { account: "string" } },
   read_calendar: { description: "List upcoming calendar events.", params: {} },
+  context7_docs: { description: "Fetch up-to-date library/framework documentation from Context7 (context7-mcp).", params: { library: "string", topic: "string" } },
+  crawl_page: { description: "Crawl a web page (including JavaScript pages) with crawl4ai and return clean markdown.", params: { url: "string" } },
+  openhands_task: { description: "Delegate a software task to the OpenHands autonomous coding agent.", params: { task: "string" } },
 };
 // Alias exposed in the panel
 TOOL_DEFS.read_calendar.params = {};
@@ -48,6 +51,70 @@ async function fetchUrl(url) {
   const r = await fetch(url, { headers: { "user-agent": "Mozilla/5.0 Jarvis" }, signal: AbortSignal.timeout(20000) });
   const html = await r.text();
   return html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 12000);
+}
+
+// ---------- Integrações externas: context7-mcp, crawl4ai, openhands ----------
+
+// Cliente MCP mínimo sobre HTTP (streamable transport), usado pelo context7-mcp.
+async function mcpHttp(url, method, params, sessionId, id) {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      ...(sessionId ? { "mcp-session-id": sessionId } : {}),
+    },
+    body: JSON.stringify({ jsonrpc: "2.0", ...(id ? { id } : {}), method, params }),
+    signal: AbortSignal.timeout(60000),
+  });
+  const sid = r.headers.get("mcp-session-id") || sessionId;
+  const text = await r.text();
+  const dataLine = text.split(/\r?\n/).find((l) => l.startsWith("data:"));
+  let json = {};
+  try { json = JSON.parse(dataLine ? dataLine.slice(5).trim() : text); } catch { /* SSE vazio */ }
+  return { json, sid };
+}
+
+const mcpText = (res) => (res?.json?.result?.content || []).map((c) => c.text).filter(Boolean).join("\n");
+
+async function context7Docs(library, topic = "") {
+  const url = getSettings().integrations?.context7?.command || "http://127.0.0.1:8000/mcp";
+  const init = await mcpHttp(url, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "assistente-pessoal", version: "1.0.0" } }, null, 1);
+  if (!init.sid) return "Context7 indisponível (não retornou sessão MCP).";
+  await mcpHttp(url, "notifications/initialized", {}, init.sid).catch(() => {});
+  const resolved = await mcpHttp(url, "tools/call", { name: "resolve-library-uri", arguments: { libraryName: library } }, init.sid, 2);
+  const uri = (mcpText(resolved).match(/context7:\/\/libraries\/[^\s"']+/) || [])[0];
+  if (!uri) return `Context7: biblioteca "${library}" não encontrada.\n${mcpText(resolved).slice(0, 400)}`;
+  const docs = await mcpHttp(url, "tools/call", { name: "search-library-docs", arguments: { resourceURI: uri, ...(topic ? { topic } : {}) } }, init.sid, 3);
+  return `Documentação Context7 — ${library} (${uri}):\n${mcpText(docs).slice(0, 6000) || "(sem conteúdo)"}`;
+}
+
+async function crawlPage(url) {
+  const cfg = getSettings().integrations?.crawl4ai || {};
+  const base = (cfg.command || "http://192.168.2.29:11235").replace(/\/$/, "");
+  const r = await fetch(`${base}/md`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}) },
+    body: JSON.stringify({ url, f: "fit" }),
+    signal: AbortSignal.timeout(90000),
+  });
+  if (!r.ok) return `crawl4ai ${r.status}: ${await r.text()}`;
+  const j = await r.json();
+  return String(j.markdown || j.fit_markdown || JSON.stringify(j)).slice(0, 8000);
+}
+
+async function openhandsTask(task) {
+  const cfg = getSettings().integrations?.openhands || {};
+  const base = (cfg.command || "http://127.0.0.1:8085").replace(/\/$/, "");
+  const r = await fetch(`${base}/api/conversations`, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}) },
+    body: JSON.stringify({ initial_user_msg: task }),
+    signal: AbortSignal.timeout(180000),
+  });
+  if (!r.ok) return `OpenHands ${r.status}: ${await r.text()}`;
+  const j = await r.json();
+  return `Tarefa enviada ao OpenHands (conversation_id: ${j.conversation_id || j.id}, status: ${j.conversation_status || j.status || "?"}). Acompanhe em ${base}.`;
 }
 
 export async function remember(content, tags = "") {
@@ -107,6 +174,9 @@ export async function callTool(name, input, ctx) {
     case "send_email": return sendEmail(input.account, input.to, input.subject, input.body);
     case "read_email": return readInbox(input.account);
     case "read_calendar": return readCalendar();
+    case "context7_docs": return context7Docs(input.library, input.topic);
+    case "crawl_page": return crawlPage(input.url);
+    case "openhands_task": return openhandsTask(input.task);
     default: return `Ferramenta desconhecida: ${name}`;
   }
 }

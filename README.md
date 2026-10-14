@@ -33,6 +33,35 @@ O **AssistentePessoal** é um ecossistema de inteligência artificial de código
 
 ---
 
+## Integrações (stack local LayTech)
+
+O serviço local integra-se a ferramentas que rodam **na mesma máquina**. As URLs e chaves são
+configuradas no painel (**Configurações**) e guardadas cifradas em `data/jarvis.db`.
+
+| Integração | Endereço padrão | Ferramenta de agente | O que faz |
+|---|---|---|---|
+| Ollama (`ollama-llm`) | `http://127.0.0.1:11434/v1` | — (provedor) | chat e embeddings locais |
+| Omniroute | `http://127.0.0.1:20128/v1` | — (provedor) | roteamento multi-provedor |
+| Hermes Agent | `http://127.0.0.1:8642/v1` | — (provedor) | agente Hermes (OpenAI-compatível) |
+| Headroom | `http://127.0.0.1:8787/v1` | — (provedor) | proxy OpenAI com compactação de contexto |
+| Context7 (MCP) | `http://127.0.0.1:8000/mcp` | `context7_docs` | documentação atualizada de bibliotecas |
+| crawl4ai | `http://127.0.0.1:11235` | `crawl_page` | extração de páginas (inclusive JS) |
+| OpenHands | `http://127.0.0.1:8085` | `openhands_task` | agente autônomo de código |
+| OpenClaw | `http://127.0.0.1:18789/v1` | `cli_agent`/HTTP | exige `gateway.trustedProxies` no gateway |
+| Odysseus | `http://127.0.0.1:7000` | — (HTTP) | app web com login |
+
+Também há agentes de CLI (`claude`, `codex`, `opencode`, `hermes`) via `cli_agent`, com `{prompt}`
+como marcador. Detalhes de instalação/validação local em [`INTEGRACOES-LAYTECH.md`](INTEGRACOES-LAYTECH.md).
+
+## Acesso pela rede privada (Tailscale)
+
+O serviço e o painel escutam em loopback. Para acessar de outro dispositivo do tailnet, o script
+`scripts/tailnet-proxy.mjs` publica as portas **7777** (API) e **8090** (painel) no IP Tailscale do
+host — sem expor na LAN e sem `sudo`. Abra `http://<IP-tailscale>:8090`; o painel detecta o serviço
+sozinho. A origem do tailnet é adicionada automaticamente a `JARVIS_ALLOWED_ORIGINS`.
+
+---
+
 ## Requisitos
 
 - **Node.js 22.13+** (usa o SQLite embutido do Node, sem compilação nativa). Testado também no 24.
