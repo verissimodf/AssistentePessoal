@@ -68,4 +68,3 @@ Autonomia: *Pedir confirmação*, *Só ações seguras* (lista permitida) ou *Au
 
 • TELEGRAM_ALLOWED_CHAT_IDS: Uma lista separada por vírgulas contendo os IDs numéricos das contas permitidas a conversar com o seu assistente. Isso impede que terceiros adicionem o seu bot no Telegram e executem comandos na sua máquina.
 • EMAIL_PASSWORD: Para provedores como o Gmail, você não deve usar sua senha real de login, mas sim uma Senha de Aplicativo gerada dentro das configurações de segurança da sua conta Google.
-Este guia detalhado cobriu todos os recursos que você tem planejados para o ecossistema? Se precisar, posso ajudar a escrever os scripts automáticos de inicialização (jarvis.cmd para Windows e jarvis.sh para Linux) que carregam essas variáveis antes de subir o sistema.
