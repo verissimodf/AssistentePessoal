@@ -104,7 +104,85 @@ A arquitetura impõe três barreiras rígidas para garantir a integridade do amb
 * **Criptografia em Repouso:** Dados salvos na pasta `data/` não ficam em texto limpo. Chaves de APIs externas e históricos confidenciais passam pela `SecurityLayer` antes de tocar o arquivo SQLite, utilizando cifra **AES-256-GCM**.
 * **Auditoria de Host:** Toda e qualquer chamada de sistema ou bot autônomo acionado gera logs imutáveis gravados localmente, permitindo auditoria completa de processos criados pelo assistente.
 * 
-## 4. Arquitetura Simplificada
+
+## 4. Sistema de Autonomia dos Bots (3 Níveis)
+
+O assistente possui um motor de orquestração autônomo (`BotEngine`) baseado em gatilhos (*triggers*) como horários, intervalos de tempo, arquivos alterados ou mensagens recebidas. Para garantir que a IA não execute ações indesejadas no sistema, a autonomia é rigidamente dividida em 3 níveis configuráveis:
+
+```mermaid
+graph TD
+    N1[Nível 1: Apenas Notificação] -->|Apenas Alerta| UI[Painel / Log]
+    N2[Nível 2: Semi-Autônomo] -->|Solicita| Proxy[Aprovação Manual no Painel]
+    N3[Nível 3: Totalmente Autônomo] -->|Executa Direto| Host[Sistema Operacional]
+
+    style N1 fill:#f9f,stroke:#333,stroke-width:2px
+    style N2 fill:#bbf,stroke:#333,stroke-width:2px
+    style N3 fill:#fbb,stroke:#333,stroke-width:2px
+```
+
+### Detalhamento dos Níveis:
+
+*   **Nível 1: Assistido / Informativo (Modo Seguro)**
+    *   **Como funciona:** O bot é disparado por um gatilho, analisa o contexto via IA, mas **não executa nenhuma alteração física ou comando**.
+    *   **Comportamento:** Ele apenas gera uma notificação visual no painel web, envia um alerta nos canais de comunicação integrados (Telegram/WhatsApp) ou grava a sugestão em log. Ele avisa o que *deveria* ser feito, mas não age.
+*   **Nível 2: Semi-Autônomo (Confirmação Obrigatória)**
+    *   **Como funciona:** O bot decide qual ação ou comando do host precisa ser executado, mas a requisição entra em uma **fila de espera**.
+    *   **Comportamento:** O indicador do painel web pisca e exibe um pop-up de auditoria. O comando só é disparado no terminal se o usuário clicar fisicamente em **"Aprovar"**. Caso seja rejeitado, a ação é descartada e o bot aprende com a recusa.
+*   **Nível 3: Autônomo (Modo J.A.R.V.I.S. Total)**
+    *   **Como funciona:** O bot tem permissão livre para tomar decisões e executar ferramentas em segundo plano sem intervenção humana.
+    *   **Comportamento:** Dispara scripts, manipula arquivos permitidos na *whitelist*, gerencia comunicações e interage com o sistema operacional. **Requisição obrigatória:** Exige que as travas de segurança do arquivo `SECURITY.md` estejam explicitamente aceitas no ambiente.
+
+---
+
+## 5. Guia de Configuração: Inicialização Automática (Boot)
+
+Para transformar o projeto em um assistente de segundo plano real que liga junto com o computador, configure os inicializadores nativos do sistema operacional:
+
+### 🪟 No Windows (Via Pasta Inicializar)
+
+O método mais simples e seguro no Windows sem exigir privilégios de Administrador é usar o menu `Startup`:
+
+1. Pressione as teclas `Win + R` para abrir a caixa Executar.
+2. Digite `shell:startup` e pressione **Enter**. Isso abrirá a pasta de Inicialização do seu usuário.
+3. Clique com o botão direito dentro da pasta, vá em **Novo > Atalho**.
+4. No campo de localização, clique em procurar e selecione o arquivo do seu repositório: `C:\Caminho\Para\AssistentePessoal\scripts\jarvis.cmd`.
+5. Avance, dê o nome de "Jarvis" e conclua. 
+6. *(Opcional)* Nas propriedades do atalho, você pode configurá-lo para iniciar em modo **Minimizado** para não abrir a janela do prompt na sua tela ao ligar.
+
+### 🐧 No Linux (Via Systemd Service)
+
+Para distribuições Linux (Ubuntu, Debian, Fedora), a melhor prática de mercado é criar um serviço do sistema:
+
+1. Crie um arquivo de serviço para o Systemd:
+   ```bash
+   sudo nano /etc/systemd/system/jarvis.service
+   ```
+2. Cole a configuração abaixo ajustando os caminhos para as pastas corretas do seu usuário:
+   ```ini
+   [Unit]
+   Description=Servico Local do Assistente Pessoal J.A.R.V.I.S.
+   After=network.target
+
+   [Service]
+   Type=simple
+   User=SEU_USUARIO_LINUX
+   WorkingDirectory=/home/SEU_USUARIO/AssistentePessoal
+   ExecStart=/home/SEU_USUARIO/AssistentePessoal/scripts/jarvis.sh
+   Restart=on-failure
+   RestartSec=10
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+3. Recarregue os daemons, habilite o serviço para iniciar no boot e ligue-o agora:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable jarvis.service
+   sudo systemctl start jarvis.service
+   ```
+4. Para checar se está rodando perfeitamente: `sudo systemctl status jarvis.service`.
+
+## 6. Arquitetura Simplificada
 
 ```text
 Navegador ── http://localhost:8080 (painel)
@@ -127,7 +205,7 @@ Se responder, tudo passa a usar o serviço local; se não, entra em modo demonst
 `localStorage`). Não há token para parear: o serviço só escuta em localhost e só aceita origens
 `localhost`/`127.0.0.1` (configure outras em `JARVIS_ALLOWED_ORIGINS`).
 
-## 5. API
+## 7. API
 | Método | Rota | Função |
 |---|---|---|
 | GET | `/api/health` | estado |
