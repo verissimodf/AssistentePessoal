@@ -1,11 +1,17 @@
-# AssistentePessoal
+# 🤖 AssistentePessoal (J.A.R.V.I.S.)
 
-Baseado no J.A.R.V.I.S, este assistente pessoal possui algumas funcionalidades particulares.
+<p align="center">
+  <img src="https://shields.io" alt="Status" />
+  <img src="https://shields.io" alt="License" />
+  <img src="https://shields.io" alt="Node Version" />
+  <img src="https://shields.io" alt="Python Version" />
+</p>
 
-Roda **no seu computador** (Windows ou Linux), com painel web, voz, avatar 3D animado, memória
-própria, agentes personalizáveis, bots autônomos e ações no host. Nenhum dado fica em nuvem:
-memória, conversas e chaves ficam em `data/` (SQLite, chaves cifradas com AES-256-GCM). Só sai da
-máquina o que você enviar a um provedor de IA que escolher — ou nada, usando Ollama.
+---
+
+O **AssistentePessoal** é um ecossistema de inteligência artificial de código aberto inspirado no **J.A.R.V.I.S.**, projetado para rodar **100% localmente no seu computador** (Windows ou Linux). Combinando um painel web dinâmico, avatar 3D animado e agentes autônomos, o projeto oferece uma experiência imersiva de automação residencial e desktop sem comprometer sua privacidade.
+
+> 🔒 **Privacidade por Padrão:** Nenhum dado é enviado para a nuvem sem o seu consentimento. Suas memórias, históricos e chaves de API ficam armazenados localmente em um banco SQLite e protegidos por criptografia robusta **AES-256-GCM**.
 
 ---
 
