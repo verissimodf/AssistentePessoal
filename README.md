@@ -1,11 +1,9 @@
 # 🤖 AssistentePessoal (J.A.R.V.I.S.)
 
-<p align="center">
-  <img src="https://shields.io" alt="Status" />
-  <img src="https://shields.io" alt="License" />
-  <img src="https://shields.io" alt="Node Version" />
-  <img src="https://shields.io" alt="Python Version" />
-</p>
+![Status](https://shields.io)
+![License](https://shields.io)
+![Node Version](https://shields.io)
+![Python Version](https://shields.io)
 
 ---
 
