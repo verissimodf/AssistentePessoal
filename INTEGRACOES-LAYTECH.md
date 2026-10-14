@@ -18,7 +18,7 @@ Documento operacional da instalação do **AssistentePessoal**
 | API local | `http://127.0.0.1:7777` | loopback |
 | Painel web | `http://localhost:8090` | **8080 é do `odysseus-searxng-1`** |
 | Ponte de voz | `http://127.0.0.1:7778` | traduz `/tts` → `xtts-service` (`8010`) |
-| Tailnet (Tailscale) | `http://100.87.104.126:8090` (painel) e `:7777` (API) | só no tailnet; sem LAN |
+| Tailnet (Tailscale) | `http://100.100.100.101:8090` (painel) e `:7777` (API) | só no tailnet; sem LAN |
 | MCP (stdio) | `server/mcp.js` | `jarvis_ask`, `jarvis_remember`, `jarvis_recall` |
 
 Serviço systemd **user**: `assistente-pessoal.service` (habilitado, `Linger=yes`), que sobe API +
@@ -75,7 +75,7 @@ loopback — sem abrir na LAN e sem `sudo`. O `start-local.sh` adiciona o IP e o
 (`app.tail43f1fb.ts.net`) a `JARVIS_ALLOWED_ORIGINS`. O painel detecta o serviço pelo hostname da
 página (`src/lib/bridge.ts`), então funciona igual em `localhost` e no tailnet.
 
-Abrir de outro dispositivo: **`http://100.87.104.126:8090`** (ou `http://app.tail43f1fb.ts.net:8090`).
+Abrir de outro dispositivo: **`http://100.100.100.101:8090`** (ou `http://app.tail43f1fb.ts.net:8090`).
 
 Alternativa nativa com TLS (requer `sudo tailscale set --operator=$USER` uma vez):
 `tailscale serve --bg --https=443 http://127.0.0.1:8090` e `--https=8443 http://127.0.0.1:7777`.
