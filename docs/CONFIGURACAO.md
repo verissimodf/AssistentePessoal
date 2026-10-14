@@ -53,3 +53,19 @@ O raciocínio do modelo (quando o provedor o devolve) aparece em **Raciocínio**
 | Mensagem recebida | palavra que deve aparecer na mensagem do Telegram |
 
 Autonomia: *Pedir confirmação*, *Só ações seguras* (lista permitida) ou *Autônomo total*. Limite de passos: 1–50.
+
+## 1. Segurança e Criptografia
+
+• ENCRYPTION_KEY: Esta é a variável mais importante. Ela cifra as senhas de e-mail e chaves de API armazenadas no banco SQLite. Se você perder essa chave, o assistente não conseguirá descriptografar seus tokens antigos.
+• BOT_AUTONOMY_LEVEL: Controla os três níveis de autonomia descritos no guia de arquitetura. O valor padrão 1 garante que nenhum script do host rode sem o seu comando direto.
+
+## 2. Provedores de IA (DEFAULT_AI_PROVIDER)
+
+• Se definido como ollama, o assistente funcionará inteiramente sem internet, consumindo os modelos baixados na sua própria máquina.
+• Se mudar para openai ou anthropic, certifique-se de colar a respectiva chave de API nos campos abaixo dela.
+
+## 3. Canais de Comunicação
+
+• TELEGRAM_ALLOWED_CHAT_IDS: Uma lista separada por vírgulas contendo os IDs numéricos das contas permitidas a conversar com o seu assistente. Isso impede que terceiros adicionem o seu bot no Telegram e executem comandos na sua máquina.
+• EMAIL_PASSWORD: Para provedores como o Gmail, você não deve usar sua senha real de login, mas sim uma Senha de Aplicativo gerada dentro das configurações de segurança da sua conta Google.
+Este guia detalhado cobriu todos os recursos que você tem planejados para o ecossistema? Se precisar, posso ajudar a escrever os scripts automáticos de inicialização (jarvis.cmd para Windows e jarvis.sh para Linux) que carregam essas variáveis antes de subir o sistema.
