@@ -9,6 +9,9 @@ export const DATA_DIR = process.env.JARVIS_DATA_DIR || join(dirname(fileURLToPat
 mkdirSync(join(DATA_DIR, "voices"), { recursive: true });
 
 export const db = new DatabaseSync(join(DATA_DIR, "jarvis.db"));
+// WAL + busy_timeout: permite leituras concorrentes (ex.: scripts/CLI) sem "database is locked".
+db.exec("PRAGMA journal_mode = WAL;");
+db.exec("PRAGMA busy_timeout = 5000;");
 db.exec(`
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS memories (id TEXT PRIMARY KEY, content TEXT NOT NULL, tags TEXT DEFAULT '', embedding TEXT, created_at TEXT NOT NULL);

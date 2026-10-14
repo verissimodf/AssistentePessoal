@@ -46,22 +46,27 @@ function syncWatchers() {
 
 export function startScheduler() {
   setInterval(() => {
-    const d = new Date();
-    const hhmm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-    const today = d.toDateString();
-    for (const b of bots.list().filter((x) => x.enabled)) {
-      if (b.trigger_type === "daily" && b.trigger_value === hhmm && lastDaily.get(b.id) !== today) {
-        lastDaily.set(b.id, today);
-        runBot(b, `agenda ${hhmm}`);
+    try {
+      const d = new Date();
+      const hhmm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+      const today = d.toDateString();
+      for (const b of bots.list().filter((x) => x.enabled)) {
+        if (b.trigger_type === "daily" && b.trigger_value === hhmm && lastDaily.get(b.id) !== today) {
+          lastDaily.set(b.id, today);
+          runBot(b, `agenda ${hhmm}`);
+        }
+        if (b.trigger_type === "interval") {
+          const mins = Math.max(1, Number(b.trigger_value) || 60);
+          const last = lastInterval.get(b.id) || Date.now();
+          if (!lastInterval.has(b.id)) lastInterval.set(b.id, last);
+          else if (Date.now() - last >= mins * 60000) { lastInterval.set(b.id, Date.now()); runBot(b, `intervalo ${mins} min`); }
+        }
       }
-      if (b.trigger_type === "interval") {
-        const mins = Math.max(1, Number(b.trigger_value) || 60);
-        const last = lastInterval.get(b.id) || Date.now();
-        if (!lastInterval.has(b.id)) lastInterval.set(b.id, last);
-        else if (Date.now() - last >= mins * 60000) { lastInterval.set(b.id, Date.now()); runBot(b, `intervalo ${mins} min`); }
-      }
+      syncWatchers();
+    } catch (e) {
+      // Nunca deixe uma exceção do agendador derrubar o serviço inteiro.
+      console.warn(`[bots] scheduler: ${e.message}`);
     }
-    syncWatchers();
   }, 20000);
 }
 

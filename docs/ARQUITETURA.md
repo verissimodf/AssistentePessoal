@@ -192,13 +192,18 @@ http://127.0.0.1:7777 (server/index.js)
    ├─ settings.js   chaves cifradas AES-256-GCM
    ├─ db.js         SQLite embutido (node:sqlite) em data/
    ├─ llm.js        provedores + laço de ferramentas do agente + embeddings
-   ├─ tools.js      pesquisa, memória, comandos, CLIs, mensagens, e-mail, agenda
+   ├─ tools.js      pesquisa, memória, comandos, CLIs, mensagens, e-mail, agenda,
+   │                context7_docs (MCP), crawl_page (crawl4ai), openhands_task (OpenHands)
    ├─ hostpolicy.js regras de segurança dos comandos
    ├─ bots.js       agendador, observador de arquivos, gatilhos de texto
    ├─ comms.js      Telegram, WhatsApp, Signal, IMAP/SMTP, ICS
    ├─ voice.js      TTS e clonagem ──► scripts/voz/voice_service.py (127.0.0.1:7778)
    └─ mcp.js        servidor MCP (stdio) para Claude Desktop/Code, Codex, OpenCode
 ```
+
+**Acesso pela rede privada (Tailscale)**: `scripts/tailnet-proxy.mjs` publica as portas 7777 (API) e
+8090 (painel) no IP do tailnet, encaminhando para o loopback — sem expor na LAN. O painel detecta o
+endereço do serviço pelo hostname da página (`src/lib/bridge.ts`).
 
 **Integração painel ↔ serviço**: o painel testa `http://localhost:7777/api/health` a cada 10 s.
 Se responder, tudo passa a usar o serviço local; se não, entra em modo demonstração (dados em

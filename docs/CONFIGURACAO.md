@@ -13,13 +13,26 @@ Tudo é configurado no painel (**Configurações**) e salvo cifrado em `data/jar
 | OpenCode Go | `https://opencode.ai/zen/v1` | opencode.ai |
 | OpenRouter / Groq / Gemini | compatíveis com OpenAI | sites dos provedores |
 | OpenWebUI | `http://localhost:3000/api` | OpenWebUI → Configurações → Conta → Chave de API |
+| Headroom (proxy local) | `http://127.0.0.1:8787/v1` | token do proxy (`HEADROOM_PROXY_TOKEN`) |
 | Compatível com OpenAI | qualquer `/v1` | opcional |
 
 O raciocínio do modelo (quando o provedor o devolve) aparece em **Raciocínio** na conversa.
 
+## Ferramentas de integração (agentes)
+Além das ferramentas nativas, o agente pode chamar serviços locais:
+
+| Ferramenta | Serviço | Parâmetros |
+|---|---|---|
+| `context7_docs` | Context7 MCP (`http://127.0.0.1:8000/mcp`) | `library`, `topic` |
+| `crawl_page` | crawl4ai (`http://127.0.0.1:11235`) | `url` |
+| `openhands_task` | OpenHands (`http://127.0.0.1:8085`) | `task` |
+
+Habilite-as em **Agentes → Ferramentas** e configure as URLs/chaves em **Configurações → Integrações**.
+
 ## Integrações de agentes
 - **CLI** (Claude Code, Codex, OpenCode, Hermes): o comando usa `{prompt}` como marcador. Ex.: `claude -p {prompt} --output-format text`. O CLI precisa estar instalado e logado.
-- **HTTP** (OpenClaw, Odysseus, OpenWebUI): informe a URL compatível com OpenAI; use como provedor “Compatível com OpenAI” num agente.
+- **HTTP** (OpenClaw, Odysseus, OpenWebUI, Headroom, OpenHands, crawl4ai): informe a URL compatível com OpenAI; use como provedor “Compatível com OpenAI” num agente.
+- **MCP** (Context7): informe a URL do servidor MCP (`http://127.0.0.1:8000/mcp`); o agente usa a ferramenta `context7_docs`.
 - **Claude Desktop (MCP)**: em `claude_desktop_config.json`:
   ```json
   { "mcpServers": { "jarvis": { "command": "node", "args": ["C:/jarvis/server/mcp.js"] } } }

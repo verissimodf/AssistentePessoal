@@ -4,6 +4,33 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 
 ---
 
+## [1.1.0] — 2026-10-14
+### Adicionado
+- **Novas ferramentas de agente** (`server/tools.js`):
+  - `context7_docs` — busca documentação atualizada de bibliotecas no **Context7** (MCP sobre HTTP).
+  - `crawl_page` — extrai markdown limpo de páginas (inclusive JS) via **crawl4ai**.
+  - `openhands_task` — delega tarefas de código ao agente autônomo **OpenHands**.
+- **Provedor `headroom`** (proxy OpenAI-compatível local com compactação de contexto) em `server/llm.js`
+  e no catálogo do painel.
+- **Acesso pela rede privada Tailscale**: `scripts/tailnet-proxy.mjs` expõe API e painel no IP do
+  tailnet sem abrir na LAN e sem exigir `sudo`. O painel passa a detectar o endereço do serviço pelo
+  hostname da página (`src/lib/bridge.ts`), funcionando igual em `localhost` e no tailnet.
+- **Origens confiáveis dinâmicas**: `scripts/start-local.sh` adiciona automaticamente o IP Tailscale e
+  o nome MagicDNS a `JARVIS_ALLOWED_ORIGINS`.
+- **Integrações no catálogo do painel** (`src/lib/catalog.ts`): Context7 (MCP), OpenHands, Headroom e crawl4ai.
+
+### Corrigido
+- `server/db.js`: ativa **WAL** e `busy_timeout` no SQLite, evitando `database is locked` em acessos
+  concorrentes (scripts/CLI lendo o banco enquanto o serviço roda).
+- `server/bots.js`: o agendador agora captura exceções — uma falha de tick não derruba mais o serviço.
+- `scripts/start-local.sh`: encerra quando qualquer componente morre, para o systemd (`Restart=always`)
+  reiniciar o conjunto em vez de ficar com o serviço parcialmente no ar.
+
+### Documentação
+- `INTEGRACOES-LAYTECH.md`: instalação, portas, integrações, Tailscale, substituição do OpenJarvis e rollback.
+- `docs/CONFIGURACAO.md`, `docs/ARQUITETURA.md`, `docs/IMPLANTACAO.md` e `docs/VALIDACAO.md` atualizados
+  com as novas ferramentas, integrações e o acesso por Tailscale.
+
 ## [1.0.2] — 2026-10-13
 ### Corrigido
 - `server/llm.js`: `callOpenAI` passa a enviar `stream: false`. Gateways compatíveis com OpenAI
