@@ -59,6 +59,7 @@ const AUDIT_FIELDS = {
   route: "route",
   // structured metadata (no filesystem paths, no tokens, no request URLs)
   scopes: "codes", ids: "codes", count: "num", from: "num", to: "num", backup_verified: "bool", report: "counts", at: "code",
+  fromAdmin: "code", toAdmin: "code", correlation: "code",
 };
 function cleanAuditValue(kind, v) {
   if (kind === "num") return Number.isFinite(v) ? v : undefined;

@@ -11,7 +11,7 @@ import { resolve } from "node:path";
 import { db, agents, bots, auth, audit } from "./db.js";
 import { AuthError, can, isVerifiedAdmin, sanitizeBotScopes, DEFAULT_BOT_SCOPES } from "./auth.js";
 import { publicSettings, updateSettings, legacySettingsInventory, claimLegacySettings } from "./settings.js";
-import { owns, ownerOf, ownedIds, assignNew, dropOwnership, tx, legacyInventory, claimLegacy, ClaimError } from "./ownership.js";
+import { owns, ownerOf, ownedIds, assignNew, dropOwnership, tx, legacyInventory, claimLegacy, ClaimError, inactiveAdminInventory, transferResources } from "./ownership.js";
 import { runAgent, testProvider } from "./llm.js";
 import { remember, recall, resolveApproval } from "./tools.js";
 import { listDocuments, getDocument, saveDocument, searchDocuments, deleteDocument } from "./documents.js";
@@ -220,6 +220,16 @@ route("POST", "/api/legacy/claim", "session", ({ body, principal }) => {
   try { return claimLegacy(principal.adminId, body); } catch (e) { if (e instanceof ClaimError) throw new AuthError(e.status, e.code); throw e; }
 });
 route("POST", "/api/legacy/settings/claim", "session", ({ body, principal }) => claimLegacySettings(principal.adminId, body.confirm));
+
+// ---------- D_REC: reauthentication + controlled ownership transfer ----------
+route("POST", "/api/auth/reauth", "session", ({ body, principal }) => auth.reauth(principal, body.password));
+route("GET", "/api/ownership/inactive", "session", () => inactiveAdminInventory());
+route("POST", "/api/ownership/transfer", "session", ({ body, principal }) => {
+  if (!auth.hasRecentReauth(principal)) throw new AuthError(403, "reauth_required");
+  if (body.confirm !== "TRANSFERIR") throw new AuthError(400, "confirmation_required");
+  try { return transferResources(principal.adminId, body); }
+  catch (e) { if (e instanceof ClaimError) throw new AuthError(e.status, e.code); throw e; }
+});
 
 // ---------- authentication + authorization (single choke point) ----------
 function authenticate(req) {

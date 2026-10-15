@@ -120,6 +120,49 @@ CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
 BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
 `,
   },
+  {
+    version: 4,
+    name: "d-rec: session reauth, transferable ownership, ownership history",
+    // Adds `reauth_at` to sessions (nullable), extends the ownership CHECK with 'transferred'
+    // (ownership is NOT in PRESERVED — the framework still proves preserved tables unchanged),
+    // and adds an append-only `ownership_history` for transfers. No transfer runs here.
+    sql: (db) => {
+      const hasCol = db.prepare("PRAGMA table_info(sessions)").all().some((c) => c.name === "reauth_at");
+      return `
+${hasCol ? "" : "ALTER TABLE sessions ADD COLUMN reauth_at INTEGER;"}
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v3;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v3;
+DROP TABLE ownership_v3;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+
+CREATE TABLE IF NOT EXISTS ownership_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  resource_type TEXT NOT NULL,
+  resource_id TEXT NOT NULL,
+  from_admin_id TEXT,
+  to_admin_id TEXT NOT NULL,
+  actor_admin_id TEXT NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('transfer')),
+  correlation_id TEXT NOT NULL,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ownership_history_resource ON ownership_history(resource_type, resource_id);
+CREATE INDEX IF NOT EXISTS idx_ownership_history_corr ON ownership_history(correlation_id);
+`;
+    },
+  },
 ];
 
 const tableExists = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);

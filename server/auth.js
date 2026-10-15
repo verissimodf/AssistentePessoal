@@ -7,6 +7,7 @@ import { join } from "node:path";
 export const IDLE_MS = 30 * 60 * 1000; // 30 min without activity
 export const ABSOLUTE_MS = 12 * 60 * 60 * 1000; // 12 h max lifetime
 export const BOOTSTRAP_TTL_MS = 15 * 60 * 1000;
+export const REAUTH_MS = 10 * 60 * 1000; // fresh reauth window for sensitive operations (D_REC-3)
 export const MAX_ADMINS = 2;
 export const MIN_PASSWORD = 12;
 
@@ -279,10 +280,31 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
     return { ok: true };
   }
 
+  // ---------- reauthentication (D_REC-3) ----------
+  // Sensitive operations require a FRESH reauth bound to the session row, not a client flag.
+  function reauth(principal, password) {
+    if (!principal?.sessionHash || !principal.adminId) throw new AuthError(403, "admin_session_required");
+    const me = db.prepare("SELECT password_hash FROM admins WHERE id = ? AND active = 1").get(principal.adminId);
+    if (!me || !verifyPassword(String(password || ""), me.password_hash)) {
+      audit("auth.reauth_failed", { admin: principal.adminId, reason: "reauth_failed" });
+      throw new AuthError(403, "reauth_failed");
+    }
+    db.prepare("UPDATE sessions SET reauth_at = ? WHERE id_hash = ? AND revoked_at IS NULL").run(clock(), principal.sessionHash);
+    audit("auth.reauth", { admin: principal.adminId });
+    return { ok: true };
+  }
+  /** True only when THIS session was reauthenticated within maxMs (re-read from the DB). */
+  function hasRecentReauth(principal, maxMs = REAUTH_MS) {
+    if (!principal?.sessionHash) return false;
+    const r = db.prepare("SELECT reauth_at, revoked_at FROM sessions WHERE id_hash = ?").get(principal.sessionHash);
+    return !!r && !r.revoked_at && !!r.reauth_at && (clock() - r.reauth_at) <= maxMs;
+  }
+
   return {
     ensureBootstrap, setupRequired, setupFirstAdmin, createAdmin, removeAdmin, listAdmins,
     login, validateSession, revokeSession, listSessions, revokeSessionById, purgeAttempts,
     createServiceToken, validateServiceToken, listServiceTokens, revokeServiceToken,
+    reauth, hasRecentReauth,
   };
 }
 

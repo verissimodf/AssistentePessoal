@@ -92,3 +92,59 @@ export function claimLegacy(adminId, { type, ids, confirm } = {}) {
     return { ok: true, type, claimed: ids.length, ...(type === "approval" ? { expired: expired.length } : {}) };
   });
 }
+
+// ---------- D_REC-1: controlled transfer of a deactivated admin's resources ----------
+
+/** Inactive admins with per-type resource counts — metadata only, never content. */
+export function inactiveAdminInventory() {
+  const admins = db.prepare("SELECT id, username FROM admins WHERE active = 0 ORDER BY created_at").all();
+  return admins.map((a) => {
+    const counts = {};
+    for (const [type, table] of Object.entries(TYPES)) {
+      counts[type] = db.prepare(
+        `SELECT COUNT(*) n FROM ${table} t JOIN ownership o ON o.resource_type = ? AND o.resource_id = t.id WHERE o.owner_admin_id = ?`).get(type, a.id).n;
+    }
+    return { id: a.id, username: a.username, counts };
+  });
+}
+
+export const TRANSFER_LIMIT = 500;
+
+/**
+ * Explicit, granular, audited, logically-atomic transfer of a DEACTIVATED admin's resources to an
+ * ACTIVE admin. All-or-nothing: every id must exist, be unique and still belong to `from`, otherwise
+ * nothing changes. Ownership rows are re-created (the immutability trigger forbids UPDATE) with
+ * origin='transferred', and every change is appended to `ownership_history` (append-only trail).
+ * The source admin is NOT reactivated and no credentials are restored.
+ */
+export function transferResources(actorId, { from, to, type, ids, correlationId } = {}) {
+  if (!actorId) throw new ClaimError(403, "admin_session_required");
+  if (!Object.hasOwn(TYPES, type)) throw new ClaimError(400, "invalid_type");
+  if (typeof from !== "string" || typeof to !== "string" || !from || !to || from === to) throw new ClaimError(400, "invalid_admins");
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > TRANSFER_LIMIT || !ids.every((i) => typeof i === "string" && i.length > 0 && i.length <= 200))
+    throw new ClaimError(400, "invalid_ids");
+  if (new Set(ids).size !== ids.length) throw new ClaimError(400, "duplicate_ids");
+  const src = db.prepare("SELECT id, active FROM admins WHERE id = ?").get(from);
+  if (!src) throw new ClaimError(404, "source_not_found");
+  if (src.active) throw new ClaimError(409, "source_active");
+  const dst = db.prepare("SELECT id, active FROM admins WHERE id = ?").get(to);
+  if (!dst || !dst.active) throw new ClaimError(409, "target_not_active");
+  const table = TYPES[type];
+  const corr = String(correlationId || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64) || `tr-${Date.now()}`;
+  return tx(() => {
+    const exists = db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`);
+    const del = db.prepare("DELETE FROM ownership WHERE resource_type = ? AND resource_id = ?");
+    const ins = db.prepare("INSERT INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin) VALUES (?, ?, ?, ?, 'transferred')");
+    const hist = db.prepare("INSERT INTO ownership_history (resource_type, resource_id, from_admin_id, to_admin_id, actor_admin_id, action, correlation_id, at) VALUES (?, ?, ?, ?, ?, 'transfer', ?, ?)");
+    const at = now();
+    for (const id of ids) {
+      if (!exists.get(id)) throw new ClaimError(404, "resource_not_found");
+      if (ownerOf(type, id) !== from) throw new ClaimError(409, "not_owned_by_source");
+      del.run(type, id);
+      ins.run(type, id, to, at);
+      hist.run(type, id, from, to, actorId, corr, at);
+    }
+    audit("ownership.transferred", { by: actorId, fromAdmin: from, toAdmin: to, type, count: ids.length, correlation: corr });
+    return { ok: true, type, count: ids.length, from, to, correlation: corr };
+  });
+}

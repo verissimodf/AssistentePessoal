@@ -40,13 +40,21 @@ Esta especificação registra o estado real e as decisões que faltam — sem im
   **não reivindicáveis** (não aparecem na triagem; `claimLegacy` recusa `already_owned`).
 - **Auditoria:** sanitizada por allowlist; nunca grava conteúdo, tokens, senhas ou caminhos.
 
-## 4. Não implementado (bloqueado até aprovação)
+## 4. Estado de implementação
 
-- Transferência de titularidade de recursos de administrador **desativado**.
-- Expurgo (exclusão permanente) de recursos — com dependências derivadas (embeddings, arquivos em
-  `data/documents/<adminId>/`, índices).
-- Histórico de mudança de titularidade (o trigger de imutabilidade impede `UPDATE`; não há tabela de histórico).
-- Reativação/realocação de credenciais de e-mail ou integrações.
+**Implementado (2026-10-15):**
+- Transferência **explícita, granular, atômica e auditada** de recursos de administrador desativado
+  (`server/ownership.js::transferResources`), exigindo **reautenticação recente** vinculada à sessão
+  (`server/auth.js::reauth`/`hasRecentReauth`, migração v4 `sessions.reauth_at`) e gravando histórico
+  append-only (`ownership_history`). Rotas `session`: `POST /api/ownership/transfer`,
+  `POST /api/auth/reauth`, `GET /api/ownership/inactive` (metadados apenas).
+  O admin de origem **não** é reativado; nada é transferido automaticamente; a imutabilidade de
+  `ownership` é respeitada (remoção + reinserção com `origin='transferred'`).
+
+**Não implementado (bloqueado até decisão):**
+- Expurgo (exclusão permanente) — depende da política de retenção (D_REC-2) e de estratégia em etapas;
+  dependências: embeddings, arquivos em `data/documents/<adminId>/`, índices.
+- Reativação/realocação de credenciais de e-mail ou integrações (Fase 4).
 
 ## 5. Decisões pendentes
 
