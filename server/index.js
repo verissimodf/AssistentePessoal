@@ -10,14 +10,15 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { db, agents, bots, auth, audit } from "./db.js";
 import { AuthError, can, isVerifiedAdmin, sanitizeBotScopes, DEFAULT_BOT_SCOPES } from "./auth.js";
-import { publicSettings, updateSettings } from "./settings.js";
+import { publicSettings, updateSettings, legacySettingsInventory, claimLegacySettings } from "./settings.js";
+import { owns, ownerOf, ownedIds, assignNew, dropOwnership, tx, legacyInventory, claimLegacy, ClaimError } from "./ownership.js";
 import { runAgent, testProvider } from "./llm.js";
 import { remember, recall, resolveApproval } from "./tools.js";
-import { runBot, listRuns, startScheduler, triggerByText } from "./bots.js";
+import { runBot, listRuns, startScheduler, triggerByText, auditLegacyBlocked } from "./bots.js";
 import { tts, cloneVoice } from "./voice.js";
 import { startTelegramPolling, sendMessage } from "./comms.js";
 
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 const COOKIE = "jarvis_sid";
 const SECURE_COOKIE = process.env.JARVIS_COOKIE_SECURE === "1";
 const MAX_BODY = 1_000_000;
@@ -108,45 +109,93 @@ route("DELETE", "/api/auth/sessions/:id", "session", ({ principal, params }) => 
 route("GET", "/api/auth/tokens", "session", () => auth.listServiceTokens());
 route("POST", "/api/auth/tokens", "session", ({ principal, body }) => auth.createServiceToken(principal, body));
 route("DELETE", "/api/auth/tokens/:id", "session", ({ principal, params }) => auth.revokeServiceToken(principal, params.id));
-route("POST", "/api/approvals/:id", "session", ({ params, body, principal }) => resolveApproval(params.id, !!body.approve, principal));
+route("POST", "/api/approvals/:id", "session", ({ params, body, principal }) => {
+  if (!owns(principal?.adminId, "approval", params.id)) throw new AuthError(404, "not_found"); // foreign/legacy/unknown look the same
+  return resolveApproval(params.id, !!body.approve, principal);
+});
 route("GET", "/api/audit", "audit:read", () => db.prepare("SELECT id, at, kind, detail FROM audit ORDER BY id DESC LIMIT 200").all());
 
-route("GET", "/api/settings", "settings:read", () => publicSettings());
-route("PUT", "/api/settings", "settings:write", ({ body }) => updateSettings(body));
-route("POST", "/api/providers/:id/test", "settings:write", ({ params }) => testProvider(params.id));
+// ---------- Phase 2: every resource is scoped to principal.adminId (no owner → invisible) ----------
+const me = (p) => p?.adminId || null;
+const notFound = () => { throw new AuthError(404, "not_found"); };
+
+route("GET", "/api/settings", "settings:read", ({ principal }) => publicSettings(me(principal)));
+route("PUT", "/api/settings", "settings:write", ({ body, principal }) => updateSettings(body, { adminId: me(principal), allowGlobal: isVerifiedAdmin(principal) }));
+route("POST", "/api/providers/:id/test", "settings:write", ({ params, principal }) => testProvider(params.id, me(principal)));
 
 route("POST", "/api/chat", "chat", async ({ body, principal }) => {
   const last = body.messages?.at(-1)?.content || "";
-  if (can(principal, "bots:run")) triggerByText("voice", last);
+  if (can(principal, "bots:run")) triggerByText("voice", last, me(principal));
   return runAgent({ agentId: body.agentId, messages: body.messages || [], autonomy: "confirm", principal });
 });
 
-route("GET", "/api/memories", "memories:read", ({ query }) =>
-  query.get("q") ? recall(query.get("q"), 50) : db.prepare("SELECT id, content, tags, created_at FROM memories ORDER BY created_at DESC").all());
-route("POST", "/api/memories", "memories:write", ({ body }) => remember(body.content, body.tags));
-route("PUT", "/api/memories/:id", "memories:write", ({ params, body }) => { db.prepare("UPDATE memories SET content=?, tags=? WHERE id=?").run(body.content, body.tags || "", params.id); return { ok: true }; });
-route("DELETE", "/api/memories/:id", "memories:write", ({ params }) => { db.prepare("DELETE FROM memories WHERE id=?").run(params.id); return { ok: true }; });
+const MEM_OWNED = `SELECT m.id, m.content, m.tags, m.created_at FROM memories m
+  JOIN ownership o ON o.resource_type = 'memory' AND o.resource_id = m.id AND o.owner_admin_id = ? ORDER BY m.created_at DESC`;
+route("GET", "/api/memories", "memories:read", async ({ query, principal }) =>
+  query.get("q") ? (await recall(query.get("q"), 50, me(principal))).map(({ score: _s, ...m }) => m) : db.prepare(MEM_OWNED).all(me(principal)));
+route("POST", "/api/memories", "memories:write", ({ body, principal }) => remember(String(body.content || ""), body.tags, me(principal)));
+route("PUT", "/api/memories/:id", "memories:write", ({ params, body, principal }) => {
+  if (!owns(me(principal), "memory", params.id)) notFound();
+  db.prepare("UPDATE memories SET content=?, tags=? WHERE id=?").run(String(body.content || ""), body.tags || "", params.id); return { ok: true };
+});
+route("DELETE", "/api/memories/:id", "memories:write", ({ params, principal }) => {
+  if (!owns(me(principal), "memory", params.id)) notFound();
+  tx(() => { db.prepare("DELETE FROM memories WHERE id=?").run(params.id); dropOwnership("memory", params.id); }); return { ok: true };
+});
 
-for (const [name, store] of [["agents", agents], ["bots", bots]]) {
-  route("GET", `/api/${name}`, `${name}:read`, () => store.list());
-  // New bots record their owner; existing records are never re-assigned implicitly.
-  const stamp = (body, principal, existing) =>
-    name === "bots"
-      ? { ...body, owner_admin_id: existing ? existing.owner_admin_id ?? null : principal.adminId, scopes: sanitizeBotScopes(body.scopes) ?? existing?.scopes ?? DEFAULT_BOT_SCOPES }
-      : body;
-  route("POST", `/api/${name}`, `${name}:write`, ({ body, principal }) => store.save(stamp({ ...body, id: undefined }, principal, null)));
-  route("PUT", `/api/${name}/:id`, `${name}:write`, ({ params, body, principal }) => store.save(stamp({ ...body, id: params.id }, principal, store.get(params.id))));
-  route("DELETE", `/api/${name}/:id`, `${name}:write`, ({ params }) => { store.remove(params.id); return { ok: true }; });
+for (const [name, store, type] of [["agents", agents, "agent"], ["bots", bots, "bot"]]) {
+  const withOwner = (item, adminId) => (name === "bots" ? { ...item, owner_admin_id: adminId } : item);
+  route("GET", `/api/${name}`, `${name}:read`, ({ principal }) =>
+    [...ownedIds(me(principal), type)].map((id) => store.get(id)).filter(Boolean).map((i) => withOwner(i, me(principal))));
+  const stamp = (body, existing) =>
+    name === "bots" ? { ...body, scopes: sanitizeBotScopes(body.scopes) ?? existing?.scopes ?? DEFAULT_BOT_SCOPES } : body;
+  route("POST", `/api/${name}`, `${name}:write`, ({ body, principal }) => {
+    const adminId = me(principal);
+    if (!adminId) throw new AuthError(403, "owner_required");
+    return tx(() => {
+      const saved = store.save(stamp({ ...body, id: undefined, ...(name === "bots" ? { owner_admin_id: adminId } : {}) }, null));
+      assignNew(type, saved.id, adminId);
+      return saved;
+    });
+  });
+  route("PUT", `/api/${name}/:id`, `${name}:write`, ({ params, body, principal }) => {
+    if (!owns(me(principal), type, params.id)) notFound();
+    const existing = store.get(params.id);
+    const { owner_admin_id: _ignored, ...rest } = body || {};
+    return withOwner(store.save(stamp({ ...rest, id: params.id, ...(name === "bots" ? { owner_admin_id: existing?.owner_admin_id ?? me(principal) } : {}) }, existing)), me(principal));
+  });
+  route("DELETE", `/api/${name}/:id`, `${name}:write`, ({ params, principal }) => {
+    if (!owns(me(principal), type, params.id)) notFound();
+    tx(() => { store.remove(params.id); dropOwnership(type, params.id); }); return { ok: true };
+  });
 }
-route("POST", "/api/bots/:id/run", "bots:run", ({ params }) => runBot(bots.get(params.id), "manual"));
-route("GET", "/api/bots/:id/runs", "bots:read", ({ params }) => listRuns(params.id));
+route("POST", "/api/bots/:id/run", "bots:run", ({ params, principal }) => {
+  if (!owns(me(principal), "bot", params.id)) {
+    if (bots.get(params.id) && !ownerOf("bot", params.id)) auditLegacyBlocked(params.id, "manual"); // still 404 to the caller
+    notFound();
+  }
+  return runBot(bots.get(params.id), "manual", "manual");
+});
+route("GET", "/api/bots/:id/runs", "bots:read", ({ params, principal }) => {
+  if (!owns(me(principal), "bot", params.id)) notFound();
+  return listRuns(params.id, me(principal));
+});
 
-route("POST", "/api/tts", "voice", async ({ body }) => { const a = await tts(body.text, body.lang); return { __raw: a.data, __type: a.type }; });
-route("POST", "/api/voice/clone", "settings:write", async ({ form }) => {
-  const r = await cloneVoice(form.get("file"), form.get("engine"));
-  updateSettings({ voice: { clonedVoiceId: r.voiceId, clonedEngine: r.engine } });
+route("POST", "/api/tts", "voice", async ({ body, principal }) => { const a = await tts(body.text, body.lang, me(principal)); return { __raw: a.data, __type: a.type }; });
+route("POST", "/api/voice/clone", "settings:write", async ({ form, principal }) => {
+  const adminId = me(principal);
+  if (!adminId) throw new AuthError(403, "owner_required");
+  const r = await cloneVoice(form.get("file"), form.get("engine"), adminId);
+  updateSettings({ voice: { clonedVoiceId: r.voiceId, clonedEngine: r.engine } }, { adminId, allowGlobal: false });
   return r;
 });
+
+// Legacy (unowned) data — human admin only. Metadata only; claims are explicit, atomic, audited.
+route("GET", "/api/legacy", "session", () => ({ resources: legacyInventory(), settings: legacySettingsInventory() }));
+route("POST", "/api/legacy/claim", "session", ({ body, principal }) => {
+  try { return claimLegacy(principal.adminId, body); } catch (e) { if (e instanceof ClaimError) throw new AuthError(e.status, e.code); throw e; }
+});
+route("POST", "/api/legacy/settings/claim", "session", ({ body, principal }) => claimLegacySettings(principal.adminId, body.confirm));
 
 // ---------- authentication + authorization (single choke point) ----------
 function authenticate(req) {
@@ -171,12 +220,12 @@ export function createApp() {
         if (!principal) return send(res, 401, { error: "unauthenticated" }, origin);
         // CSRF: cookie sessions must echo the session-bound token on every state change.
         if (a.via === "cookie" && MUTATING.has(req.method) && !eq(req.headers["x-jarvis-csrf"], principal.csrf)) {
-          audit("authz.csrf_rejected", { path: url.pathname });
+          audit("authz.csrf_rejected", { route: r.pattern });
           return send(res, 403, { error: "csrf" }, origin);
         }
         const ok = r.access === "session" ? isVerifiedAdmin(principal) : can(principal, r.access);
         if (!ok) {
-          audit("authz.denied", { path: url.pathname, need: r.access, principal: principal.type });
+          audit("authz.denied", { route: r.pattern, need: r.access, principal: principal.type });
           return send(res, 403, { error: "forbidden", need: r.access }, origin);
         }
       }
@@ -220,10 +269,12 @@ if (isMain && !process.env.JARVIS_NO_LISTEN) {
   });
   setInterval(() => auth.purgeAttempts(), 3600_000).unref();
   startScheduler();
-  const channelPrincipal = { type: "channel", channel: "telegram", adminId: null, scopes: ["chat", "web", "memories:read"] }; // no host/comms from an inbound message
-  startTelegramPolling(async (channel, text) => {
-    await Promise.all(triggerByText("message", text));
-    const r = await runAgent({ messages: [{ role: "user", content: text }], autonomy: "confirm", principal: channelPrincipal });
-    await sendMessage(channel, r.reply + (r.pending.length ? "\n\n(Há uma ação aguardando sua aprovação no painel.)" : ""));
-  });
+  // P2: inbound messages run as the admin whose own settings hold the channel credentials.
+  const activeAdmins = () => db.prepare("SELECT id FROM admins WHERE active = 1").all().map((r) => r.id);
+  startTelegramPolling(async (adminId, channel, text) => {
+    const principal = { type: "channel", channel, adminId, scopes: ["chat", "web", "memories:read"] }; // no host/comms from an inbound message
+    await Promise.all(triggerByText("message", text, adminId));
+    const r = await runAgent({ messages: [{ role: "user", content: text }], autonomy: "confirm", principal });
+    await sendMessage(adminId, channel, r.reply + (r.pending.length ? "\n\n(Há uma ação aguardando sua aprovação no painel.)" : ""));
+  }, activeAdmins);
 }

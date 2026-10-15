@@ -148,3 +148,38 @@ Nenhuma decisão abaixo foi tomada neste documento.
 - D11 Repositório de referência: AssistentePessoal ou Jarvis.
 
 Próximo passo após a gravação: revisar o arquivo criado e confirmar a base oficial (D1). A Fase 2 só começa depois de aprovada, com os critérios de migração e isolamento definidos.
+
+## 13. Fase 2 — correções da revisão do diff (15/10/2026)
+Origem: revisão de `fase-2-isolamento.diff` (SHA-256 d6a67cd7…6f92c) e duas aprovações do plano de correção. Fase 2 **não encerrada**: aguarda conferência deste diff pelo responsável.
+
+| Item | Implementação | Teste automatizado |
+|---|---|---|
+| Auditoria sem conteúdo privado | `audit()` em `db.js` grava só campos de uma allowlist explícita (ids, códigos, escopos, contagens); campos fora dela são descartados e contados em `dropped`. Comandos, prompts, mensagens e caminhos de arquivo não são mais enviados. | `phase2-fixes`: token sintético em comando, prompt, mensagem e gatilho ausente da tabela `audit` e de `GET /api/audit` |
+| Aprovações 404 | Rota e `resolveApproval()` verificam a propriedade; aprovação alheia, legada ou inexistente → HTTP 404 `{error:"not_found"}` | `phase2-fixes`, `isolation`, `http-auth` |
+| Resolução atômica | Estados: `pending → running → done/error`, `pending → denied`. Um único `UPDATE … WHERE status='pending'` decide quem executa; perdedores recebem 409. Falha na execução → `error`. Processo interrompido em `running` vira `interrupted` ao reiniciar (nunca reexecuta). Host desligado consome como `denied`. | 3 aprovações simultâneas → 200/409/409, uma única execução |
+| Bots legados | Bloqueio auditado (`authz.bot_denied`, `legacy_blocked`, `trigger_type`) na rota manual (resposta 404 idêntica a bot inexistente), em `triggerByText` e no agendador (só no instante real de disparo; o laço de 20 s não audita). Sem texto nem caminho. | `phase2-fixes`: manual, voz e agendador; nenhuma `run` criada |
+| Reivindicar `runs` | Na mesma transação: se o bot da execução tem dono diferente do solicitante → 403 `foreign_bot_run`, rollback total | lista mista → nada atribuído |
+| Reivindicar aprovações | Pendentes passam a `legacy_expired` na mesma transação; `command`/`created_at` preservados; evento `legacy.approvals_expired`. Só `pending` é executável em todo o código. | aprovação expirada → 409, sem execução; lista com id inválido → rollback, continua `pending` |
+
+Resultado nesta sessão [V]: `node --test tests/*.test.mjs` 84/84; `vitest` 7/7. Não validado: CI Linux/Windows, IA real, Telegram real.
+Limite conhecido: bots legados com gatilho de arquivo nunca são observados (não há tentativa real a auditar). `GET /api/audit` continua visível às duas administradoras — agora sem conteúdo privado.
+
+## 14. Fase 2 — correção final da auditoria (diff v3, 15/10/2026)
+
+Status: implementado e testado automaticamente; **Fase 2 continua aberta** até a revisão do diff v3.
+
+- `server/db.js`: `path`, `backup` e `token` removidos de `AUDIT_FIELDS`; `reason` aceito só de um conjunto fechado (`AUDIT_REASONS`); `agent` só nomes canônicos (`AUDIT_AGENTS`) ou UUID v4; novo campo `route` aceita apenas padrões estáticos `/api/...`; `backup_verified` booleano.
+- `migration.v2_report`: grava só `from`, `to`, `backup_verified: true` e contagens — nunca o caminho do backup.
+- `server/index.js`: `authz.csrf_rejected` e `authz.denied` gravam `route` (padrão declarado, ex. `/api/memories/:id`), nunca `url.pathname` nem query.
+- `tests/audit-probe.test.mjs`: sonda `TOKEN_SECRETO_SONDA` em path, backup, token, reason, agent, rejeição de rota (CSRF com sonda no caminho e na query), `authz.denied` e relatório de migração (diretório de dados com a sonda no nome); verifica tabela `audit` e `GET /api/audit`.
+- Resultados: `node --test` 90/90; vitest 7/7; `vite build` OK. Sem migrações alteradas, sem dependências novas, sem commit/push/banco real.
+- Pendente: CI Linux/Windows, IA real, Telegram real; devolução de propriedade após recuperação de acesso.
+
+## 15. Fase 2 — teste HTTP real de autorização negada (diff v4, 15/10/2026)
+
+Status: implementado e testado automaticamente; **Fase 2 continua aberta** até a revisão do diff v4.
+
+- Lacuna da revisão do v3: o teste de `authz.denied` chamava `audit()` diretamente.
+- `tests/audit-probe.test.mjs`: novo teste emite um token de serviço real (`POST /api/auth/tokens`, escopo só `memories:read`) e faz `DELETE /api/memories/TOKEN_SECRETO_SONDA?probe=TOKEN_SECRETO_SONDA&TOKEN_SECRETO_SONDA=1` por HTTP. Verifica 403 `forbidden`, exatamente um `authz.denied` com `{ route: "/api/memories/:id", need: "memories:write", principal: "service" }`, e ausência da sonda e do token na tabela `audit` e em `GET /api/audit`.
+- Nenhum código do serviço alterado. Resultados: `node --test` 91/91; vitest 7/7.
+- Pendente: CI Linux/Windows, IA real, Telegram real; devolução de propriedade após recuperação de acesso.

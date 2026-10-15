@@ -73,6 +73,76 @@ CREATE TABLE IF NOT EXISTS bootstrap (
 );
 `,
   },
+  {
+    version: 2,
+    name: "isolation: resource ownership, personal/global settings, legacy claims",
+    // Only NEW tables are created; preserved tables are read, never written, so the
+    // count + SHA-256 check proves memories/agents/bots/runs/approvals/kv/audit are untouched.
+    // Ownership is copied only from a provable source:
+    //  - bots: owner_admin_id already stored in the bot JSON (Phase 1) AND that admin exists;
+    //  - runs: the run's bot has such a proven owner (owners never change after creation);
+    //  - everything else (memories, agents, approvals, unproven bots/runs) stays without owner.
+    sql: (db) => V2_SCHEMA + V2_COPY.filter((c) => c.needs.every((t) => tableExists(db, t))).map((c) => c.sql).join("\n"),
+  },
+];
+
+const tableExists = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
+
+const V2_SCHEMA = `
+CREATE TABLE IF NOT EXISTS ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER IF NOT EXISTS trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+
+CREATE TABLE IF NOT EXISTS admin_settings (
+  admin_id TEXT PRIMARY KEY REFERENCES admins(id),
+  data TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS global_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  data TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS legacy_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  data TEXT NOT NULL,
+  claimed_by TEXT REFERENCES admins(id),
+  claimed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS legacy_claims (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  resource_type TEXT NOT NULL,
+  resource_id TEXT NOT NULL,
+  admin_id TEXT NOT NULL REFERENCES admins(id),
+  at TEXT NOT NULL
+);
+`;
+// Data copies run only when the source tables exist (fresh/partial databases skip them).
+const V2_COPY = [
+  { needs: ["kv"], sql: `
+INSERT OR IGNORE INTO legacy_settings (id, data)
+  SELECT 1, value FROM kv WHERE key = 'settings';
+INSERT OR IGNORE INTO global_settings (id, data)
+  SELECT 1, json_object(
+    'host', json_extract(value, '$.host'),
+    'integrations', json_extract(value, '$.integrations'),
+    'localVoiceUrl', json_extract(value, '$.voice.localVoiceUrl'))
+  FROM kv WHERE key = 'settings';` },
+  { needs: ["bots"], sql: `
+INSERT OR IGNORE INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin)
+  SELECT 'bot', b.id, json_extract(b.data, '$.owner_admin_id'), strftime('%Y-%m-%dT%H:%M:%fZ','now'), 'migrated'
+  FROM bots b JOIN admins a ON a.id = json_extract(b.data, '$.owner_admin_id');` },
+  { needs: ["bots", "runs"], sql: `
+INSERT OR IGNORE INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin)
+  SELECT 'run', r.id, o.owner_admin_id, strftime('%Y-%m-%dT%H:%M:%fZ','now'), 'migrated'
+  FROM runs r JOIN ownership o ON o.resource_type = 'bot' AND o.resource_id = r.bot_id;` },
 ];
 
 const count = (db, t) => {
@@ -133,7 +203,7 @@ export function migrate(db, dataDir, opts = {}) {
     const before = snapshot(db);
     db.exec("BEGIN IMMEDIATE");
     try {
-      db.exec(m.sql);
+      db.exec(typeof m.sql === "function" ? m.sql(db) : m.sql);
       if (opts.failAfterSql === m.version) throw new Error("falha simulada");
       const after = snapshot(db);
       if (before !== after) throw new Error(`migração ${m.version} alterou dados preservados`);

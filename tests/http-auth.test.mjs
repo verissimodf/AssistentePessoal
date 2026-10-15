@@ -128,9 +128,12 @@ test("bots created now record an owner; approvals cannot be resolved twice", asy
   assert.equal(bot.owner_admin_id, auth.listAdmins()[0].id);
   const { db } = await import("../server/db.js");
   db.prepare("INSERT INTO approvals (id, command, status, created_at) VALUES ('ap1','echo oi','pending','now')").run();
+  // Phase 2: an approval without owner is invisible; give this one a real owner for the race check.
+  assert.equal((await req("/api/approvals/ap1", { method: "POST", body: { approve: false }, ...session })).status, 404);
+  const { assignNew } = await import("../server/ownership.js");
+  assignNew("approval", "ap1", auth.listAdmins()[0].id);
   const [a, b] = await Promise.all([1, 2].map(() => req("/api/approvals/ap1", { method: "POST", body: { approve: false }, ...session })));
-  const outs = [await a.json(), await b.json()].map((x) => x.output);
-  assert.equal(outs.filter((o) => /Negado/.test(o)).length, 1);
+  assert.deepEqual([a.status, b.status].sort(), [200, 409]);
 });
 
 test("bot scopes are sanitized on save: wildcard/admin-only scopes are dropped", async () => {
