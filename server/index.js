@@ -279,16 +279,29 @@ route("POST", "/api/mail/:account/send", "session", ({ params, body, principal }
   getMailService().send(principal.adminId, params.account, body));
 // Drafts for human approval (D9): created by an agent/bot tool, reviewed and confirmed by a human.
 // The body lives only in process memory (mail-drafts.js) — never persisted, never audited.
+const draftView = (d) => ({ ...d, createdAt: new Date(d.createdAt).toISOString(), expiresAt: new Date(d.expiresAt).toISOString() });
+route("GET", "/api/mail/drafts", "session", ({ principal }) => getDraftStore().list(principal.adminId).map(draftView));
 route("GET", "/api/mail/drafts/:id", "session", ({ params, principal }) => {
   const d = getDraftStore().get(params.id, principal.adminId);
   if (!d) throw new AuthError(404, "not_found");
-  return { id: d.id, account: d.account, to: d.to, subject: d.subject, body: d.body, expiresAt: new Date(d.expiresAt).toISOString() };
+  return draftView(d);
 });
-route("POST", "/api/mail/drafts/:id/send", "session", ({ params, body, principal }) => {
+route("DELETE", "/api/mail/drafts/:id", "session", ({ params, principal }) => {
+  if (!getDraftStore().cancel(params.id, principal.adminId)) throw new AuthError(404, "not_found");
+  return { ok: true };
+});
+route("POST", "/api/mail/drafts/:id/send", "session", async ({ params, body, principal }) => {
   if (body.confirm !== "ENVIAR") throw new AuthError(400, "confirmation_required");
-  const draft = getDraftStore().consume(params.id, principal.adminId); // single-use, before sending
+  const draft = getDraftStore().claim(params.id, principal.adminId); // single-use claim, before sending
   if (!draft) throw new AuthError(404, "not_found");
-  return getMailService().send(principal.adminId, draft.account, { to: draft.to, subject: draft.subject, body: draft.body, confirm: "ENVIAR" });
+  try {
+    const result = await getMailService().send(principal.adminId, draft.account, { to: draft.to, subject: draft.subject, body: draft.body, confirm: "ENVIAR" });
+    getDraftStore().settle(params.id, principal.adminId, "sent");
+    return { ...result, state: "sent" };
+  } catch (e) {
+    getDraftStore().settle(params.id, principal.adminId, "failed");
+    throw e;
+  }
 });
 
 // ---------- authentication + authorization (single choke point) ----------

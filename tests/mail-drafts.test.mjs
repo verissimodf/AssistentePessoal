@@ -12,7 +12,7 @@ process.env.JARVIS_NO_LISTEN = "1";
 const { createApp } = await import("../server/index.js");
 const { auth, db } = await import("../server/db.js");
 const { setMailTransport } = await import("../server/mail-service.js");
-const { createDraftStore } = await import("../server/mail-drafts.js");
+const { createDraftStore, setDraftStore } = await import("../server/mail-drafts.js");
 const { callTool } = await import("../server/tools.js");
 
 const PW = "senha-muito-forte-1";
@@ -23,7 +23,7 @@ let server, base;
 const A = {},
   B = {};
 
-const tstate = { sent: [] };
+const tstate = { sent: [], mode: "ok" };
 const transport = {
   async list() {
     return { messages: [], total: 0 };
@@ -35,6 +35,7 @@ const transport = {
     return { messages: [], total: 0 };
   },
   async send(_a, outgoing) {
+    if (tstate.mode === "fail") throw Object.assign(new Error("boom"), { code: "ECONNRESET" });
     tstate.sent.push(outgoing);
     return { messageId: "d1" };
   },
@@ -52,6 +53,17 @@ const req = (path, { method = "GET", body, s, bearer } = {}) =>
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 const json = async (r) => ({ status: r.status, body: await r.json() });
+/** Same session cookie, but WITHOUT the CSRF header (to prove mutating routes reject it). */
+const reqNoCsrf = (path, { method = "POST", body, s } = {}) =>
+  fetch(base + path, {
+    method,
+    headers: {
+      origin: ORIGIN,
+      ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      cookie: s.cookie,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
 async function login(u, t) {
   const r = await req("/api/auth/login", { method: "POST", body: { username: u, password: PW } });
   assert.equal(r.status, 200);
@@ -117,9 +129,9 @@ after(() => server.close());
 
 // ---------- draft store (unit) ----------
 
-test("drafts: store is owner-bound, single-use and expires", () => {
+test("drafts: store is owner-bound, single-use, stateful and expiring", () => {
   let t = 1_000;
-  const store = createDraftStore({ ttlMs: 100, max: 2, now: () => t });
+  const store = createDraftStore({ ttlMs: 100, outcomeTtlMs: 50, max: 2, now: () => t });
   const { id } = store.put({
     adminId: "A",
     account: "gmail",
@@ -127,21 +139,68 @@ test("drafts: store is owner-bound, single-use and expires", () => {
     subject: "s",
     body: "b",
   });
+  assert.equal(store.get(id, "A").state, "pending");
   assert.equal(store.get(id, "A").body, "b");
   assert.equal(store.get(id, "B"), null, "another admin cannot read it");
   assert.equal(store.get("unknown", "A"), null);
-  assert.equal(store.consume(id, "B"), null, "another admin cannot consume it");
-  assert.ok(store.consume(id, "A"), "owner consumes");
-  assert.equal(store.consume(id, "A"), null, "single-use: no replay");
+  assert.equal(store.claim(id, "B"), null, "another admin cannot claim it");
+  assert.equal(store.claim(id, "A").body, "b", "owner claims the body once");
+  assert.equal(store.get(id, "A").body, null, "body dropped as soon as it is claimed");
+  assert.equal(store.claim(id, "A"), null, "single-use: no replay");
+  assert.equal(store.settle(id, "A", "sent"), true);
+  assert.equal(store.get(id, "A").state, "sent");
   const live = store.put({
     adminId: "A",
     account: "gmail",
     to: "x@y.z",
     subject: "s",
-    body: "b",
+    body: "segredo",
   }).id;
   t = 1_100;
-  assert.equal(store.get(live, "A"), null, "expired drafts are discarded");
+  assert.equal(store.get(live, "A").state, "expired", "past its TTL a pending draft expires");
+  assert.equal(store.get(live, "A").body, null, "expired drafts keep no body");
+  t = 1_200;
+  assert.equal(
+    store.get(live, "A"),
+    null,
+    "terminal records are discarded after the outcome window",
+  );
+});
+
+test("drafts: cancel discards a pending draft and cannot be replayed", () => {
+  const store = createDraftStore();
+  const { id } = store.put({
+    adminId: "A",
+    account: "gmail",
+    to: "x@y.z",
+    subject: "s",
+    body: "b",
+  });
+  assert.equal(store.cancel(id, "B"), false, "another admin cannot cancel");
+  assert.equal(store.cancel(id, "A"), true);
+  assert.equal(store.get(id, "A").state, "cancelled");
+  assert.equal(store.get(id, "A").body, null, "cancelled drafts keep no body");
+  assert.equal(store.claim(id, "A"), null, "a cancelled draft can never be sent");
+  assert.equal(store.cancel(id, "A"), false, "already cancelled");
+});
+
+test("drafts: list returns only the admin's own metadata, never the body", () => {
+  const store = createDraftStore();
+  store.put({ adminId: "A", account: "gmail", to: "a@x.test", subject: "sa", body: "segredoA" });
+  store.put({ adminId: "B", account: "outlook", to: "b@x.test", subject: "sb", body: "segredoB" });
+  const list = store.list("A");
+  assert.equal(list.length, 1, "only the caller's drafts");
+  assert.equal(list[0].to, "a@x.test");
+  assert.deepEqual(Object.keys(list[0]).sort(), [
+    "account",
+    "createdAt",
+    "expiresAt",
+    "id",
+    "state",
+    "subject",
+    "to",
+  ]);
+  assert.equal(JSON.stringify(list).includes("segredo"), false, "list never carries the body");
 });
 
 test("drafts: the store evicts the oldest entry past its capacity", () => {
@@ -293,6 +352,130 @@ test("drafts: the body is never persisted anywhere", async () => {
     const rows = db.prepare(`SELECT * FROM "${t}"`).all();
     assert.equal(JSON.stringify(rows).includes(BODY), false, `no body persisted in table ${t}`);
   }
+});
+
+// ---------- panel: list, cancel, states, CSRF, expiry, failure ----------
+
+test("drafts: the panel lists only the caller's own drafts, with states and no body", async () => {
+  const out = await callTool(
+    "send_email",
+    { account: "gmail", to: "lista@exemplo.test", subject: "Lista", body: BODY },
+    agentCtx(A.id),
+  );
+  const id = draftId(out);
+  const list = await json(await req("/api/mail/drafts", { s: A }));
+  assert.equal(list.status, 200);
+  const mine = list.body.find((d) => d.id === id);
+  assert.ok(mine, "the caller's draft is listed");
+  assert.equal(mine.state, "pending");
+  assert.equal(mine.to, "lista@exemplo.test");
+  assert.equal("body" in mine, false, "the list never carries the body");
+  assert.equal(JSON.stringify(list.body).includes(BODY), false);
+  const other = await json(await req("/api/mail/drafts", { s: B }));
+  assert.equal(
+    other.body.some((d) => d.id === id),
+    false,
+    "another admin never sees it",
+  );
+});
+
+test("drafts: a draft can be cancelled, and a cancelled draft can never be sent", async () => {
+  const out = await callTool(
+    "send_email",
+    { account: "gmail", to: "cancela@exemplo.test", subject: "s", body: BODY },
+    agentCtx(A.id),
+  );
+  const id = draftId(out);
+  assert.equal((await req(`/api/mail/drafts/${id}`, { method: "DELETE", s: A })).status, 200);
+  const view = await json(await req(`/api/mail/drafts/${id}`, { s: A }));
+  assert.equal(view.body.state, "cancelled");
+  assert.equal(view.body.body, null, "the body is discarded on cancel");
+  assert.equal(
+    (
+      await req(`/api/mail/drafts/${id}/send`, {
+        method: "POST",
+        body: { confirm: "ENVIAR" },
+        s: A,
+      })
+    ).status,
+    404,
+  );
+  assert.equal(
+    (await req(`/api/mail/drafts/${id}`, { method: "DELETE", s: A })).status,
+    404,
+    "already cancelled",
+  );
+});
+
+test("drafts: mutating draft routes require CSRF", async () => {
+  const out = await callTool(
+    "send_email",
+    { account: "gmail", to: "csrf@exemplo.test", subject: "s", body: BODY },
+    agentCtx(A.id),
+  );
+  const id = draftId(out);
+  assert.equal(
+    (await reqNoCsrf(`/api/mail/drafts/${id}/send`, { body: { confirm: "ENVIAR" }, s: A })).status,
+    403,
+  );
+  assert.equal((await reqNoCsrf(`/api/mail/drafts/${id}`, { method: "DELETE", s: A })).status, 403);
+});
+
+test("drafts: an expired draft is reported as expired and cannot be sent", async () => {
+  setDraftStore(createDraftStore({ ttlMs: 0 })); // every draft expires immediately
+  try {
+    const out = await callTool(
+      "send_email",
+      { account: "gmail", to: "exp@exemplo.test", subject: "s", body: BODY },
+      agentCtx(A.id),
+    );
+    const id = draftId(out);
+    const view = await json(await req(`/api/mail/drafts/${id}`, { s: A }));
+    assert.equal(view.body.state, "expired");
+    assert.equal(view.body.body, null, "expired drafts expose no body");
+    assert.equal(
+      (
+        await req(`/api/mail/drafts/${id}/send`, {
+          method: "POST",
+          body: { confirm: "ENVIAR" },
+          s: A,
+        })
+      ).status,
+      404,
+    );
+  } finally {
+    setDraftStore(createDraftStore());
+  }
+});
+
+test("drafts: a transport failure is reported and the draft cannot be replayed", async () => {
+  const out = await callTool(
+    "send_email",
+    { account: "gmail", to: "falha@exemplo.test", subject: "s", body: BODY },
+    agentCtx(A.id),
+  );
+  const id = draftId(out);
+  tstate.mode = "fail";
+  const failed = await json(
+    await req(`/api/mail/drafts/${id}/send`, { method: "POST", body: { confirm: "ENVIAR" }, s: A }),
+  );
+  tstate.mode = "ok";
+  assert.equal(failed.status, 502);
+  assert.equal(failed.body.error, "provider_error");
+  const view = await json(await req(`/api/mail/drafts/${id}`, { s: A }));
+  assert.equal(view.body.state, "failed");
+  assert.equal(view.body.body, null, "the body is gone after the attempt");
+  assert.equal(
+    (
+      await req(`/api/mail/drafts/${id}/send`, {
+        method: "POST",
+        body: { confirm: "ENVIAR" },
+        s: A,
+      })
+    ).status,
+    404,
+    "no replay after failure",
+  );
 });
 
 // ---------- titularidade (must run last: it deactivates A) ----------
