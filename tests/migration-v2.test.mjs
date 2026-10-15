@@ -8,6 +8,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { migrate, MIGRATIONS, currentVersion, snapshotCounts, snapshotContent } from "../server/migrations.js";
 
+// This suite validates migration v2 in isolation; later migrations (v3+) are out of scope here.
+const migrateV2 = (db, dir, opts = {}) => migrate(db, dir, { ...opts, migrations: MIGRATIONS.filter((m) => m.version <= 2) });
+
 const SETTINGS = JSON.stringify({ general: { language: "en" }, host: { enabled: true, allowlist: "echo" }, integrations: { claude_code: { enabled: true, command: "claude -p {prompt}" } }, voice: { tts: "xtts", localVoiceUrl: "http://127.0.0.1:7778" }, providers: { openai: { apiKey: "enc:a:b:c" } } });
 
 function v1Db() {
@@ -39,7 +42,7 @@ const owners = (db) => Object.fromEntries(db.prepare("SELECT resource_type || ':
 test("v2 preserves counts and SHA-256 content of every preserved table; backup verified", () => {
   const { db, dir } = v1Db();
   const counts = snapshotCounts(db), content = snapshotContent(db);
-  const r = migrate(db, dir);
+  const r = migrateV2(db, dir);
   assert.deepEqual([r.from, r.to], [1, 2]);
   assert.ok(r.backup);
   assert.deepEqual(snapshotCounts(db), counts);
@@ -53,14 +56,14 @@ test("v2 preserves counts and SHA-256 content of every preserved table; backup v
 
 test("v2 assigns ownership only from provable sources; nothing else gets an owner", () => {
   const { db, dir } = v1Db();
-  migrate(db, dir);
+  migrateV2(db, dir);
   assert.deepEqual(owners(db), { "bot:b-owned": "ad1", "run:r1": "ad1" });
   assert.equal(db.prepare("SELECT origin FROM ownership WHERE resource_id='b-owned'").get().origin, "migrated");
 });
 
 test("v2 keeps legacy settings byte-for-byte; global extracts only global keys without widening policy", () => {
   const { db, dir } = v1Db();
-  migrate(db, dir);
+  migrateV2(db, dir);
   assert.equal(db.prepare("SELECT data FROM legacy_settings").get().data, SETTINGS);
   assert.equal(db.prepare("SELECT claimed_by FROM legacy_settings").get().claimed_by, null);
   const g = JSON.parse(db.prepare("SELECT data FROM global_settings").get().data);
@@ -72,9 +75,9 @@ test("v2 keeps legacy settings byte-for-byte; global extracts only global keys w
 
 test("v2 is idempotent: second run makes no backup and changes nothing", () => {
   const { db, dir } = v1Db();
-  migrate(db, dir);
+  migrateV2(db, dir);
   const before = JSON.stringify([snapshotContent(db), owners(db)]);
-  const again = migrate(db, dir);
+  const again = migrateV2(db, dir);
   assert.equal(again.backup, null);
   assert.equal(JSON.stringify([snapshotContent(db), owners(db)]), before);
 });
@@ -82,23 +85,23 @@ test("v2 is idempotent: second run makes no backup and changes nothing", () => {
 test("v2 failure rolls back completely: stays v1, no new tables, data intact; retry succeeds", () => {
   const { db, dir } = v1Db();
   const content = snapshotContent(db);
-  assert.throws(() => migrate(db, dir, { failAfterSql: 2 }), /desfeita/);
+  assert.throws(() => migrateV2(db, dir, { failAfterSql: 2 }), /desfeita/);
   assert.equal(currentVersion(db), 1);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name IN ('ownership','admin_settings','global_settings','legacy_settings','legacy_claims')").get().n, 0);
   assert.deepEqual(snapshotContent(db), content);
-  assert.equal(migrate(db, dir).to, 2);
+  assert.equal(migrateV2(db, dir).to, 2);
 });
 
 test("ownership records are immutable (no silent re-assignment)", () => {
   const { db, dir } = v1Db();
-  migrate(db, dir);
+  migrateV2(db, dir);
   assert.throws(() => db.prepare("UPDATE ownership SET owner_admin_id='outro' WHERE resource_id='b-owned'").run(), /ownership_immutable/);
 });
 
 test("restoring the verified backup returns the exact pre-migration database", () => {
   const { db, dir } = v1Db();
   const content = snapshotContent(db);
-  const { backup } = migrate(db, dir);
+  const { backup } = migrateV2(db, dir);
   db.close();
   const restored = join(dir, "restaurado.db");
   copyFileSync(backup, restored);

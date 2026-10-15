@@ -1,8 +1,15 @@
 # J.A.R.V.I.S. — Documento de Continuidade (Fases 2, 3 e 4)
 
-Data: 2026-10-15 (UTC). Estado: especificação aguardando aprovação.
+Data: 2026-10-15 (UTC). Estado: Fase 2 integrada; Fase 3 (gestão documental) implementada com o primeiro formato **TXT** (ver progresso abaixo).
 
 Procedência: **[V]** verificado nesta sessão · **[R]** reportado pelo responsável · **[I]** inferência · **[D]** decisão pendente.
+
+## 0. Progresso de execução (atualizado)
+
+- **Fase 2 — Preferências e isolamento:** integrada na `main` (PR #3, merge `514c8ff`). Tabela `ownership` (v2), configurações pessoal/global, bloqueio de dados sem dono com reivindicação explícita e auditada. CI verde (Linux + Windows).
+- **Fase 3 — Gestão documental:** implementada com o **primeiro formato TXT** (sem dependência nova), conforme o PM §6 (“começando por PDF ou TXT, conforme a análise técnica”). Módulo `server/documents.js`, migração **v3** (tabela `documents` + extensão do CHECK de `ownership` para `document`), rotas `/api/documents*`, ferramenta de agente `document_search`, página **Documentos** e `tests/documents.test.mjs`. Validação de entrada, armazenamento local privado, busca por dono, exclusão e tratamento de conteúdo não confiável.
+- **Decisão técnica registrada (D6):** o primeiro formato é **TXT** — nenhuma biblioteca nova, menor superfície de risco; PDF fica para depois de validar o TXT (PM §6: “adicionar novos formatos somente após validar o anterior”).
+- **Pendências:** recuperação da propriedade dos recursos após recuperação de acesso continua em aberto; PDF, pesquisa semântica de documentos e Fase 4 (e-mail) não iniciados.
 
 ## 1. Repositório e base
 | Item | Valor | Proc. |
@@ -81,17 +88,17 @@ Estados: Implementado / Parcial / Ausente / Não localizado.
 | F2.6 | Tarefas agendadas e integrações | PM §3.3 | Parcial | bots com dono (`bots.js` l.15-20); Telegram/MCP sem dono | identidade dos canais |
 | F2.7 | Migrações compatíveis | PM §6 F2, §2.4 | Parcial (infra) | `migrations.js` | nova v2, sem editar a v1 |
 | F2.8 | Lista de preferências | — | Não localizado | — | D5 |
-| F3.1 | Primeiro formato PDF ou TXT | PM §6 F3 | Ausente | — | D6 |
-| F3.2 | Validação de entrada | PM §6 F3, §5.2 | Ausente (infra parcial) | limite de bytes já existe (`index.js`) | tipo/assinatura/tamanho |
-| F3.3 | Armazenamento local privado | PM §6 F3, §5.2 | Ausente | — | — |
-| F3.4 | Extração | PM §6 F3 | Ausente | — | depende de D6 |
-| F3.5 | Busca/recuperação | PM §6 F3, §5.2 | Ausente (reaproveitável) | embeddings de `memories` | índice por dono |
-| F3.6 | Contexto no agente | PM §6 F3, §5.4 | Ausente | — | ferramenta com escopo |
-| F3.7 | Acesso por proprietário | PM §6 F3, §5.2 | Ausente | depende de F2.2 | Fase 2 antes |
-| F3.8 | Exclusão/reindexação | PM §5.2 | Ausente | — | — |
-| F3.9 | Conteúdo não confiável | PM §5.2 | Parcial | hostpolicy + escopo em `callTool` | isolar o texto no prompt |
-| F3.10 | Testes válidos/inválidos/erros | PM §6 F3 | Ausente | — | — |
-| F3.11 | Valor do limite de tamanho | — | Não localizado | — | D8 |
+| F3.1 | Primeiro formato PDF ou TXT | PM §6 F3 | Implementado | TXT (`server/documents.js`, migração v3) | PDF depois |
+| F3.2 | Validação de entrada | PM §6 F3, §5.2 | Implementado | `validateDocument` (nome/tipo/vazio/tamanho/NUL) | — |
+| F3.3 | Armazenamento local privado | PM §6 F3, §5.2 | Implementado | `data/documents/<adminId>/`, modo 0600 | — |
+| F3.4 | Extração | PM §6 F3 | Implementado (TXT) | texto UTF-8 integral | PDF depois |
+| F3.5 | Busca/recuperação | PM §6 F3, §5.2 | Implementado | `searchDocuments` por dono (keyword) | semântica depois |
+| F3.6 | Contexto no agente | PM §6 F3, §5.4 | Implementado | ferramenta `document_search` (escopo) | — |
+| F3.7 | Acesso por proprietário | PM §6 F3, §5.2 | Implementado | `ownership` tipo `document` | — |
+| F3.8 | Exclusão/reindexação | PM §5.2 | Implementado | `deleteDocument` (linha+ownership+arquivo) | — |
+| F3.9 | Conteúdo não confiável | PM §5.2 | Implementado | texto devolvido como dado, nunca executado | isolar no prompt |
+| F3.10 | Testes válidos/inválidos/erros | PM §6 F3 | Implementado | `tests/documents.test.mjs` (6) | — |
+| F3.11 | Valor do limite de tamanho | — | Implementado | `JARVIS_MAX_DOCUMENT` (2 MB) | ajustar se preciso |
 | F4.1 | Preservar conectores | PM §6 F4 | Implementado (base) | `comms.js` | regressão |
 | F4.2 | Leitura | PM §6 F4 | Parcial | `readEmail` (`comms.js` l.45) | escopo próprio |
 | F4.3 | Pesquisa | PM §6 F4 | Ausente | — | — |

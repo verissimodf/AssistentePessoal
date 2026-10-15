@@ -5,6 +5,7 @@ import { getSettings } from "./settings.js";
 import { decide } from "./hostpolicy.js";
 import { can, TOOL_SCOPES, AuthError } from "./auth.js";
 import { embed, cosine } from "./llm.js";
+import { searchDocuments } from "./documents.js";
 import { assignNew, owns, tx } from "./ownership.js";
 import { sendMessage, sendEmail, readInbox, readCalendar } from "./comms.js";
 
@@ -22,6 +23,7 @@ export const TOOL_DEFS = {
   context7_docs: { description: "Fetch up-to-date library/framework documentation from Context7 (context7-mcp).", params: { library: "string", topic: "string" } },
   crawl_page: { description: "Crawl a web page (including JavaScript pages) with crawl4ai and return clean markdown.", params: { url: "string" } },
   openhands_task: { description: "Delegate a software task to the OpenHands autonomous coding agent.", params: { task: "string" } },
+  document_search: { description: "Search the user's own documents (TXT) for relevant passages.", params: { query: "string" } },
 };
 // Alias exposed in the panel
 TOOL_DEFS.read_calendar.params = {};
@@ -212,6 +214,10 @@ export async function callTool(name, input, ctx) {
     case "send_email": return sendEmail(adminId, input.account, input.to, input.subject, input.body);
     case "read_email": return readInbox(adminId, input.account);
     case "read_calendar": return readCalendar(adminId);
+    case "document_search": {
+      const r = searchDocuments(adminId, input.query);
+      return r.length ? r.map((x) => `- ${x.name}: ${x.snippet}`).join("\n") : "Nenhum documento relevante.";
+    }
     case "context7_docs": return context7Docs(input.library, input.topic);
     case "crawl_page": return crawlPage(input.url);
     case "openhands_task": return openhandsTask(input.task);

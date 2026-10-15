@@ -14,6 +14,7 @@ import { publicSettings, updateSettings, legacySettingsInventory, claimLegacySet
 import { owns, ownerOf, ownedIds, assignNew, dropOwnership, tx, legacyInventory, claimLegacy, ClaimError } from "./ownership.js";
 import { runAgent, testProvider } from "./llm.js";
 import { remember, recall, resolveApproval } from "./tools.js";
+import { listDocuments, getDocument, saveDocument, searchDocuments, deleteDocument } from "./documents.js";
 import { runBot, listRuns, startScheduler, triggerByText, auditLegacyBlocked } from "./bots.js";
 import { tts, cloneVoice } from "./voice.js";
 import { startTelegramPolling, sendMessage } from "./comms.js";
@@ -143,6 +144,29 @@ route("DELETE", "/api/memories/:id", "memories:write", ({ params, principal }) =
   tx(() => { db.prepare("DELETE FROM memories WHERE id=?").run(params.id); dropOwnership("memory", params.id); }); return { ok: true };
 });
 
+// ---------- documents (Phase 3: private local document store, TXT first) ----------
+route("GET", "/api/documents", "documents:read", ({ principal }) => listDocuments(me(principal)));
+route("GET", "/api/documents/search", "documents:read", ({ query, principal }) => searchDocuments(me(principal), query.get("q") || ""));
+route("GET", "/api/documents/:id", "documents:read", ({ params, principal }) => {
+  const d = getDocument(me(principal), params.id);
+  if (!d) notFound();
+  return { id: d.id, name: d.name, mime: d.mime, size: d.size, created_at: d.created_at, content: d.content_text };
+});
+route("POST", "/api/documents", "documents:write", async ({ body, form, principal }) => {
+  const owner = me(principal);
+  if (form) {
+    const file = form.get("file");
+    if (!file || typeof file === "string") throw new AuthError(400, "file_required");
+    const buf = Buffer.from(await file.arrayBuffer());
+    return saveDocument(owner, { name: String(form.get("name") || file.name || "documento.txt"), mime: String(form.get("mime") || file.type || "text/plain"), buffer: buf });
+  }
+  return saveDocument(owner, { name: String(body.name ?? ""), mime: String(body.mime || "text/plain"), buffer: Buffer.from(String(body.content ?? ""), "utf8") });
+});
+route("DELETE", "/api/documents/:id", "documents:write", ({ params, principal }) => {
+  if (!deleteDocument(me(principal), params.id).ok) notFound();
+  return { ok: true };
+});
+
 for (const [name, store, type] of [["agents", agents, "agent"], ["bots", bots, "bot"]]) {
   const withOwner = (item, adminId) => (name === "bots" ? { ...item, owner_admin_id: adminId } : item);
   route("GET", `/api/${name}`, `${name}:read`, ({ principal }) =>
@@ -241,7 +265,7 @@ export function createApp() {
       if (out?.__raw) return send(res, 200, out.__raw, origin, out.__type, extra);
       return send(res, 200, out ?? { ok: true }, origin, "application/json", extra);
     } catch (e) {
-      if (e instanceof AuthError) {
+      if (e instanceof AuthError || (e && typeof e.status === "number" && typeof e.code === "string")) {
         if (e.status === 413) res.setHeader("connection", "close"); // unread body: never reuse this socket
         const extra = e.retryAfter ? { "retry-after": String(e.retryAfter) } : undefined;
         return send(res, e.status, { error: e.code, ...(e.retryAfter ? { retryAfter: e.retryAfter } : {}) }, origin, "application/json", extra);

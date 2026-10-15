@@ -5,6 +5,16 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 ---
 
 
+## [1.3.0] — Fase 3: gestão documental (TXT)
+### Adicionado
+- Armazenamento local **privado** de documentos (primeiro formato: **TXT**), com propriedade por administrador via a tabela `ownership` (migração v3).
+- Validação de entrada: nome, tipo suportado, documento vazio, limite de tamanho (`JARVIS_MAX_DOCUMENT`, padrão 2 MB) e rejeição de conteúdo binário (NUL).
+- Rotas `GET/POST/DELETE /api/documents` e `GET /api/documents/search`, com escopos `documents:read`/`documents:write`.
+- Ferramenta de agente `document_search` (escopo `documents:read`), reavaliada no momento da execução.
+- Página **Documentos** no painel (enviar, listar, buscar, ver e excluir).
+- Documentos são tratados como **dados não confiáveis**: armazenados e devolvidos como texto, nunca executados.
+- Testes: `tests/documents.test.mjs`.
+
 ## [1.2.0] — Fase 2: preferências e isolamento
 - Migração v2 (só tabelas novas): propriedade de recursos, configurações pessoais/globais, configurações antigas preservadas.
 - Memórias, agentes, bots, execuções, aprovações e configurações isolados por administrador (rotas, ferramentas, agendador, Telegram).
