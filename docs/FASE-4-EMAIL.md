@@ -2,8 +2,8 @@
 
 **Status: proposta — aguarda aprovação da especificação e de F4.11.** Deriva do Plano Mestre §6
 (Fase 4) e da matriz de rastreabilidade F4.1–F4.11 em `docs/CONTINUIDADE.md`. As partes **independentes**
-já iniciadas — **núcleo de e-mail** e **rotas/ferramentas ligadas com transporte mockado** (sem
-rede/credenciais) — estão em §10; o restante segue bloqueado (§9, §11).
+já iniciadas — **núcleo de e-mail**, **rotas/ferramentas com transporte mockado** e **adaptador
+IMAP/SMTP injetável (não ativado)** — estão em §10; o restante segue bloqueado (§9, §11).
 
 ## 1. Objetivo
 
@@ -71,6 +71,12 @@ aprovação** — **não é decisão tomada**.
 
 **Bloqueador:** estes valores precisam de aprovação antes da implementação. Enquanto não aprovados, a
 Fase 4 **não** deve ser iniciada.
+
+> **Atualização (incremento 3, 2026-10-15):** os limites de **paginação**, **tamanho de corpo/filtro**,
+> **timeout/retry/backoff** já estão implementados como **mecanismo configurável** (`LIMITS` em
+> `server/mail.js`, sobrescrevível por `createMailService({ limits })`) — ver §10.2. **Rate limit**
+> (consulta/min, envio/hora) e **retenção** continuam **pendentes** (política): não foram implementados
+> para não inventar valores nem persistir corpos.
 
 ## 4. Fora de escopo (Fase 4)
 
@@ -194,10 +200,54 @@ nenhum provedor é contatado, nada é enviado, nenhuma credencial é usada.
   inválidas, sucesso/falha do mock, timeout, retry, sanitização, envio sem/com confirmação, auditoria
   sem conteúdo, token de serviço recusado no envio.
 
-**Ainda dependente de decisão (não implementado):** adaptador de transporte real (IMAP/SMTP) e
-autenticação no provedor (D7); aprovação humana para envio por agente/bot (§11.5); gestão de conexão
-persistida (F4.5); pastas/regras e retenção (F4.11). Nada disso é iniciado sem as respostas da §11 e sem
-autorização explícita de operação real.
+**Ainda dependente de decisão (não implementado):** autenticação no provedor (D7); aprovação humana para
+envio por agente/bot (§11.5); gestão de conexão persistida (F4.5); pastas/regras e **valores** de F4.11.
+Nada disso é iniciado sem as respostas da §11 e sem autorização explícita de operação real.
+
+### 10.2 Incremento 3 — F4.11 (limites explícitos) e D7 (adaptador IMAP/SMTP)
+
+**Estado (2026-10-15):** (a) os **limites provisórios** foram tornados explícitos e continuam
+configuráveis por serviço; (b) o **adaptador IMAP/SMTP** (D7) foi implementado como interface
+injetável — **não** ativado por padrão e **não** conectado a provedor algum.
+
+**a) Limites provisórios (F4.11) — mecanismo pronto, valores pendentes.** Todos vêm de `LIMITS`
+(`server/mail.js`) e podem ser sobrescritos por `createMailService({ limits })`:
+
+| Chave | Valor provisório | Corresponde a (§3.1) |
+|---|---|---|
+| `defaultPage` | 20 | paginação (default) |
+| `maxPage` | 50 | paginação — `limit` ≤ 50 |
+| `maxTotal` | 500 | paginação — teto por consulta |
+| `maxBody` | 100 000 | tamanho máx. de corpo |
+| `maxFilter` | 200 | tamanho máx. de filtro |
+| `retries` | 2 | falhas do provedor — retry limitado |
+| `timeoutMs` | 8 000 | falhas do provedor — timeout |
+| `baseDelayMs` | 250 | backoff exponencial |
+
+**Não** há rate limit implementado (consulta/min, envio/hora): é **política** de F4.11 e continua
+pendente — implementar sem valor aprovado seria inventar política. Também **não** há retenção nem
+persistência de corpo.
+
+**b) Adaptador D7 (`server/mail-imap.js`).** Implementa a mesma interface do núcleo
+(`list`/`read`/`search`/`send`) sobre **IMAP/SMTP + senha de aplicativo** (OAuth fora do escopo):
+
+- **IMAPS 993** (`secure: true`) para leitura/pesquisa; **SMTP 587 com STARTTLS** (`requireTLS: true`)
+  para envio; `logger: false`.
+- Clientes do provedor **injetáveis** (`createImapClient`/`createSmtpTransport`) → **testes de contrato
+  com clientes falsos**, sem socket. As importações de `imapflow`/`nodemailer` são **lazy**: importar ou
+  construir o transporte **não** carrega o provedor.
+- **Timeout, retry limitado e classificação de erros** continuam no núcleo (`mail.js`), que envolve cada
+  chamada; o adaptador apenas lança o erro do provedor e **nunca** o registra.
+- **Redação de segredos:** usuário/senha só entram nas opções do cliente; **nunca** são retornados,
+  logados ou embutidos em mensagem de erro.
+- **Não ativado por padrão:** o transporte default de `mail-service.js` continua sendo o **mock**.
+  Ativar o real exige decisão (D7) e credenciais configuradas pelo operador.
+- Testes: `tests/mail-imap.test.mjs` (9 casos de contrato) — opções/TLS/auth, lock de caixa liberado,
+  logout, janela de paginação, mapeamento de busca, envio + fechamento, provedor desconhecido, falha de
+  auth classificada como 502 **sem vazar a senha**.
+
+**Ainda dependente de decisão:** ativar o transporte real (D7) e a autenticação no provedor; valores de
+F4.11 (rate limit); envio por agente (§11.5).
 
 ## 11. Perguntas de produto (bloqueios indispensáveis)
 
