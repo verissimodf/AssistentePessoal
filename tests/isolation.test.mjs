@@ -83,7 +83,12 @@ test("memories: unowned legacy rows are invisible to both admins (list, search, 
   for (const s of [A, B]) {
     const list = (await json(await req("/api/memories", { s }))).body.map((x) => x.id);
     assert.equal(list.includes("lm1"), false);
-    assert.equal((await json(await req(`/api/memories?q=${LEGACY_SECRET}`, { s }))).body.length, 0);
+    // With embeddings active a search may legitimately return the admin's OWN memories
+    // (semantic match), so the invariant is ownership — never a foreign or legacy row —
+    // not an empty result set.
+    const found = (await json(await req(`/api/memories?q=${LEGACY_SECRET}`, { s }))).body;
+    assert.equal(found.some((m) => m.id === "lm1" || m.id === "lm2"), false, "legacy rows must not leak");
+    for (const m of found) assert.equal(ownerOf("memory", m.id), s.id, "every returned row belongs to the caller");
     assert.equal((await req("/api/memories/lm1", { method: "PUT", body: { content: "x" }, s })).status, 404);
     assert.equal((await req("/api/memories/lm1", { method: "DELETE", s })).status, 404);
   }
@@ -136,10 +141,31 @@ test("tools: remember/recall are scoped to the principal's admin; no owner → d
   assert.match(await callTool("remember", { content: "ana gosta de chá verde", tags: "pref" }, cA), /salva/);
   assert.match(await callTool("recall", { query: "chá verde" }, cA), /chá verde/);
   assert.match(await callTool("recall", { query: "chá verde" }, cB), /Nada encontrado/);
-  assert.match(await callTool("recall", { query: LEGACY_SECRET }, cA), /Nada encontrado/);
+  // A query about the legacy secret must never surface the legacy CONTENT; A may still get
+  // their own semantically-similar memory, which is legitimate — the invariant is content/ownership.
+  assert.doesNotMatch(await callTool("recall", { query: LEGACY_SECRET }, cA), new RegExp(LEGACY_SECRET), "legacy content must not leak");
   const orphan = { autonomy: "confirm", pending: [], principal: { type: "channel", channel: "telegram", adminId: null, scopes: ["memories:read"] } };
   assert.match(await callTool("recall", { query: "chá" }, orphan), /Permissão negada/);
   assert.match(await callTool("send_message", { channel: "telegram", text: "x" }, { ...cA }), /não habilitado|Permissão negada/);
+});
+
+test("isolation holds with semantic search: a query close to A's memory never returns it to B", async () => {
+  const secret = "coordenada secreta da ana: alfa-bravo-charlie";
+  await req("/api/memories", { method: "POST", body: { content: secret, tags: "privado" }, s: A });
+  const q = "coordenada secreta alfa bravo charlie";
+  const cA = { autonomy: "confirm", pending: [], principal: A.principal };
+  const cB = { autonomy: "confirm", pending: [], principal: B.principal };
+  // A legitimately finds their own memory (keyword and/or semantic match).
+  assert.match(await callTool("recall", { query: q }, cA), /alfa-bravo-charlie/);
+  // B must never see it, even with a query crafted to match A's memory semantically.
+  const forB = await callTool("recall", { query: q }, cB);
+  assert.doesNotMatch(forB, /alfa-bravo-charlie/, "cross-admin leak via semantic search (tool)");
+  assert.doesNotMatch(forB, /coordenada secreta/, "cross-admin leak via semantic search (tool)");
+  // And through the HTTP search route as well.
+  const bSearch = (await json(await req("/api/memories?q=coordenada%20secreta%20alfa", { s: B }))).body;
+  assert.equal(bSearch.some((m) => String(m.content || "").includes("alfa-bravo-charlie")), false, "cross-admin leak via semantic search (HTTP)");
+  const aSearch = (await json(await req("/api/memories?q=coordenada%20secreta%20alfa", { s: A }))).body;
+  assert.ok(aSearch.some((m) => String(m.content || "").includes("alfa-bravo-charlie")), "owner still finds their own memory");
 });
 
 test("approvals: owned by the requester; the other admin and legacy approvals cannot be resolved", async () => {
