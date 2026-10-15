@@ -163,6 +163,39 @@ CREATE INDEX IF NOT EXISTS idx_ownership_history_corr ON ownership_history(corre
 `;
     },
   },
+  {
+    version: 5,
+    name: "d-rec: manual purge jobs (staged, resumable, idempotent)",
+    // Manual-only purge. No retention deadlines. A job quarantines eligible resources first,
+    // then removes them item by item (idempotent). Preserved tables are untouched.
+    sql: `
+CREATE TABLE IF NOT EXISTS purge_jobs (
+  id TEXT PRIMARY KEY,
+  actor_admin_id TEXT NOT NULL REFERENCES admins(id),
+  from_admin_id TEXT NOT NULL REFERENCES admins(id),
+  resource_type TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('isolated','done','error')),
+  correlation_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS purge_items (
+  job_id TEXT NOT NULL REFERENCES purge_jobs(id),
+  resource_id TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('isolated','removed')),
+  error TEXT,
+  PRIMARY KEY (job_id, resource_id)
+);
+CREATE INDEX IF NOT EXISTS idx_purge_items_job ON purge_items(job_id);
+CREATE TABLE IF NOT EXISTS purge_quarantine (
+  resource_type TEXT NOT NULL,
+  resource_id TEXT NOT NULL,
+  job_id TEXT NOT NULL REFERENCES purge_jobs(id),
+  at TEXT NOT NULL,
+  PRIMARY KEY (resource_type, resource_id)
+);
+`,
+  },
 ];
 
 const tableExists = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);

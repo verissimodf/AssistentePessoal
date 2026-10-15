@@ -11,7 +11,7 @@ import { resolve } from "node:path";
 import { db, agents, bots, auth, audit } from "./db.js";
 import { AuthError, can, isVerifiedAdmin, sanitizeBotScopes, DEFAULT_BOT_SCOPES } from "./auth.js";
 import { publicSettings, updateSettings, legacySettingsInventory, claimLegacySettings } from "./settings.js";
-import { owns, ownerOf, ownedIds, assignNew, dropOwnership, tx, legacyInventory, claimLegacy, ClaimError, inactiveAdminInventory, transferResources } from "./ownership.js";
+import { owns, ownerOf, ownedIds, assignNew, dropOwnership, tx, legacyInventory, claimLegacy, ClaimError, inactiveAdminInventory, transferResources, purgeResources, resumePurge, cancelPurge, listPurgeJobs } from "./ownership.js";
 import { runAgent, testProvider } from "./llm.js";
 import { remember, recall, resolveApproval } from "./tools.js";
 import { listDocuments, getDocument, saveDocument, searchDocuments, deleteDocument } from "./documents.js";
@@ -228,6 +228,24 @@ route("POST", "/api/ownership/transfer", "session", ({ body, principal }) => {
   if (!auth.hasRecentReauth(principal)) throw new AuthError(403, "reauth_required");
   if (body.confirm !== "TRANSFERIR") throw new AuthError(400, "confirmation_required");
   try { return transferResources(principal.adminId, body); }
+  catch (e) { if (e instanceof ClaimError) throw new AuthError(e.status, e.code); throw e; }
+});
+// D_REC-2: MANUAL-ONLY purge (no retention deadlines). Reauth + explicit confirmation required.
+route("GET", "/api/ownership/purge", "session", () => listPurgeJobs());
+route("POST", "/api/ownership/purge", "session", ({ body, principal }) => {
+  if (!auth.hasRecentReauth(principal)) throw new AuthError(403, "reauth_required");
+  if (body.confirm !== "EXPURGAR") throw new AuthError(400, "confirmation_required");
+  try { return purgeResources(principal.adminId, body); }
+  catch (e) { if (e instanceof ClaimError) throw new AuthError(e.status, e.code); throw e; }
+});
+route("POST", "/api/ownership/purge/:id/resume", "session", ({ params, principal }) => {
+  if (!auth.hasRecentReauth(principal)) throw new AuthError(403, "reauth_required");
+  try { return resumePurge(params.id, principal.adminId); }
+  catch (e) { if (e instanceof ClaimError) throw new AuthError(e.status, e.code); throw e; }
+});
+route("POST", "/api/ownership/purge/:id/cancel", "session", ({ params, principal }) => {
+  if (!auth.hasRecentReauth(principal)) throw new AuthError(403, "reauth_required");
+  try { return cancelPurge(params.id, principal.adminId); }
   catch (e) { if (e instanceof ClaimError) throw new AuthError(e.status, e.code); throw e; }
 });
 
