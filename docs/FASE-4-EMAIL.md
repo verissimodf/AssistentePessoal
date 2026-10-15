@@ -2,8 +2,9 @@
 
 **Status: proposta — aguarda aprovação da especificação e de F4.11.** Deriva do Plano Mestre §6
 (Fase 4) e da matriz de rastreabilidade F4.1–F4.11 em `docs/CONTINUIDADE.md`. As partes **independentes**
-já iniciadas — **núcleo de e-mail**, **rotas/ferramentas com transporte mockado** e **adaptador
-IMAP/SMTP injetável (não ativado)** — estão em §10; o restante segue bloqueado (§9, §11).
+já iniciadas — **núcleo de e-mail**, **rotas/ferramentas com transporte mockado**, **adaptador IMAP/SMTP
+injetável (não ativado)** e **rascunho para aprovação humana** — estão em §10; o restante segue bloqueado
+(§9, §11).
 
 ## 1. Objetivo
 
@@ -247,7 +248,45 @@ persistência de corpo.
   auth classificada como 502 **sem vazar a senha**.
 
 **Ainda dependente de decisão:** ativar o transporte real (D7) e a autenticação no provedor; valores de
-F4.11 (rate limit); envio por agente (§11.5).
+F4.11 (rate limit).
+
+### 10.3 Incremento 3 — rascunho para aprovação (D9) e titularidade
+
+**Estado (2026-10-15):** o envio por **agente/bot** passou de "recusado" para **rascunho para aprovação
+humana**, sem persistir o corpo. Contas permanecem vinculadas ao titular original.
+
+**a) Rascunho em memória (o "canal temporário seguro").** `server/mail-drafts.js` guarda o rascunho
+**somente na memória do processo** (um `Map`) — **nunca** em banco, disco, auditoria ou log. Propriedades:
+
+- **Vínculo ao dono:** `get`/`consume` exigem o mesmo `adminId`; rascunho de outro admin é
+  **indistinguível** de inexistente (`404`).
+- **Uso único:** `consume` remove o rascunho antes de enviar (sem replay).
+- **Expiração e descarte:** TTL provisório (10 min, configurável) + limite de entradas (200, com descarte
+  do mais antigo). Nada é retido após expirar/usar.
+
+Fluxo: a ferramenta `send_email` de um agente/bot **não envia** — cria o rascunho e audita
+`send_email(draft_created)` (sem conteúdo). O humano revisa (`GET /api/mail/drafts/:id`, **`session`**) e
+confirma (`POST /api/mail/drafts/:id/send`, **`session`** + `confirm: "ENVIAR"`). **Criar o rascunho não
+é autorização** — o envio exige a confirmação humana explícita. Tokens de serviço **não** revisam nem
+enviam rascunhos.
+
+**b) Titularidade (§5).** As contas vivem nas **configurações pessoais** de cada admin e **não** são
+recursos da tabela `ownership`. Portanto:
+
+- **Nada é transferido nem reativado automaticamente**; um admin desativado mantém a conta consigo e
+  outro admin **não** a alcança (`404 account_not_found`).
+- A recuperação de acesso (break-glass) **não** altera `admin_settings` → a conta **permanece com o
+  titular original**.
+- Uma transferência de conta, se necessária, seria uma decisão nova (§11.3) — **não** é feita por
+  inferência nem reutilizando `ownership` (que não modela contas de e-mail).
+
+Testes: `tests/mail-drafts.test.mjs` (8 casos) — store (dono, uso único, expiração, capacidade),
+rascunho pelo agente sem envio, entrada inválida, revisão só por sessão, confirmação explícita, uso
+único, isolamento entre admins, corpo **não** persistido em nenhuma tabela, e titularidade (conta fica
+com o dono após desativação).
+
+**Ainda dependente de decisão:** TTL/capacidade definitivos do rascunho (provisórios aqui); ativar o
+transporte real (D7); valores de F4.11; transferência de conta (§11.3).
 
 ## 11. Perguntas de produto (bloqueios indispensáveis)
 
@@ -269,12 +308,15 @@ F4.11 (rate limit); envio por agente (§11.5).
    campos de credencial; **não** afeta o núcleo atual (que é agnóstico de transporte).
 5. **Envio por agente/bot (D9, §6.4) — corpo entre solicitação e aprovação.** Como levar a mensagem do
    pedido até a aprovação humana **sem persistir o corpo** (proibido nesta fase)?
-   (a) O agente **não envia** e o humano envia pelo painel (comportamento atual);
+   (a) O agente **não envia** e o humano envia pelo painel;
    (b) persistir o corpo **cifrado e com TTL curto** só enquanto a aprovação está pendente (exige definir
    o TTL — política de retenção);
-   (c) o agente prepara um **rascunho na UI** (sem persistir no servidor) e o humano confirma.
-   *Consequência:* (a) é seguro e já implementado; (b) exige decisão de retenção (F4.11); (c) exige
-   trabalho de UI. Enquanto não decidido, envio por agente permanece **recusado**.
+   (c) o agente prepara um **rascunho transitório em memória** (não persistido em banco/disco) e o humano
+   revisa e confirma no painel.
+   *Consequência:* **(c) foi implementado** (§10.3) — rascunho em memória, vinculado ao dono, de uso único
+   e com expiração; a confirmação é uma etapa humana explícita. **Pendente:** a **tela do painel** para
+   revisar/confirmar e o **valor definitivo** do TTL (provisório: 10 min). (b) continua fora do escopo
+   por exigir decisão de retenção.
 
 **A autorização para implementar código não autoriza** acesso a contas reais, uso de credenciais, envio
 de mensagens nem alteração de dados reais — essas operações exigem autorização explícita específica.

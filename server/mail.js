@@ -253,7 +253,7 @@ export async function withRetry(
 
 const ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function validateOutgoing({ to, subject, body } = {}, limits = LIMITS) {
+export function validateOutgoing({ to, subject, body } = {}, limits = LIMITS) {
   if (typeof to !== "string" || to.length > 320 || !ADDRESS.test(to.trim()))
     throw new MailError(400, "invalid_recipient");
   if (typeof body !== "string" || !body.trim()) throw new MailError(400, "invalid_body");
