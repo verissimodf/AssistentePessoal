@@ -41,6 +41,7 @@ const STATE: Record<string, { label: string; cls: string }> = {
   sending: { label: "Enviando…", cls: "bg-secondary text-muted-foreground" },
   sent: { label: "Enviado", cls: "bg-primary/20 text-primary" },
   failed: { label: "Falha", cls: "bg-destructive/20 text-destructive" },
+  unknown: { label: "Resultado desconhecido", cls: "bg-destructive/20 text-destructive" },
   cancelled: { label: "Cancelado", cls: "bg-muted text-muted-foreground" },
   expired: { label: "Expirado", cls: "bg-muted text-muted-foreground" },
 };
@@ -243,7 +244,9 @@ export function DraftsPage() {
 
               {!canAct && (
                 <p className="text-xs text-muted-foreground">
-                  Este rascunho não está pendente: não pode ser enviado nem cancelado.
+                  {selected.state === "unknown"
+                    ? "O provedor não confirmou o resultado: a mensagem pode ter sido entregue. Por segurança, não oferecemos reenvio — crie um novo rascunho se necessário."
+                    : "Este rascunho não está pendente: não pode ser enviado nem cancelado."}
                 </p>
               )}
             </>

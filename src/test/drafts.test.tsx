@@ -28,6 +28,15 @@ const drafts = [
     createdAt: "2026-10-15T09:00:00Z",
     expiresAt: "2026-10-15T09:05:00Z",
   },
+  {
+    id: "d3",
+    account: "gmail",
+    to: "c@x.test",
+    subject: "Tres",
+    state: "unknown",
+    createdAt: "2026-10-15T08:00:00Z",
+    expiresAt: "2026-10-15T08:05:00Z",
+  },
 ];
 
 const methodOf = (call: unknown[]) => (call[1] as RequestInit | undefined)?.method;
@@ -59,14 +68,14 @@ beforeEach(() => {
 describe("E-mail drafts page", () => {
   it("lists the drafts with their real states", async () => {
     render(<DraftsPage />);
-    await waitFor(() => expect(screen.getAllByTestId("draft-item")).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByTestId("draft-item")).toHaveLength(3));
     expect(screen.getByText("Pendente")).toBeInTheDocument();
     expect(screen.getByText("Enviado")).toBeInTheDocument();
   });
 
   it("opening a draft only reads it — never an approval", async () => {
     render(<DraftsPage />);
-    await waitFor(() => expect(screen.getAllByTestId("draft-item")).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByTestId("draft-item")).toHaveLength(3));
     fireEvent.click(itemAt(0));
     await waitFor(() =>
       expect(screen.getByTestId("draft-body")).toHaveTextContent("corpo do rascunho"),
@@ -76,7 +85,7 @@ describe("E-mail drafts page", () => {
 
   it("requires an explicit confirmation before sending, using confirm: ENVIAR", async () => {
     render(<DraftsPage />);
-    await waitFor(() => expect(screen.getAllByTestId("draft-item")).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByTestId("draft-item")).toHaveLength(3));
     fireEvent.click(itemAt(0));
     await waitFor(() => expect(screen.getByTestId("draft-send")).toBeInTheDocument());
 
@@ -92,16 +101,26 @@ describe("E-mail drafts page", () => {
 
   it("a non-pending draft cannot be sent or cancelled", async () => {
     render(<DraftsPage />);
-    await waitFor(() => expect(screen.getAllByTestId("draft-item")).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByTestId("draft-item")).toHaveLength(3));
     fireEvent.click(itemAt(1)); // d2 = sent
     await waitFor(() => expect(screen.getByTestId("draft-body")).toBeInTheDocument());
     expect(screen.queryByTestId("draft-send")).toBeNull();
     expect(screen.queryByTestId("draft-cancel")).toBeNull();
   });
 
+  it("an unknown outcome is shown without offering a resend", async () => {
+    render(<DraftsPage />);
+    await waitFor(() => expect(screen.getAllByTestId("draft-item")).toHaveLength(3));
+    fireEvent.click(itemAt(2)); // d3 = unknown
+    await waitFor(() => expect(screen.getByTestId("draft-body")).toBeInTheDocument());
+    expect(screen.getAllByText("Resultado desconhecido").length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("draft-send")).toBeNull();
+    expect(screen.getByText(/pode ter sido entregue/i)).toBeInTheDocument();
+  });
+
   it("cancelling discards the draft", async () => {
     render(<DraftsPage />);
-    await waitFor(() => expect(screen.getAllByTestId("draft-item")).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByTestId("draft-item")).toHaveLength(3));
     fireEvent.click(itemAt(0));
     await waitFor(() => expect(screen.getByTestId("draft-cancel")).toBeInTheDocument());
     fireEvent.click(screen.getByTestId("draft-cancel"));

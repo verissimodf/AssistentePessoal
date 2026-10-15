@@ -191,6 +191,25 @@ export function classifyConnectionError(err) {
   return { state: "error", retryable: false };
 }
 
+/**
+ * Errors that can ONLY happen before the message is handed to the SMTP server (DNS, connection,
+ * TLS or authentication), so the message is provably NOT sent. Anything else is treated as
+ * AMBIGUOUS: the server may already have accepted the message, so we must never invite a blind
+ * resend. Deliberately narrow — "when in doubt, assume it may have gone out".
+ */
+const NOT_SENT_HINT =
+  /EAUTH|AUTHENTICATIONFAILED|invalid login|535|534|5\.7\.[01]|ECONNREFUSED|EHOSTUNREACH|ENOTFOUND|EAI_AGAIN|ENETUNREACH|certificate|self[- ]signed|CERT_|TLS|ssl/i;
+
+/**
+ * Classify the outcome of a failed send WITHOUT leaking the provider message.
+ * - `failed`  → the message provably was not transmitted (safe to consider not sent);
+ * - `unknown` → the provider result is ambiguous (may have been delivered); never auto-retry.
+ */
+export function classifySendError(err) {
+  const text = `${err?.code ?? ""} ${err?.message ?? err ?? ""}`;
+  return NOT_SENT_HINT.test(text) ? { outcome: "failed" } : { outcome: "unknown" };
+}
+
 // ---------- credential redaction (F4.6) ----------
 
 /** Account view safe for HTTP/UI/logs: never the password, e-mail address only masked. */
@@ -351,6 +370,21 @@ export function createMailService({
     }
   };
 
+  // Sending is NEVER retried: a retry after an ambiguous failure could deliver the message twice.
+  // The failure is classified as `failed` (provably not sent) or `unknown` (ambiguous).
+  const callOnce = async (adminId, accountId, account, fn) => {
+    try {
+      return await withTimeout(
+        Promise.resolve().then(() => fn(account)),
+        cfg.timeoutMs,
+      );
+    } catch (err) {
+      const { outcome } = classifySendError(err);
+      audit("mail.send_failed", { admin: adminId, account: accountId, status: outcome });
+      throw Object.assign(new MailError(502, "provider_error"), { outcome });
+    }
+  };
+
   return {
     async list(adminId, accountId, { limit, offset } = {}) {
       const account = requireAccount(adminId, accountId);
@@ -380,7 +414,9 @@ export function createMailService({
       const account = requireAccount(adminId, accountId);
       if (confirm !== "ENVIAR") throw new MailError(400, "confirmation_required"); // D9: manual send
       const outgoing = validateOutgoing({ to, subject, body }, cfg);
-      const result = await call(adminId, accountId, account, (a) => transport.send(a, outgoing));
+      const result = await callOnce(adminId, accountId, account, (a) =>
+        transport.send(a, outgoing),
+      );
       audit("mail.sent", { admin: adminId, account: accountId }); // no recipient/subject/body
       return { ok: true, messageId: result?.messageId ?? null };
     },

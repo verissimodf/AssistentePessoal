@@ -23,7 +23,7 @@ let server, base;
 const A = {},
   B = {};
 
-const tstate = { sent: [], mode: "ok" };
+const tstate = { sent: [], mode: "ok", sendCalls: 0, sendError: null };
 const transport = {
   async list() {
     return { messages: [], total: 0 };
@@ -35,6 +35,8 @@ const transport = {
     return { messages: [], total: 0 };
   },
   async send(_a, outgoing) {
+    tstate.sendCalls += 1;
+    if (tstate.sendError) throw tstate.sendError;
     if (tstate.mode === "fail") throw Object.assign(new Error("boom"), { code: "ECONNRESET" });
     tstate.sent.push(outgoing);
     return { messageId: "d1" };
@@ -448,22 +450,28 @@ test("drafts: an expired draft is reported as expired and cannot be sent", async
   }
 });
 
-test("drafts: a transport failure is reported and the draft cannot be replayed", async () => {
+test("drafts: an ambiguous transport failure is reported as unknown and never replayed", async () => {
   const out = await callTool(
     "send_email",
     { account: "gmail", to: "falha@exemplo.test", subject: "s", body: BODY },
     agentCtx(A.id),
   );
   const id = draftId(out);
-  tstate.mode = "fail";
+  const before = tstate.sendCalls;
+  tstate.mode = "fail"; // ECONNRESET after the attempt: the message MAY have gone out
   const failed = await json(
     await req(`/api/mail/drafts/${id}/send`, { method: "POST", body: { confirm: "ENVIAR" }, s: A }),
   );
   tstate.mode = "ok";
   assert.equal(failed.status, 502);
   assert.equal(failed.body.error, "provider_error");
+  assert.equal(tstate.sendCalls, before + 1, "a send is never retried (no duplicate delivery)");
   const view = await json(await req(`/api/mail/drafts/${id}`, { s: A }));
-  assert.equal(view.body.state, "failed");
+  assert.equal(
+    view.body.state,
+    "unknown",
+    "ambiguous outcome is never reported as a clean failure",
+  );
   assert.equal(view.body.body, null, "the body is gone after the attempt");
   assert.equal(
     (
@@ -474,8 +482,64 @@ test("drafts: a transport failure is reported and the draft cannot be replayed",
       })
     ).status,
     404,
-    "no replay after failure",
+    "no replay after an ambiguous outcome",
   );
+});
+
+test("drafts: a failure before the message is handed over is a clean failure", async () => {
+  const out = await callTool(
+    "send_email",
+    { account: "gmail", to: "recusa@exemplo.test", subject: "s", body: BODY },
+    agentCtx(A.id),
+  );
+  const id = draftId(out);
+  tstate.sendError = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:587"), {
+    code: "ECONNREFUSED",
+  });
+  const r = await json(
+    await req(`/api/mail/drafts/${id}/send`, { method: "POST", body: { confirm: "ENVIAR" }, s: A }),
+  );
+  tstate.sendError = null;
+  assert.equal(r.status, 502);
+  const view = await json(await req(`/api/mail/drafts/${id}`, { s: A }));
+  assert.equal(view.body.state, "failed", "provably not sent → failed");
+  assert.equal(
+    (
+      await req(`/api/mail/drafts/${id}/send`, {
+        method: "POST",
+        body: { confirm: "ENVIAR" },
+        s: A,
+      })
+    ).status,
+    404,
+  );
+});
+
+test("drafts: send errors and audit never expose content or credentials", async () => {
+  const out = await callTool(
+    "send_email",
+    { account: "gmail", to: "sigilo@exemplo.test", subject: "segredo", body: BODY },
+    agentCtx(A.id),
+  );
+  const id = draftId(out);
+  tstate.sendError = Object.assign(new Error(`SMTP error with ${SECRET}`), { code: "ETIMEDOUT" });
+  const r = await json(
+    await req(`/api/mail/drafts/${id}/send`, { method: "POST", body: { confirm: "ENVIAR" }, s: A }),
+  );
+  tstate.sendError = null;
+  assert.equal(r.status, 502);
+  const raw = JSON.stringify(r.body);
+  assert.equal(raw.includes(BODY), false, "no body in the error");
+  assert.equal(raw.includes(SECRET), false, "no credential in the error");
+  assert.equal(auditText().includes(BODY), false);
+  assert.equal(auditText().includes(SECRET), false);
+  const logged = db.prepare("SELECT detail FROM audit WHERE kind = 'mail.send_failed'").all();
+  assert.ok(logged.length >= 1);
+  assert.deepEqual(Object.keys(JSON.parse(logged.at(-1).detail)).sort(), [
+    "account",
+    "admin",
+    "status",
+  ]);
 });
 
 // ---------- titularidade (must run last: it deactivates A) ----------

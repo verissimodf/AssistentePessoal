@@ -8,6 +8,7 @@ import {
   validateSearch,
   clampPage,
   classifyConnectionError,
+  classifySendError,
   redactAccount,
   withRetry,
   createMailService,
@@ -146,6 +147,30 @@ test("classifyConnectionError: auth fails fast, transient retries", () => {
     state: "error",
     retryable: false,
   });
+});
+
+test("classifySendError: only pre-transmission errors are a clean failure", () => {
+  assert.deepEqual(
+    classifySendError(Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" })),
+    { outcome: "failed" },
+  );
+  assert.deepEqual(
+    classifySendError(Object.assign(new Error("Invalid login: 535"), { code: "EAUTH" })),
+    { outcome: "failed" },
+  );
+  assert.deepEqual(
+    classifySendError(Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" })),
+    { outcome: "unknown" },
+  );
+  assert.deepEqual(
+    classifySendError(Object.assign(new Error("provider timeout"), { code: "ETIMEDOUT" })),
+    { outcome: "unknown" },
+  );
+  assert.deepEqual(
+    classifySendError(new Error("boom")),
+    { outcome: "unknown" },
+    "when in doubt, assume it may have been sent",
+  );
 });
 
 test("redactAccount: never exposes the password; masks the address", () => {
