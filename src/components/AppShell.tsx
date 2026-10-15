@@ -1,11 +1,14 @@
 import { Link, Outlet } from "@tanstack/react-router";
-import { Bot, Brain, MessageSquare, Settings, Users } from "lucide-react";
-import { useBridgeStatus } from "@/lib/bridge";
+import { Bot, Brain, LogOut, MessageSquare, Settings, Users } from "lucide-react";
+import { logout, useAuthState, useBridgeStatus } from "@/lib/bridge";
+import { AuthGate, useAuthText } from "@/components/AuthGate";
 import { LANGS, useI18n, type Lang } from "@/lib/i18n";
 
 export function AppShell() {
   const { t, lang, setLang } = useI18n();
   const online = useBridgeStatus();
+  const auth = useAuthState();
+  const a = useAuthText();
   const nav = [
     { to: "/", label: t("nav_chat"), icon: MessageSquare },
     { to: "/memoria", label: t("nav_memory"), icon: Brain },
@@ -46,10 +49,15 @@ export function AppShell() {
             <span className={`h-2 w-2 rounded-full ${online ? "bg-chart-3" : "bg-accent"} animate-pulse`} />
             <span className="hidden text-muted-foreground md:inline">{online ? t("connected") : t("demo")}</span>
           </div>
+          {auth === "ok" && (
+            <button onClick={() => logout()} className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground" aria-label={a("logout")}>
+              <LogOut className="h-3 w-3" /><span className="hidden md:inline">{a("logout")}</span>
+            </button>
+          )}
         </div>
       </aside>
       <main className="flex-1 overflow-hidden">
-        <Outlet />
+        <AuthGate><Outlet /></AuthGate>
       </main>
     </div>
   );

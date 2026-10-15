@@ -72,7 +72,8 @@ const safeJson = (s) => { try { return typeof s === "string" ? JSON.parse(s || "
  * Run an agent: model ↔ tools loop.
  * @returns {{reply, reasoning, tools, pending}}
  */
-export async function runAgent({ agentId, messages, autonomy = "confirm", maxSteps = 12, extraSystem = "" }) {
+export async function runAgent({ agentId, messages, autonomy = "confirm", maxSteps = 12, extraSystem = "", principal }) {
+  if (!principal) throw new Error("runAgent requires a principal (identity responsible for this run)");
   const { TOOL_DEFS, callTool, recall } = await import("./tools.js");
   const s = getSettings();
   const agent = (agentId && agents.get(agentId)) || agents.list().find((a) => a.active) || agents.list()[0];
@@ -90,7 +91,7 @@ export async function runAgent({ agentId, messages, autonomy = "confirm", maxSte
   const isAnthropic = agent.provider === "anthropic";
   const convo = messages.map((m) => ({ role: m.role, content: m.content }));
   const used = [], pending = [], reasoning = [];
-  const ctx = { autonomy, pending };
+  const ctx = { autonomy, pending, principal };
 
   for (let step = 0; step < maxSteps; step++) {
     const out = isAnthropic ? await callAnthropic(cfg, model, system, convo, tools) : await callOpenAI(cfg, model, system, convo, tools);

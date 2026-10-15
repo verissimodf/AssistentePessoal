@@ -23,7 +23,8 @@ export const Route = createFileRoute("/bots")({
 
 const store = collection<Bot>("bots");
 const agents = collection<Agent>("agents");
-const blank: Partial<Bot> = { name: "", goal: "", agent_id: "jarvis", trigger_type: "daily", trigger_value: "08:00", autonomy: "confirm", max_steps: 8, enabled: true };
+const blank: Partial<Bot> = { name: "", goal: "", agent_id: "jarvis", trigger_type: "daily", trigger_value: "08:00", autonomy: "confirm", max_steps: 8, enabled: true, scopes: ["web", "memories:read"] };
+const BOT_SCOPES = ["web", "memories:read", "memories:write", "host:run", "comms:read", "comms:send"];
 
 function BotsPage() {
   const { t } = useI18n();
@@ -93,6 +94,19 @@ function BotsPage() {
           <select className="w-full rounded-md border border-input bg-secondary p-2 text-sm" value={edit.autonomy} onChange={(e) => setEdit({ ...edit, autonomy: e.target.value as Bot["autonomy"] })}>
             {autonomy.map(([id, l]) => <option key={id} value={id}>{l}</option>)}
           </select>
+          <label className="hud-label block">Permissões / Permissions</label>
+          <div className="grid grid-cols-2 gap-1 text-xs">
+            {BOT_SCOPES.map((sc) => {
+              const on = (edit.scopes ?? []).includes(sc);
+              return (
+                <label key={sc} className="flex items-center gap-2 font-mono">
+                  <input type="checkbox" checked={on} onChange={() => setEdit({ ...edit, scopes: on ? (edit.scopes ?? []).filter((x) => x !== sc) : [...(edit.scopes ?? []), sc] })} />
+                  {sc}
+                </label>
+              );
+            })}
+          </div>
+          {edit.id && !edit.owner_admin_id && <p className="text-xs text-muted-foreground">legacy_unowned</p>}
           <label className="hud-label block">{t("max_steps")}</label>
           <Input type="number" min={1} max={50} value={edit.max_steps ?? 8} onChange={(e) => setEdit({ ...edit, max_steps: Number(e.target.value) })} />
           <div className="flex gap-2">

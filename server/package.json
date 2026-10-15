@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node --no-warnings index.js",
     "mcp": "node --no-warnings mcp.js",
-    "test": "node --no-warnings --test ../tests/hostpolicy.test.mjs"
+    "test": "node --no-warnings --test ../tests/*.test.mjs"
   },
   "dependencies": {
     "imapflow": "^1.0.170",

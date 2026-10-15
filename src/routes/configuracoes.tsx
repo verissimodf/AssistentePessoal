@@ -11,6 +11,8 @@ import { api, bridgeUrl, DEFAULT_BRIDGE, DEFAULT_SETTINGS, loadSettings, ping, s
 import { AGENT_INTEGRATIONS, COMMS, PROVIDERS } from "@/lib/catalog";
 import { createClapDetector, thresholdFromSensitivity } from "@/lib/clap";
 import { LANGS, useI18n, type Lang } from "@/lib/i18n";
+import { SecurityPanel } from "@/components/SecurityPanel";
+import { useAuthText } from "@/components/AuthGate";
 
 export const Route = createFileRoute("/configuracoes")({
   head: () => ({
@@ -30,6 +32,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function SettingsPage() {
   const { t, setLang } = useI18n();
+  const a = useAuthText();
   const [s, setS] = useState<Settings | null>(DEFAULT_SETTINGS);
   const [bridge, setBridge] = useState(DEFAULT_BRIDGE);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -85,7 +88,10 @@ function SettingsPage() {
           <TabsTrigger value="comms">{t("s_comms")}</TabsTrigger>
           <TabsTrigger value="voice">{t("s_voice")}</TabsTrigger>
           <TabsTrigger value="general">{t("s_general")}</TabsTrigger>
+          <TabsTrigger value="security">{a("security")}</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="security"><SecurityPanel /></TabsContent>
 
         <TabsContent value="providers" className="grid gap-3 md:grid-cols-2">
           {PROVIDERS.map((p) => {
