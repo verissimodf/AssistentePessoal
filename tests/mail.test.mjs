@@ -363,3 +363,32 @@ test("settingsAccountResolver: keeps accounts isolated per admin", () => {
   assert.equal(resolve("B", "gmail"), null, "B never sees A's account");
   assert.equal(resolve("A", "outlook"), null);
 });
+
+test("limits: every bound is configurable per service (F4.11 values still pending)", async () => {
+  const { transport } = mockTransport();
+  const svc = createMailService({
+    transport,
+    resolveAccount: () => ({ type: "gmail", enabled: true, user: "a@b.test", appPassword: SECRET }),
+    audit: () => {},
+    limits: { defaultPage: 3, maxPage: 5, maxTotal: 9, maxBody: 12, maxFilter: 4 },
+  });
+  assert.deepEqual(clampPage(undefined, undefined, { defaultPage: 3, maxPage: 5, maxTotal: 9 }), {
+    limit: 3,
+    offset: 0,
+  });
+  assert.equal(
+    (await svc.list("A", "gmail", { limit: 999 })).limit,
+    5,
+    "maxPage override respected",
+  );
+  await assert.rejects(
+    svc.search("A", "gmail", { subject: "12345" }),
+    (e) => e.code === "invalid_filter",
+    "maxFilter override respected",
+  );
+  await assert.rejects(
+    svc.send("A", "gmail", { to: "x@y.z", subject: "s", body: "x".repeat(13), confirm: "ENVIAR" }),
+    (e) => e.code === "body_too_large",
+    "maxBody override respected",
+  );
+});
