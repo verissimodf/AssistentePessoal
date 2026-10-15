@@ -104,6 +104,45 @@ Resposta esperada: `{"ok":true,"version":"1.0.0","name":"Jarvis","platform":"win
 Se o painel mostrar **Modo demonstração**, o serviço local não está no ar — veja
 [docs/SOLUCAO-DE-PROBLEMAS.md](docs/SOLUCAO-DE-PROBLEMAS.md).
 
+## 🚀 Execução em Segundo Plano (Modo Silencioso)
+
+O projeto possui scripts nativos para rodar o ecossistema (Core, Painel Web e Inteligência de Voz) de forma **100% invisível em background**, sem deixar janelas de terminal abertas poluindo sua área de trabalho.
+
+### 🪟 No Windows
+
+*   **Para iniciar:** Navegue até a pasta do projeto e dê um duplo clique no arquivo:
+    ```text
+    scripts/jarvis.cmd
+    ```
+    *Os serviços subirão de forma oculta e, após 6 segundos, a interface web será aberta automaticamente no seu navegador padrão.*
+
+*   **Para encerrar:** Quando quiser desligar o assistente e liberar a memória do computador, dê um duplo clique em:
+    ```text
+    scripts/stop_jarvis.cmd
+    ```
+---
+### 🐧 No Linux (Ubuntu, Debian, Fedora, etc.)
+
+Antes da primeira execução, garanta que os scripts possuem permissão do sistema operacional rodando o comando abaixo no terminal:
+```bash
+chmod +x scripts/jarvis.sh scripts/stop_jarvis.sh
+```
+
+*   **Para iniciar:** Execute o inicializador a partir da raiz do repositório:
+    ```bash
+    ./scripts/jarvis.sh
+    ```
+    *O terminal será liberado imediatamente e você poderá fechá-lo. O J.A.R.V.I.S. continuará rodando como um serviço invisível (daemon).*
+
+*   **Para encerrar:** Execute o script de parada para limpar os processos da memória de forma segura:
+    ```bash
+    ./scripts/stop_jarvis.sh
+    ```
+---
+
+### 💡 Inicialização Automática com o Sistema
+Se você deseja que o assistente ligue sozinho assim que você ligar o computador (sem precisar clicar nos scripts manualmente), siga o nosso detalhado [Guia de Configuração de Boot (Systemd/Startup)](docs/ARQUITETURA.md#5-guia-de-configuração-inicialização-automática-boot).
+
 ## Estrutura
 
 ```text
