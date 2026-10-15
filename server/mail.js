@@ -38,6 +38,8 @@ export const LIMITS = {
   retries: 2,
   timeoutMs: 8_000,
   baseDelayMs: 250,
+  readPerMin: 30,
+  sendPerHour: 20,
 };
 
 /** Stable, content-free error type (mirrors ClaimError in ownership.js). */
@@ -268,6 +270,39 @@ export async function withRetry(
   }
 }
 
+// ---------- rate limiting (F4.11) ----------
+
+/**
+ * Sliding-window rate limiter, keyed by caller-supplied key. `now` is injectable so tests need no
+ * waiting. In-memory per process (like the rest of the phase); the values live in LIMITS.
+ */
+export function createRateLimiter({ now = () => Date.now() } = {}) {
+  const hits = new Map();
+  const window = (key, limit, windowMs) => {
+    const t = now();
+    const recent = (hits.get(key) ?? []).filter((ts) => t - ts < windowMs);
+    hits.set(key, recent);
+    return { t, recent, blocked: !!limit && limit > 0 && recent.length >= limit, limit };
+  };
+  const retryAfter = (r, windowMs) =>
+    Math.max(1, Math.ceil((windowMs - (r.t - r.recent[0])) / 1000));
+  return {
+    /** Consume one slot for `key`. Returns `{ok:true}` or `{ok:false, retryAfter}` (seconds). */
+    take(key, limit, windowMs) {
+      const r = window(key, limit, windowMs);
+      if (r.blocked) return { ok: false, retryAfter: retryAfter(r, windowMs) };
+      r.recent.push(r.t);
+      hits.set(key, r.recent);
+      return { ok: true };
+    },
+    /** Check WITHOUT consuming a slot (early rejection; the authoritative check stays in `take`). */
+    peek(key, limit, windowMs) {
+      const r = window(key, limit, windowMs);
+      return r.blocked ? { ok: false, retryAfter: retryAfter(r, windowMs) } : { ok: true };
+    },
+  };
+}
+
 // ---------- outgoing validation ----------
 
 const ADDRESS = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -347,9 +382,25 @@ export function createMailService({
   resolveAccount,
   audit = () => {},
   limits = {},
+  rateLimiter,
 } = {}) {
   if (!transport || typeof transport !== "object") throw new Error("mail transport required");
   const cfg = { ...LIMITS, ...limits };
+  const limiter = rateLimiter ?? createRateLimiter({ now: cfg.now });
+
+  const WINDOW = { read: 60_000, send: 3_600_000 };
+  const LIMIT_KEY = { read: "readPerMin", send: "sendPerHour" };
+  const rate = (adminId, accountId, kind, mode) => {
+    const check = limiter[mode](
+      `${kind}:${adminId}:${accountId}`,
+      cfg[LIMIT_KEY[kind]],
+      WINDOW[kind],
+    );
+    if (check.ok) return;
+    audit("mail.rate_limited", { admin: adminId, account: accountId, action: kind });
+    throw Object.assign(new MailError(429, "rate_limited"), { retryAfter: check.retryAfter });
+  };
+  const enforceRate = (adminId, accountId, kind) => rate(adminId, accountId, kind, "take");
 
   const requireAccount = (adminId, accountId) => {
     if (!adminId) throw new MailError(403, "admin_session_required");
@@ -388,6 +439,7 @@ export function createMailService({
   return {
     async list(adminId, accountId, { limit, offset } = {}) {
       const account = requireAccount(adminId, accountId);
+      enforceRate(adminId, accountId, "read");
       const page = clampPage(limit, offset, cfg);
       const result = await call(adminId, accountId, account, (a) => transport.list(a, page));
       return normalizeList(result, page, cfg);
@@ -396,12 +448,14 @@ export function createMailService({
     async read(adminId, accountId, id) {
       const account = requireAccount(adminId, accountId);
       if (typeof id !== "string" || !id || id.length > 200) throw new MailError(400, "invalid_id");
+      enforceRate(adminId, accountId, "read");
       const message = await call(adminId, accountId, account, (a) => transport.read(a, id));
       return normalizeMessage(message);
     },
 
     async search(adminId, accountId, rawQuery, { limit, offset } = {}) {
       const account = requireAccount(adminId, accountId);
+      enforceRate(adminId, accountId, "read");
       const criteria = validateSearch(rawQuery, cfg);
       const page = clampPage(limit, offset, cfg);
       const result = await call(adminId, accountId, account, (a) =>
@@ -414,11 +468,19 @@ export function createMailService({
       const account = requireAccount(adminId, accountId);
       if (confirm !== "ENVIAR") throw new MailError(400, "confirmation_required"); // D9: manual send
       const outgoing = validateOutgoing({ to, subject, body }, cfg);
+      enforceRate(adminId, accountId, "send");
       const result = await callOnce(adminId, accountId, account, (a) =>
         transport.send(a, outgoing),
       );
       audit("mail.sent", { admin: adminId, account: accountId }); // no recipient/subject/body
       return { ok: true, messageId: result?.messageId ?? null };
+    },
+
+    /** Non-consuming rate check (early rejection, e.g. before claiming a draft). Throws 429. */
+    peekRate(adminId, accountId, kind) {
+      requireAccount(adminId, accountId);
+      rate(adminId, accountId, kind, "peek");
+      return { ok: true };
     },
   };
 }

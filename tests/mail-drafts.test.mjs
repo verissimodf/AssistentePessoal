@@ -542,6 +542,48 @@ test("drafts: send errors and audit never expose content or credentials", async 
   ]);
 });
 
+test("drafts: a send rate limit does not consume the draft", async () => {
+  setMailTransport(transport, { timeoutMs: 50, sleep: async () => {}, sendPerHour: 1 });
+  try {
+    const first = await callTool(
+      "send_email",
+      { account: "gmail", to: "r1@exemplo.test", subject: "s", body: BODY },
+      agentCtx(A.id),
+    );
+    const firstId = draftId(first);
+    assert.equal(
+      (
+        await req(`/api/mail/drafts/${firstId}/send`, {
+          method: "POST",
+          body: { confirm: "ENVIAR" },
+          s: A,
+        })
+      ).status,
+      200,
+    );
+    const second = await callTool(
+      "send_email",
+      { account: "gmail", to: "r2@exemplo.test", subject: "s", body: BODY },
+      agentCtx(A.id),
+    );
+    const secondId = draftId(second);
+    const limited = await json(
+      await req(`/api/mail/drafts/${secondId}/send`, {
+        method: "POST",
+        body: { confirm: "ENVIAR" },
+        s: A,
+      }),
+    );
+    assert.equal(limited.status, 429);
+    assert.ok(limited.body.retryAfter >= 1);
+    const view = await json(await req(`/api/mail/drafts/${secondId}`, { s: A }));
+    assert.equal(view.body.state, "pending", "the draft survives a rate-limited attempt");
+    assert.equal(view.body.body, BODY, "its body is still available for a later confirmation");
+  } finally {
+    setMailTransport(transport, { timeoutMs: 50, sleep: async () => {} });
+  }
+});
+
 // ---------- titularidade (must run last: it deactivates A) ----------
 
 test("titularidade: a deactivated admin's account stays with the owner and is not transferred", async () => {

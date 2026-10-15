@@ -292,6 +292,9 @@ route("DELETE", "/api/mail/drafts/:id", "session", ({ params, principal }) => {
 });
 route("POST", "/api/mail/drafts/:id/send", "session", async ({ params, body, principal }) => {
   if (body.confirm !== "ENVIAR") throw new AuthError(400, "confirmation_required");
+  const pending = getDraftStore().get(params.id, principal.adminId);
+  if (!pending || pending.state !== "pending") throw new AuthError(404, "not_found");
+  getMailService().peekRate(principal.adminId, pending.account, "send"); // reject before consuming the draft
   const draft = getDraftStore().claim(params.id, principal.adminId); // single-use claim, before sending
   if (!draft) throw new AuthError(404, "not_found");
   try {

@@ -9,6 +9,7 @@ import {
   clampPage,
   classifyConnectionError,
   classifySendError,
+  createRateLimiter,
   redactAccount,
   withRetry,
   createMailService,
@@ -171,6 +172,21 @@ test("classifySendError: only pre-transmission errors are a clean failure", () =
     { outcome: "unknown" },
     "when in doubt, assume it may have been sent",
   );
+});
+
+test("rate limiter: sliding window, peek never consumes", () => {
+  let t = 0;
+  const rl = createRateLimiter({ now: () => t });
+  assert.equal(rl.take("k", 2, 60_000).ok, true);
+  assert.equal(rl.take("k", 2, 60_000).ok, true);
+  const blocked = rl.take("k", 2, 60_000);
+  assert.equal(blocked.ok, false);
+  assert.ok(blocked.retryAfter >= 1, "reports a retry-after in seconds");
+  assert.equal(rl.peek("k", 2, 60_000).ok, false, "peek reports the limit without consuming");
+  assert.equal(rl.peek("k", 2, 60_000).ok, false, "peek stays blocked");
+  t = 60_001;
+  assert.equal(rl.take("k", 2, 60_000).ok, true, "the window slides");
+  assert.equal(rl.take("other", 0, 60_000).ok, true, "0 = unlimited");
 });
 
 test("redactAccount: never exposes the password; masks the address", () => {
