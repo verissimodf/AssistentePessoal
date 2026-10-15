@@ -3,8 +3,9 @@
 **Status: proposta — aguarda aprovação da especificação e de F4.11.** Deriva do Plano Mestre §6
 (Fase 4) e da matriz de rastreabilidade F4.1–F4.11 em `docs/CONTINUIDADE.md`. As partes **independentes**
 já iniciadas — **núcleo de e-mail**, **rotas/ferramentas com transporte mockado**, **adaptador IMAP/SMTP
-injetável (não ativado)**, **rascunho para aprovação humana** e **tela de rascunhos no painel** — estão em
-§10; o restante segue bloqueado (§9, §11).
+injetável (tecnicamente pronto, não ativado)**, **rascunho para aprovação humana** e **tela de rascunhos
+no painel** — estão em §10; o transporte real e sua ativação estão em §13; o restante segue bloqueado
+(§9, §11).
 
 ## 1. Objetivo
 
@@ -419,3 +420,54 @@ retenção de F4.11 está satisfeita **por construção**. A única persistênci
 - **Pastas nomeadas / regras**: apenas `INBOX` (a busca usa a caixa de entrada). Pastas são escopo futuro.
 - **Ativar o transporte real (D7)** e conectar contas — depende de decisão e de credenciais do operador.
 - **Retomada após falha de envio** (rascunho cifrado com TTL curto) — exige política própria (§11.5).
+
+## 13. Transporte real IMAP/SMTP (D7): prontidão, configuração e desativação
+
+**Estado (2026-10-15):** o adaptador está **tecnicamente pronto e revisado**. Isto **não** é autorização
+nem ativação: o **padrão continua o mock** e **nenhuma conta foi conectada** nesta execução.
+
+> **Distinção explícita:** "adaptador tecnicamente pronto" ≠ "transporte real autorizado e ativado".
+
+### 13.1 Revisão de segurança (achados e correções)
+
+| Item | Achado | Correção |
+|---|---|---|
+| TLS / certificados | `secure`/`requireTLS` estavam corretos, mas a validação de certificado era **implícita** | `tls: { rejectUnauthorized: true, minVersion: "TLSv1.2" }` **explícito** em IMAP e SMTP |
+| Encerramento de conexões | `connect()` ficava **fora** do `try/finally`: uma falha de conexão **vazava o socket** | `connect()` dentro do `try`; `finally` faz `logout()` e, se falhar, `close()`; o transporte SMTP é sempre fechado |
+| Timeout | Aplicado pelo **núcleo** (8 s por tentativa), não pelo adaptador | Mantido: um lugar só, com retry limitado na leitura |
+| Erros | O adaptador **lança** o erro do provedor | O núcleo converte em `502 provider_error` **genérico** e audita sem conteúdo |
+| Segredos | `auth` só entra nas opções do cliente | Nunca em erro, resposta, log ou auditoria (testado) |
+| Destinatários | Vêm do cliente | `validateOutgoing` valida o endereço (CRLF reprovado); `from` é **sempre** a conta do admin, nunca do cliente |
+| Aprovação humana | Envio manual é `session` + `confirm: "ENVIAR"`; agente/bot só **cria rascunho** | Sem caminho de envio direto por agente/bot |
+| Ativação | O adaptador **não era ligado a nada** (nem por engano, nem de propósito) | Opt-in **explícito** e **server-side** (§13.2) |
+
+### 13.2 Configuração e ativação (server-side, explícita)
+
+- **Chave:** `JARVIS_MAIL_TRANSPORT` (variável de ambiente do **servidor**).
+- **Ativa o real:** **somente** o valor exato `imap`.
+- **Mantém o mock:** ausente, vazio, outro valor ou caixa diferente (`IMAP`) — **nunca** ativa por engano.
+- **Nunca** é lida de requisição, cabeçalho ou configuração do cliente.
+
+```bash
+# ativar (após a decisão D7 e com contas configuradas)
+JARVIS_MAIL_TRANSPORT=imap node --no-warnings server/index.js
+
+# desativar (volta ao mock)
+unset JARVIS_MAIL_TRANSPORT     # ou: JARVIS_MAIL_TRANSPORT=mock
+```
+
+**Pré-requisitos para ativar:**
+1. Decisão **D7** aprovada (§11.4).
+2. Conta(s) Gmail/Outlook configuradas em **Configurações → Comunicação**, com **senha de aplicativo**
+   (cifradas em `admin_settings`).
+3. Saída de rede para `imap.gmail.com:993` / `smtp.gmail.com:587` (ou os hosts do Outlook).
+4. Aceite de que o envio é **no máximo uma tentativa por rascunho** e que o resultado pode ser `unknown`.
+
+### 13.3 Riscos residuais
+
+- **Provedor não garante entrega exatamente uma vez**; um resultado `unknown` pode significar mensagem
+  entregue — por isso não há reenvio automático.
+- O adaptador foi validado com **clientes falsos** (contrato), não contra um servidor real: o
+  comportamento de um provedor específico (pastas, limites, mensagens de erro) só se confirma no uso real.
+- Rate limit é **por processo** (em memória); múltiplas instâncias não compartilham contadores.
+- `dotenv` está nas dependências do servidor mas **não é usado** (pendência de limpeza).

@@ -7,6 +7,7 @@ import {
   envelopeToMeta,
   rawToBody,
   DEFAULT_HOSTS,
+  transportFromEnv,
 } from "../server/mail-imap.js";
 import { createMailService, MailError } from "../server/mail.js";
 
@@ -15,7 +16,7 @@ const SECRET = "APP_PASSWORD_SONDA_IMAP_9";
 const ACCOUNT = { type: "gmail", enabled: true, user: "ana@exemplo.test", appPassword: SECRET };
 
 /** Build fake provider factories that record everything the adapter passes them. */
-function fakes({ messages = [], uids = [1, 2], connectError, sendError } = {}) {
+function fakes({ messages = [], uids = [1, 2], connectError, sendError, logoutThrows } = {}) {
   const rec = {
     imap: null,
     smtp: null,
@@ -54,6 +55,10 @@ function fakes({ messages = [], uids = [1, 2], connectError, sendError } = {}) {
       },
       async logout() {
         rec.loggedOut = true;
+        if (logoutThrows) throw new Error("logout failed");
+      },
+      close() {
+        rec.closed = true;
       },
     };
   };
@@ -115,6 +120,7 @@ test("d7: IMAPS 993 + app-password auth; lock released and client logged out", a
     host: "imap.gmail.com",
     port: 993,
     secure: true,
+    tls: { rejectUnauthorized: true, minVersion: "TLSv1.2" },
     auth: { user: "ana@exemplo.test", pass: SECRET },
     logger: false,
   });
@@ -188,6 +194,7 @@ test("d7: send uses SMTP 587 + STARTTLS, then closes the transport", async () =>
     port: 587,
     secure: false,
     requireTLS: true,
+    tls: { rejectUnauthorized: true, minVersion: "TLSv1.2" },
     auth: { user: "ana@exemplo.test", pass: SECRET },
   });
   assert.deepEqual(rec.mail, {
@@ -239,4 +246,62 @@ test("d7: constructing the transport without factories does not load the provide
   // Lazy factories: importing/constructing must not require imapflow/nodemailer nor open anything.
   assert.doesNotThrow(() => createImapSmtpTransport());
   assert.deepEqual(DEFAULT_HOSTS.gmail, { imap: "imap.gmail.com", smtp: "smtp.gmail.com" });
+});
+
+test("d7: the real transport needs an explicit opt-in (absent/invalid stays on the mock)", () => {
+  assert.equal(transportFromEnv({}), null, "absent");
+  assert.equal(transportFromEnv({ JARVIS_MAIL_TRANSPORT: "" }), null, "empty");
+  assert.equal(transportFromEnv({ JARVIS_MAIL_TRANSPORT: "mock" }), null, "invalid");
+  assert.equal(
+    transportFromEnv({ JARVIS_MAIL_TRANSPORT: "IMAP" }),
+    null,
+    "case-sensitive: no accidental activation",
+  );
+  const t = transportFromEnv({ JARVIS_MAIL_TRANSPORT: "imap" });
+  assert.ok(t && typeof t.list === "function" && typeof t.send === "function");
+});
+
+test("d7: a failed connect still tears the client down (no leaked socket)", async () => {
+  const { rec, createImapClient, createSmtpTransport } = fakes({
+    connectError: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+    logoutThrows: true,
+  });
+  const t = createImapSmtpTransport({ createImapClient, createSmtpTransport });
+  await assert.rejects(t.list(ACCOUNT, { limit: 1, offset: 0 }));
+  assert.equal(rec.loggedOut, true, "logout is attempted even when connect fails");
+  assert.equal(rec.closed, true, "close() is the fallback when logout also fails");
+  assert.equal(rec.mailbox, null, "the mailbox is never locked");
+});
+
+test("d7: a failed send still closes the SMTP transport", async () => {
+  const { rec, createImapClient, createSmtpTransport } = fakes({
+    sendError: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" }),
+  });
+  const t = createImapSmtpTransport({ createImapClient, createSmtpTransport });
+  await assert.rejects(t.send(ACCOUNT, { to: "x@y.z", subject: "s", text: "b" }));
+  assert.equal(rec.closed, true, "the transport is closed on failure too");
+});
+
+test("d7: through the core, a failed send is classified and never leaks the password", async () => {
+  const { createImapClient, createSmtpTransport } = fakes({
+    sendError: Object.assign(new Error(`535 Invalid login ${SECRET}`), { code: "EAUTH" }),
+  });
+  const audits = [];
+  const svc = createMailService({
+    transport: createImapSmtpTransport({ createImapClient, createSmtpTransport }),
+    resolveAccount: () => ACCOUNT,
+    audit: (kind, detail) => audits.push({ kind, detail }),
+    limits: { sleep: async () => {}, timeoutMs: 50 },
+  });
+  const err = await svc
+    .send("A", "gmail", { to: "x@y.z", subject: "s", body: "b", confirm: "ENVIAR" })
+    .then(
+      () => null,
+      (e) => e,
+    );
+  assert.ok(err instanceof MailError);
+  assert.equal(err.status, 502);
+  assert.equal(err.outcome, "failed", "auth fails before the message is transmitted");
+  assert.equal(String(err.message).includes(SECRET), false);
+  assert.equal(JSON.stringify(audits).includes(SECRET), false);
 });
