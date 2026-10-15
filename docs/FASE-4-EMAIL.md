@@ -1,9 +1,9 @@
 # Fase 4 — E-mail (especificação proposta)
 
 **Status: proposta — aguarda aprovação da especificação e de F4.11.** Deriva do Plano Mestre §6
-(Fase 4) e da matriz de rastreabilidade F4.1–F4.11 em `docs/CONTINUIDADE.md`. A parte **independente**
-(o **núcleo de e-mail** sem rede/credenciais + testes com mocks) foi iniciada — ver §10; o restante
-segue bloqueado (§9, §11).
+(Fase 4) e da matriz de rastreabilidade F4.1–F4.11 em `docs/CONTINUIDADE.md`. As partes **independentes**
+já iniciadas — **núcleo de e-mail** e **rotas/ferramentas ligadas com transporte mockado** (sem
+rede/credenciais) — estão em §10; o restante segue bloqueado (§9, §11).
 
 ## 1. Objetivo
 
@@ -166,10 +166,38 @@ O que o núcleo já entrega (contrato reutilizável pelas rotas `/api/mail/*` e 
 marcados como **provisórios/pendentes de aprovação** — a política não foi decidida aqui. **Não** há
 persistência de corpo de mensagem (portanto, nenhuma janela de retenção a definir neste incremento).
 
-**Ainda dependente de decisão (não implementado):** rotas HTTP `/api/mail/*`, ferramentas
-`read_email`/`send_email` ligadas ao novo núcleo, adaptador de transporte real (IMAP/SMTP), gestão de
-conexão persistida (F4.5), pastas/regras e retenção (F4.11). Nada disso é iniciado sem as respostas da
-§11 e sem autorização explícita de operação real.
+### 10.1 Incremento 2 — rotas e ferramentas ligadas ao núcleo (mock)
+
+**Estado (2026-10-15):** o núcleo foi ligado às **rotas** `/api/mail/*` e às **ferramentas**
+`read_email`/`send_email`. O transporte continua **exclusivamente mockado** (`server/mail-service.js`):
+nenhum provedor é contatado, nada é enviado, nenhuma credencial é usada.
+
+| Rota | Acesso | Comportamento |
+|---|---|---|
+| `GET /api/mail/accounts` | `comms:read` | contas **do próprio admin**, com credenciais redigidas (F4.6) |
+| `GET /api/mail/:account/messages` | `comms:read` | lista paginada (limite/teto no servidor) |
+| `GET /api/mail/:account/search` | `comms:read` | filtros por **allowlist**; regex/`body`/chave desconhecida → 400 |
+| `GET /api/mail/:account/messages/:id` | `comms:read` | mensagem com corpo **sanitizado** (texto), marcada `untrusted` |
+| `POST /api/mail/:account/send` | **`session`** | envio **manual**: exige confirmação `ENVIAR` (D9); auditoria **sem** conteúdo |
+
+- **Titularidade (F4.8):** a conta é resolvida **por adminId**; "não é sua" e "não existe" são
+  **indistinguíveis** (`404 account_not_found`). Um nome de conta inválido é `400 invalid_account`.
+- **CSRF/autenticação:** o envio manual é `session` (admin humano) e passa pelo CSRF do framework;
+  tokens de serviço não enviam. Leitura aceita sessão ou token com `comms:read`.
+- **Erros:** falha do provedor → `502 provider_error` **genérico** (sem mensagem/segredo do provedor);
+  timeout limitado + retry só para falhas transitórias.
+- **Ferramentas:** `read_email` usa o núcleo (saída sanitizada). `send_email` por **agente/bot** é
+  **recusado** (`send_email(blocked)` auditado): exigiria aprovação humana atômica com o corpo entre
+  solicitação e aprovação — o que implicaria **persistir o corpo**, proibido nesta fase. O humano envia
+  pelo painel (rota `send` com `ENVIAR`). Ver §11.5.
+- Testes: `tests/mail-routes.test.mjs` (12 casos, mocks) — não autenticado, titularidade, entradas
+  inválidas, sucesso/falha do mock, timeout, retry, sanitização, envio sem/com confirmação, auditoria
+  sem conteúdo, token de serviço recusado no envio.
+
+**Ainda dependente de decisão (não implementado):** adaptador de transporte real (IMAP/SMTP) e
+autenticação no provedor (D7); aprovação humana para envio por agente/bot (§11.5); gestão de conexão
+persistida (F4.5); pastas/regras e retenção (F4.11). Nada disso é iniciado sem as respostas da §11 e sem
+autorização explícita de operação real.
 
 ## 11. Perguntas de produto (bloqueios indispensáveis)
 
@@ -189,6 +217,14 @@ conexão persistida (F4.5), pastas/regras e retenção (F4.11). Nada disso é in
 4. **Autenticação (D7).** Confirmar **IMAP/SMTP + senha de aplicativo** (OAuth fora do escopo inicial)?
    (a) Confirmar; (b) reavaliar OAuth antes. *Consequência:* define o adaptador de transporte real e os
    campos de credencial; **não** afeta o núcleo atual (que é agnóstico de transporte).
+5. **Envio por agente/bot (D9, §6.4) — corpo entre solicitação e aprovação.** Como levar a mensagem do
+   pedido até a aprovação humana **sem persistir o corpo** (proibido nesta fase)?
+   (a) O agente **não envia** e o humano envia pelo painel (comportamento atual);
+   (b) persistir o corpo **cifrado e com TTL curto** só enquanto a aprovação está pendente (exige definir
+   o TTL — política de retenção);
+   (c) o agente prepara um **rascunho na UI** (sem persistir no servidor) e o humano confirma.
+   *Consequência:* (a) é seguro e já implementado; (b) exige decisão de retenção (F4.11); (c) exige
+   trabalho de UI. Enquanto não decidido, envio por agente permanece **recusado**.
 
 **A autorização para implementar código não autoriza** acesso a contas reais, uso de credenciais, envio
 de mensagens nem alteração de dados reais — essas operações exigem autorização explícita específica.

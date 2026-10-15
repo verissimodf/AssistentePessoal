@@ -7,7 +7,9 @@ import { can, TOOL_SCOPES, AuthError } from "./auth.js";
 import { embed, cosine } from "./llm.js";
 import { searchDocuments } from "./documents.js";
 import { assignNew, owns, tx } from "./ownership.js";
-import { sendMessage, sendEmail, readInbox, readCalendar } from "./comms.js";
+import { sendMessage, readCalendar } from "./comms.js";
+import { getMailService } from "./mail-service.js";
+import { MailError } from "./mail.js";
 
 export const TOOL_DEFS = {
   web_search: { description: "Search the internet. Returns titles, links and snippets.", params: { query: "string" } },
@@ -211,8 +213,23 @@ export async function callTool(name, input, ctx) {
       return "Delegação enviada para aprovação do usuário no painel.";
     }
     case "send_message": return sendMessage(adminId, input.channel, input.text);
-    case "send_email": return sendEmail(adminId, input.account, input.to, input.subject, input.body);
-    case "read_email": return readInbox(adminId, input.account);
+    case "send_email": {
+      // D9: an agent/bot must never send without an explicit human approval. Implementing that flow
+      // would require carrying the message body from request to approval, i.e. persisting the body —
+      // which this phase forbids (docs/FASE-4-EMAIL.md §10/§11). Direct sending from a tool is
+      // therefore refused; the human sends from the panel with the explicit ENVIAR confirmation.
+      audit("send_email(blocked)", { status: "needs_approval", principal: who(ctx.principal) });
+      return "Envio de e-mail por agente/bot exige confirmacao humana e ainda nao esta disponivel. Use o painel (E-mail) para enviar com confirmacao explicita.";
+    }
+    case "read_email": {
+      try {
+        const page = await getMailService().list(adminId, input.account, { limit: 10 });
+        return page.messages.length ? page.messages.map((m) => `- ${m.date ?? "?"} | ${m.from} | ${m.subject}`).join("\n") : "Caixa vazia.";
+      } catch (e) {
+        if (e instanceof MailError) return `Nao foi possivel ler a conta "${input.account}": ${e.code}.`;
+        throw e;
+      }
+    }
     case "read_calendar": return readCalendar(adminId);
     case "document_search": {
       const r = searchDocuments(adminId, input.query);
