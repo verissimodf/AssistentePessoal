@@ -8,8 +8,8 @@ import { getSettings } from "./settings.js";
 
 const ALLOWED = [".wav", ".mp3", ".ogg", ".flac", ".m4a", ".webm"];
 
-export async function tts(text, lang) {
-  const s = getSettings();
+export async function tts(text, lang, adminId) {
+  const s = getSettings(adminId);
   const v = s.voice || {};
   if (v.tts === "elevenlabs") {
     const key = s.providers?.elevenlabs?.apiKey;
@@ -33,7 +33,7 @@ export async function tts(text, lang) {
 }
 
 /** Saves the sample locally; with ElevenLabs it also creates a cloned voice there. */
-export async function cloneVoice(file, engine) {
+export async function cloneVoice(file, engine, adminId) {
   const ext = extname(file.name || "").toLowerCase();
   if (!ALLOWED.includes(ext)) throw new Error(`Formato não suportado: ${ext}. Use ${ALLOWED.join(", ")}`);
   const buf = Buffer.from(await file.arrayBuffer());
@@ -41,7 +41,7 @@ export async function cloneVoice(file, engine) {
   const path = join(DATA_DIR, "voices", `${uid()}${ext}`);
   writeFileSync(path, buf);
   if (engine === "elevenlabs") {
-    const key = getSettings().providers?.elevenlabs?.apiKey;
+    const key = getSettings(adminId).providers?.elevenlabs?.apiKey;
     if (!key) throw new Error("Configure a chave da ElevenLabs.");
     const fd = new FormData();
     fd.append("name", `Jarvis-${Date.now()}`);

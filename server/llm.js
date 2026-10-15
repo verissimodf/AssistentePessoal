@@ -2,6 +2,21 @@
 // Anthropic uses its native Messages API; all other providers use the OpenAI-compatible API.
 import { getSettings } from "./settings.js";
 import { agents } from "./db.js";
+import { ownedIds, owns } from "./ownership.js";
+
+/** Built-in template used when the admin has no agent of their own (not a stored resource). */
+export const DEFAULT_AGENT = Object.freeze({
+  id: "default", name: "Jarvis", provider: "ollama", model: "llama3.1",
+  instructions: "Você é J.A.R.V.I.S., assistente pessoal leal, preciso e elegante. Responda no idioma do usuário. Use a memória para lembrar preferências e fatos importantes.",
+  tools: ["web_search", "fetch_url", "remember", "recall", "run_command", "cli_agent", "send_message"],
+});
+
+/** Agent for this admin: requested (must be owned) → personal active → first owned active → built-in. */
+export function resolveAgent(adminId, agentId, activeAgentId) {
+  if (agentId) { if (!owns(adminId, "agent", agentId)) return null; return agents.get(agentId); }
+  const mine = [...ownedIds(adminId, "agent")].map((id) => agents.get(id)).filter(Boolean);
+  return (activeAgentId && mine.find((a) => a.id === activeAgentId)) || mine.find((a) => a.active) || mine[0] || DEFAULT_AGENT;
+}
 
 const DEFAULT_URLS = {
   ollama: "http://localhost:11434/v1", openai: "https://api.openai.com/v1", anthropic: "https://api.anthropic.com",
@@ -11,8 +26,8 @@ const DEFAULT_URLS = {
   headroom: "http://127.0.0.1:8787/v1",
 };
 
-export function providerConfig(id) {
-  const s = getSettings();
+export function providerConfig(id, adminId = null) {
+  const s = getSettings(adminId);
   const p = s.providers?.[id] || s.integrations?.[id] || {};
   return { id, baseUrl: (p.baseUrl || p.command || DEFAULT_URLS[id] || "").replace(/\/$/, ""), apiKey: p.apiKey || "", model: p.model || "" };
 }
@@ -75,12 +90,14 @@ const safeJson = (s) => { try { return typeof s === "string" ? JSON.parse(s || "
 export async function runAgent({ agentId, messages, autonomy = "confirm", maxSteps = 12, extraSystem = "", principal }) {
   if (!principal) throw new Error("runAgent requires a principal (identity responsible for this run)");
   const { TOOL_DEFS, callTool, recall } = await import("./tools.js");
-  const s = getSettings();
-  const agent = (agentId && agents.get(agentId)) || agents.list().find((a) => a.active) || agents.list()[0];
-  const cfg = providerConfig(agent.provider);
+  const adminId = principal.adminId || null;
+  const s = getSettings(adminId);
+  const agent = resolveAgent(adminId, agentId, s.general?.activeAgentId);
+  if (!agent) return { reply: "Agente inexistente ou sem permissão.", reasoning: "", tools: [], pending: [] };
+  const cfg = providerConfig(agent.provider, adminId);
   const model = agent.model || cfg.model;
   const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content || "";
-  const mem = await recall(lastUser, 5).catch(() => []);
+  const mem = adminId ? await recall(lastUser, 5, adminId).catch(() => []) : [];
   const system = [
     agent.instructions,
     `Seu nome é ${s.general?.agentName || agent.name}. Idioma padrão: ${s.general?.language || "pt"}. Data/hora local: ${new Date().toLocaleString()}. Sistema: ${process.platform}.`,
@@ -113,10 +130,10 @@ export async function runAgent({ agentId, messages, autonomy = "confirm", maxSte
 }
 
 // ---------- embeddings for semantic memory (Ollama → OpenAI → none) ----------
-export async function embed(text) {
-  const s = getSettings();
+export async function embed(text, adminId = null) {
+  const s = getSettings(adminId);
   if (s.providers?.ollama?.enabled) {
-    const base = providerConfig("ollama").baseUrl.replace(/\/v1$/, "");
+    const base = providerConfig("ollama", adminId).baseUrl.replace(/\/v1$/, "");
     const r = await fetch(`${base}/api/embed`, { method: "POST", body: JSON.stringify({ model: s.providers.ollama.embedModel || "nomic-embed-text", input: text }), signal: AbortSignal.timeout(8000) });
     if (r.ok) return (await r.json()).embeddings?.[0];
   }
@@ -132,8 +149,8 @@ export function cosine(a, b) {
   return d / (Math.sqrt(x) * Math.sqrt(y) || 1);
 }
 
-export async function testProvider(id) {
-  const cfg = providerConfig(id);
+export async function testProvider(id, adminId) {
+  const cfg = providerConfig(id, adminId);
   try {
     if (id === "anthropic") {
       const r = await fetch(`${cfg.baseUrl}/v1/models`, { headers: { "x-api-key": cfg.apiKey, "anthropic-version": "2023-06-01" } });

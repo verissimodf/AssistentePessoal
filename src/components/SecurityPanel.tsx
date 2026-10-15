@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, currentAdmin, useAuthState } from "@/lib/bridge";
 import { useI18n, type Lang } from "@/lib/i18n";
+import { LegacyPanel } from "./LegacyPanel";
 
 type Admin = { id: string; username: string; active: number; created_at: string };
 type Sess = { id: string; last_seen: number; user_agent: string };
@@ -87,6 +88,7 @@ export function SecurityPanel() {
         </div>
         {shown && <p className="break-all rounded bg-secondary p-2 font-mono text-xs">{x("copy_now")} {shown}</p>}
       </section>
+      <LegacyPanel />
     </div>
   );
 }

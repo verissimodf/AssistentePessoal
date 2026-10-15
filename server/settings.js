@@ -1,9 +1,14 @@
-// Settings with secrets encrypted at rest (AES-256-GCM). The master key is created on first
-// run in data/master.key (or taken from JARVIS_MASTER_KEY) and never leaves the machine.
+// Settings, Phase 2: PERSONAL (one record per admin, table admin_settings) and GLOBAL (one record
+// for the installation, table global_settings). Secrets are encrypted at rest (AES-256-GCM); the
+// master key is created on first run in data/master.key (or JARVIS_MASTER_KEY) and never leaves
+// the machine. Pre-Phase-2 settings stay byte-for-byte in legacy_settings, inactive, until an
+// admin explicitly claims the whole block. Personal values can never weaken the global policy:
+// host/integrations/localVoiceUrl always come from the global record.
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { DATA_DIR, kvGet, kvSet } from "./db.js";
+import { DATA_DIR, db, now, audit } from "./db.js";
+import { AuthError } from "./auth.js";
 
 const keyFile = join(DATA_DIR, "master.key");
 function masterKey() {
@@ -29,52 +34,166 @@ export function decrypt(value) {
 
 export const isSecretField = (k) => /key|token|password|secret/i.test(k);
 
-const DEFAULTS = {
+// ---------- classification (D5) ----------
+export const PERSONAL_DEFAULTS = {
   general: { agentName: "Jarvis", language: "pt" },
   providers: { ollama: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "llama3.1" } },
-  integrations: {}, comms: {},
-  voice: { tts: "browser", wake: { clap: true, word: true, hotkey: true, ptt: true }, sensitivity: 6, hotkey: "Ctrl+Shift+J", localVoiceUrl: "http://127.0.0.1:7778" },
+  comms: {},
+  voice: { tts: "browser", wake: { clap: true, word: true, hotkey: true, ptt: true }, sensitivity: 6, hotkey: "Ctrl+Shift+J" },
+};
+export const GLOBAL_DEFAULTS = {
   host: { enabled: false, allowlist: "ls, dir, git status, code ., start, xdg-open" },
+  integrations: {},
+  localVoiceUrl: "http://127.0.0.1:7778",
+};
+const PERSONAL_GENERAL = ["agentName", "language", "activeAgentId"];
+
+/** Classify a dotted key path from the legacy single-record settings. */
+export function classifyKey(path) {
+  const [top, sub] = path.split(".");
+  if (top === "host" || top === "integrations") return "global";
+  if (top === "voice") return sub === "localVoiceUrl" ? "global" : "personal";
+  if (top === "providers" || top === "comms") return "personal";
+  if (top === "general") return sub === undefined || PERSONAL_GENERAL.includes(sub) ? "personal" : "unclassified";
+  return "unclassified";
+}
+
+/** Keep only personal-classified parts of a settings object (values untouched, still encrypted). */
+export function personalPart(s = {}) {
+  const out = {};
+  if (s.general && typeof s.general === "object") {
+    const g = Object.fromEntries(Object.entries(s.general).filter(([k]) => PERSONAL_GENERAL.includes(k)));
+    if (Object.keys(g).length) out.general = g;
+  }
+  if (s.voice && typeof s.voice === "object") { const { localVoiceUrl: _drop, ...v } = s.voice; if (Object.keys(v).length) out.voice = v; }
+  for (const k of ["providers", "comms"]) if (s[k] && typeof s[k] === "object") out[k] = s[k];
+  return out;
+}
+
+// ---------- raw storage ----------
+const readJson = (sql, ...a) => { const r = db.prepare(sql).get(...a); return r ? JSON.parse(r.data) : null; };
+const rawPersonal = (adminId) => (adminId ? readJson("SELECT data FROM admin_settings WHERE admin_id = ?", adminId) : null);
+function rawGlobal() {
+  const g = readJson("SELECT data FROM global_settings WHERE id = 1") || {};
+  const clean = Object.fromEntries(Object.entries(g).filter(([, v]) => v !== null && v !== undefined));
+  return { ...GLOBAL_DEFAULTS, ...clean, host: { ...GLOBAL_DEFAULTS.host, ...(clean.host || {}) } };
+}
+
+const walkDecrypt = (o) => {
+  if (!o || typeof o !== "object" || Array.isArray(o)) return o;
+  return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, isSecretField(k) && typeof v === "string" ? decrypt(v) : walkDecrypt(v)]));
+};
+const walkMask = (o) => {
+  if (!o || typeof o !== "object" || Array.isArray(o)) return o;
+  const out = {};
+  for (const [k, v] of Object.entries(o)) {
+    if (isSecretField(k) && typeof v === "string") { if (v) out.hasKey = true; out[k] = ""; }
+    else out[k] = walkMask(v);
+  }
+  return out;
+};
+const merge = (cur, inc) => {
+  if (!inc || typeof inc !== "object" || Array.isArray(inc)) return inc;
+  const out = { ...(cur && typeof cur === "object" ? cur : {}) };
+  for (const [k, v] of Object.entries(inc)) {
+    if (k === "hasKey") continue;
+    if (isSecretField(k) && typeof v === "string") { if (v) out[k] = encrypt(v); }
+    else out[k] = merge(cur?.[k], v);
+  }
+  return out;
 };
 
-/** Raw settings with secrets decrypted (server-side use only). */
-export function getSettings() {
-  const s = kvGet("settings", DEFAULTS);
-  const walk = (o) => {
-    if (!o || typeof o !== "object") return o;
-    return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, isSecretField(k) && typeof v === "string" ? decrypt(v) : walk(v)]));
+function compose(personal, global, walk) {
+  const p = walk(personal || {});
+  const g = walk(global);
+  return {
+    general: { ...PERSONAL_DEFAULTS.general, ...(p.general || {}) },
+    providers: p.providers || (personal ? {} : PERSONAL_DEFAULTS.providers),
+    comms: p.comms || {},
+    voice: { ...PERSONAL_DEFAULTS.voice, ...(p.voice || {}), localVoiceUrl: g.localVoiceUrl },
+    integrations: g.integrations || {},
+    host: g.host,
   };
-  return { ...DEFAULTS, ...walk(s) };
+}
+
+/**
+ * Effective settings for one admin (server-side only, secrets decrypted). adminId null → only
+ * global settings + personal defaults (no credentials): unowned paths never see anyone's keys.
+ */
+export function getSettings(adminId = null) {
+  const personal = rawPersonal(adminId);
+  return compose(personal ?? (adminId ? null : null), rawGlobal(), walkDecrypt);
 }
 
 /** Settings safe for the browser: secrets replaced by hasKey flags. */
-export function publicSettings() {
-  const s = kvGet("settings", DEFAULTS);
-  const walk = (o) => {
-    if (!o || typeof o !== "object" || Array.isArray(o)) return o;
-    const out = {};
-    for (const [k, v] of Object.entries(o)) {
-      if (isSecretField(k) && typeof v === "string") { if (v) out.hasKey = true; out[k] = ""; }
-      else out[k] = walk(v);
-    }
-    return out;
-  };
-  return { ...DEFAULTS, ...walk(s) };
+export function publicSettings(adminId = null) {
+  return compose(rawPersonal(adminId), rawGlobal(), walkMask);
 }
 
-/** Merge incoming settings; empty secret fields keep the stored value. */
-export function updateSettings(incoming) {
-  const current = kvGet("settings", DEFAULTS);
-  const merge = (cur, inc) => {
-    if (!inc || typeof inc !== "object" || Array.isArray(inc)) return inc;
-    const out = { ...(cur || {}) };
-    for (const [k, v] of Object.entries(inc)) {
-      if (k === "hasKey") continue;
-      if (isSecretField(k) && typeof v === "string") { if (v) out[k] = encrypt(v); }
-      else out[k] = merge(cur?.[k], v);
-    }
-    return out;
-  };
-  kvSet("settings", merge(current, incoming));
-  return publicSettings();
+/**
+ * Merge incoming settings. Personal parts go to the caller's own record; global parts
+ * (host, integrations, voice.localVoiceUrl) require allowGlobal (verified human admin).
+ * Unknown keys are ignored. Empty secret fields keep the stored value.
+ */
+export function updateSettings(incoming = {}, { adminId = null, allowGlobal = true } = {}) {
+  const inc = incoming && typeof incoming === "object" ? incoming : {};
+  const g = {};
+  if (inc.host !== undefined) g.host = inc.host;
+  if (inc.integrations !== undefined) g.integrations = inc.integrations;
+  if (inc.voice && inc.voice.localVoiceUrl !== undefined) g.localVoiceUrl = inc.voice.localVoiceUrl;
+  if (Object.keys(g).length) {
+    if (!allowGlobal) throw new AuthError(403, "global_settings_admin_only");
+    const cur = readJson("SELECT data FROM global_settings WHERE id = 1") || {};
+    const next = merge(cur, g);
+    if (next.host) next.host = { enabled: !!next.host.enabled, allowlist: String(next.host.allowlist ?? GLOBAL_DEFAULTS.host.allowlist) };
+    db.prepare("INSERT INTO global_settings (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data").run(JSON.stringify(next));
+  }
+  const p = personalPart(inc);
+  if (adminId && Object.keys(p).length) {
+    const next = merge(rawPersonal(adminId) || {}, p);
+    db.prepare("INSERT INTO admin_settings (admin_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(admin_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at")
+      .run(adminId, JSON.stringify(next), now());
+  }
+  return publicSettings(adminId);
+}
+
+// ---------- legacy settings (pre-Phase-2 single record) ----------
+function keyPaths(o, prefix = "", depth = 0, out = []) {
+  for (const [k, v] of Object.entries(o || {})) {
+    const path = prefix ? `${prefix}.${k}` : k;
+    if (v && typeof v === "object" && !Array.isArray(v) && depth < 2) keyPaths(v, path, depth + 1, out);
+    else out.push({ key: path, class: classifyKey(path), secret: isSecretField(k) });
+  }
+  return out;
+}
+
+/** Inventory of the legacy record: key names, classification and status — never values. */
+export function legacySettingsInventory() {
+  const r = db.prepare("SELECT data, claimed_by, claimed_at FROM legacy_settings WHERE id = 1").get();
+  if (!r) return { present: false };
+  return { present: true, claimed: !!r.claimed_by, claimedAt: r.claimed_at, keys: keyPaths(JSON.parse(r.data)) };
+}
+
+/**
+ * Explicit, whole-block claim of the legacy personal settings by ONE admin. Refused if already
+ * claimed or if the admin already has personal settings (no automatic split/merge). Values are
+ * copied still encrypted; nothing is decrypted, returned or logged. Unclassified keys stay inactive.
+ */
+export function claimLegacySettings(adminId, confirm) {
+  if (!adminId) throw new AuthError(403, "admin_session_required");
+  if (confirm !== "ASSUMIR CONFIGURACOES") throw new AuthError(400, "confirmation_required");
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const r = db.prepare("SELECT data, claimed_by FROM legacy_settings WHERE id = 1").get();
+    if (!r) throw new AuthError(404, "no_legacy_settings");
+    if (r.claimed_by) throw new AuthError(409, "already_claimed");
+    if (rawPersonal(adminId)) throw new AuthError(409, "personal_settings_not_empty");
+    const at = now();
+    db.prepare("UPDATE legacy_settings SET claimed_by = ?, claimed_at = ? WHERE id = 1 AND claimed_by IS NULL").run(adminId, at);
+    db.prepare("INSERT INTO admin_settings (admin_id, data, updated_at) VALUES (?, ?, ?)").run(adminId, JSON.stringify(personalPart(JSON.parse(r.data))), at);
+    db.prepare("INSERT INTO legacy_claims (resource_type, resource_id, admin_id, at) VALUES ('settings', 'legacy_settings', ?, ?)").run(adminId, at);
+    audit("legacy.settings_claimed", { admin: adminId });
+    db.exec("COMMIT");
+  } catch (e) { db.exec("ROLLBACK"); throw e; }
+  return { ok: true };
 }

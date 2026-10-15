@@ -35,3 +35,12 @@ node -e "const {DatabaseSync}=require('node:sqlite');const d=new DatabaseSync(pr
 
 ## Primeiro acesso
 O código fica em `data/bootstrap-token.txt` (permissão `0600` no Linux; no Windows, valem as permissões da pasta do usuário). Ele vale 15 minutos, funciona uma vez e é trocado a cada reinício enquanto não houver administrador. O código não aparece no terminal nem nos logs.
+
+## A migração v2 (Fase 2 — isolamento)
+Cria apenas tabelas novas: `ownership`, `admin_settings`, `global_settings`, `legacy_settings`, `legacy_claims`. Nenhuma tabela existente é alterada (contagem e SHA-256 conferidos).
+- Proprietário só vem de origem comprovável: bot com `owner_admin_id` gravado na Fase 1 **e** administrador existente; execuções desses bots. Memórias, agentes, aprovações e demais bots/execuções ficam **sem proprietário** e bloqueados.
+- `kv.settings` é copiado byte a byte para `legacy_settings` (inativo). Para `global_settings` vão só `host`, `integrations` e `voice.localVoiceUrl`, sem ampliar a allowlist.
+- O relatório de propriedade (contagens) fica na auditoria como `migration.v2_report`.
+- Atribuição: Configurações → Segurança → "Dados antigos". Só metadados aparecem; a atribuição é explícita, atômica e auditada. As configurações antigas são assumidas inteiras por um único administrador que ainda não tenha configurações pessoais.
+- Rollback: restaure o backup `jarvis-<data>-v1.db` (passos acima) e volte o código para a versão da Fase 1.
+- Atenção: `recuperar-acesso.js` desativa administradores; recursos que eram deles continuam pertencendo a eles e ficam inacessíveis (não são reatribuídos).

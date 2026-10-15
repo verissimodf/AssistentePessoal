@@ -3,8 +3,9 @@ import { exec } from "node:child_process";
 import { db, now, uid, audit } from "./db.js";
 import { getSettings } from "./settings.js";
 import { decide } from "./hostpolicy.js";
-import { can, TOOL_SCOPES } from "./auth.js";
+import { can, TOOL_SCOPES, AuthError } from "./auth.js";
 import { embed, cosine } from "./llm.js";
+import { assignNew, owns, tx } from "./ownership.js";
 import { sendMessage, sendEmail, readInbox, readCalendar } from "./comms.js";
 
 export const TOOL_DEFS = {
@@ -118,23 +119,43 @@ async function openhandsTask(task) {
   return `Tarefa enviada ao OpenHands (conversation_id: ${j.conversation_id || j.id}, status: ${j.conversation_status || j.status || "?"}). Acompanhe em ${base}.`;
 }
 
-export async function remember(content, tags = "") {
+/** Memories always belong to one admin; without an owner nothing is written. */
+export async function remember(content, tags = "", ownerId) {
+  if (!ownerId) throw new Error("remember requires an owner");
   const id = uid();
-  const vec = await embed(content).catch(() => null);
-  db.prepare("INSERT INTO memories (id, content, tags, embedding, created_at) VALUES (?, ?, ?, ?, ?)").run(id, content, tags, vec ? JSON.stringify(vec) : null, now());
-  return { id, content, tags, created_at: now() };
+  const vec = await embed(content, ownerId).catch(() => null);
+  const at = now();
+  tx(() => {
+    db.prepare("INSERT INTO memories (id, content, tags, embedding, created_at) VALUES (?, ?, ?, ?, ?)").run(id, content, tags || "", vec ? JSON.stringify(vec) : null, at);
+    assignNew("memory", id, ownerId);
+  });
+  return { id, content, tags: tags || "", created_at: at };
 }
 
-export async function recall(query, limit = 6) {
-  const rows = db.prepare("SELECT id, content, tags, embedding, created_at FROM memories").all();
-  const qv = await embed(query).catch(() => null);
+/** Only the owner's memories are ever scanned; unowned (legacy) rows are never read. */
+export async function recall(query, limit = 6, ownerId) {
+  if (!ownerId) return [];
+  const rows = db.prepare(`SELECT m.id, m.content, m.tags, m.embedding, m.created_at FROM memories m
+    JOIN ownership o ON o.resource_type = 'memory' AND o.resource_id = m.id AND o.owner_admin_id = ?`).all(ownerId);
+  const qv = await embed(query, ownerId).catch(() => null);
   const words = query.toLowerCase().split(/\W+/).filter((w) => w.length > 2);
   const scored = rows.map((r) => {
     let score = words.filter((w) => `${r.content} ${r.tags}`.toLowerCase().includes(w)).length / Math.max(1, words.length);
     if (qv && r.embedding) score = Math.max(score, cosine(qv, JSON.parse(r.embedding)));
-    return { ...r, score };
+    const { embedding: _e, ...rest } = r;
+    return { ...rest, score };
   });
   return scored.filter((r) => r.score > 0.2).sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+/** Pending approval owned by the admin responsible for the run. */
+function queueApproval(command, ownerId) {
+  const id = uid();
+  tx(() => {
+    db.prepare("INSERT INTO approvals (id, command, status, created_at) VALUES (?, ?, 'pending', ?)").run(id, command, now());
+    assignNew("approval", id, ownerId);
+  });
+  return id;
 }
 
 const who = (p) => (p ? `${p.type}:${p.adminId || p.tokenId || p.botId || p.channel || "?"}` : "none");
@@ -147,26 +168,30 @@ export async function callTool(name, input, ctx) {
     audit("authz.tool_denied", { tool: name, scope, principal: who(ctx.principal) });
     return `Permissão negada: a identidade desta execução não tem o escopo "${scope}".`;
   }
-  const s = getSettings();
+  const adminId = ctx.principal?.adminId || null;
+  if (!adminId) {
+    audit("authz.tool_denied", { tool: name, reason: "no_owner", principal: who(ctx.principal) });
+    return "Permissão negada: esta execução não tem um administrador proprietário válido.";
+  }
+  const s = getSettings(adminId);
   switch (name) {
     case "web_search": return webSearch(input.query);
     case "fetch_url": return fetchUrl(input.url);
-    case "remember": await remember(input.content, input.tags); return "Memória salva.";
+    case "remember": await remember(input.content, input.tags, adminId); return "Memória salva.";
     case "recall": {
-      const r = await recall(input.query);
+      const r = await recall(input.query, 6, adminId);
       return r.length ? r.map((x) => `- ${x.content} (${x.tags})`).join("\n") : "Nada encontrado na memória.";
     }
     case "run_command": {
       const verdict = decide(input.command, { enabled: !!s.host?.enabled, allowlist: s.host?.allowlist, autonomy: ctx.autonomy });
       if (verdict === "deny") return "Comando recusado pela política de segurança (habilite Ações no host ou ajuste a lista de comandos).";
       if (verdict === "ask") {
-        const id = uid();
-        db.prepare("INSERT INTO approvals (id, command, status, created_at) VALUES (?, ?, 'pending', ?)").run(id, input.command, now());
-        audit("run_command(requested)", { command: input.command, principal: who(ctx.principal) });
+        const id = queueApproval(input.command, adminId);
+        audit("run_command(requested)", { approvalId: id, status: "requested", autonomy: ctx.autonomy, principal: who(ctx.principal) });
         ctx.pending.push({ id, command: input.command });
         return "Comando enviado para aprovação do usuário. Informe que ele precisa aprovar no painel.";
       }
-      audit("run_command", { command: input.command, principal: who(ctx.principal) });
+      audit("run_command", { status: "executed", autonomy: ctx.autonomy, principal: who(ctx.principal) });
       return runShell(input.command);
     }
     case "cli_agent": {
@@ -178,16 +203,15 @@ export async function callTool(name, input, ctx) {
       const command = String(cfg.command || "").replace("{prompt}", JSON.stringify(String(input.prompt ?? "")));
       const verdict = decide(command, { enabled: !!s.host?.enabled, allowlist: "", autonomy: "confirm" });
       if (verdict === "deny") return "Ações no host estão desabilitadas.";
-      const id = uid();
-      db.prepare("INSERT INTO approvals (id, command, status, created_at) VALUES (?, ?, 'pending', ?)").run(id, command, now());
-      audit("cli_agent(requested)", { agent: input.agent, autonomy: ctx.autonomy, principal: who(ctx.principal) });
+      const id = queueApproval(command, adminId);
+      audit("cli_agent(requested)", { agent: input.agent, approvalId: id, status: "requested", autonomy: ctx.autonomy, principal: who(ctx.principal) });
       ctx.pending.push({ id, command });
       return "Delegação enviada para aprovação do usuário no painel.";
     }
-    case "send_message": return sendMessage(input.channel, input.text);
-    case "send_email": return sendEmail(input.account, input.to, input.subject, input.body);
-    case "read_email": return readInbox(input.account);
-    case "read_calendar": return readCalendar();
+    case "send_message": return sendMessage(adminId, input.channel, input.text);
+    case "send_email": return sendEmail(adminId, input.account, input.to, input.subject, input.body);
+    case "read_email": return readInbox(adminId, input.account);
+    case "read_calendar": return readCalendar(adminId);
     case "context7_docs": return context7Docs(input.library, input.topic);
     case "crawl_page": return crawlPage(input.url);
     case "openhands_task": return openhandsTask(input.task);
@@ -195,19 +219,35 @@ export async function callTool(name, input, ctx) {
   }
 }
 
-/** Only a human admin session reaches this (route requires approvals:resolve). */
+/**
+ * Only the owner admin may resolve. States: pending → running → done | error, or pending → denied.
+ * Ownership is checked and the transition pending→(running|denied) is one conditional UPDATE, so two
+ * concurrent requests can never both execute. A crash after "running" leaves the row "interrupted"
+ * at next start (db.js) — never re-executed. Foreign, legacy and unknown ids → 404.
+ */
 export async function resolveApproval(id, approve, principal) {
-  const row = db.prepare("SELECT * FROM approvals WHERE id = ?").get(id);
-  // Atomic claim: two concurrent approvals of the same id can never both run the command.
-  const claimed = db.prepare("UPDATE approvals SET status = ? WHERE id = ? AND status = 'pending'").run(approve ? "running" : "denied", id).changes;
-  if (!row || !claimed) return { output: "Aprovação inexistente ou já resolvida." };
-  if (!approve) { audit("run_command(denied)", { command: row.command, principal: who(principal) }); return { output: "Negado pelo usuário." }; }
-  if (!getSettings().host?.enabled) {
-    db.prepare("UPDATE approvals SET status='denied', output=? WHERE id = ?").run("Ações no host desabilitadas.", id);
+  const adminId = principal?.adminId || null;
+  if (!owns(adminId, "approval", id)) throw new AuthError(404, "not_found");
+  const row = db.prepare("SELECT command FROM approvals WHERE id = ?").get(id);
+  if (!row) throw new AuthError(404, "not_found");
+  const hostOn = !!getSettings(adminId).host?.enabled;
+  const next = !approve ? "denied" : hostOn ? "running" : "denied";
+  const claimed = db.prepare("UPDATE approvals SET status = ? WHERE id = ? AND status = 'pending'").run(next, id).changes;
+  if (!claimed) throw new AuthError(409, "already_resolved");
+  if (!approve) { audit("run_command(denied)", { approvalId: id, status: "denied", principal: who(principal) }); return { output: "Negado pelo usuário." }; }
+  if (!hostOn) {
+    db.prepare("UPDATE approvals SET output = ? WHERE id = ?").run("Ações no host desabilitadas.", id);
+    audit("run_command(denied)", { approvalId: id, status: "denied", reason: "host_disabled", principal: who(principal) });
     return { output: "Ações no host estão desabilitadas; comando não executado." };
   }
-  audit("run_command(approved)", { command: row.command, principal: who(principal) });
-  const output = await runShell(row.command);
-  db.prepare("UPDATE approvals SET status='done', output=? WHERE id = ?").run(output, id);
-  return { output };
+  audit("run_command(approved)", { approvalId: id, status: "approved", principal: who(principal) });
+  try {
+    const output = await runShell(row.command);
+    db.prepare("UPDATE approvals SET status = 'done', output = ? WHERE id = ?").run(output, id);
+    return { output };
+  } catch (e) {
+    db.prepare("UPDATE approvals SET status = 'error', output = ? WHERE id = ?").run(String(e?.message || e).slice(0, 2000), id);
+    audit("run_command(error)", { approvalId: id, status: "error", principal: who(principal) });
+    return { output: "Falha ao executar o comando." };
+  }
 }

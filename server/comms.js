@@ -8,10 +8,11 @@ const HOSTS = {
   outlook: { imap: "outlook.office365.com", smtp: "smtp.office365.com" },
 };
 
-export async function sendMessage(channel, text) {
-  const c = getSettings().comms?.[channel];
+export async function sendMessage(adminId, channel, text) {
+  if (!adminId) return "Sem proprietário válido: canal bloqueado.";
+  const c = getSettings(adminId).comms?.[channel];
   if (!c?.enabled) return `Canal ${channel} não habilitado.`;
-  audit("send_message", { channel, text });
+  audit("send_message", { admin: adminId, channel });
   if (channel === "telegram") {
     const r = await fetch(`https://api.telegram.org/bot${c.botToken}/sendMessage`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chat_id: c.chatId, text }) });
     return r.ok ? "Enviado no Telegram." : `Telegram ${r.status}: ${await r.text()}`;
@@ -29,18 +30,20 @@ export async function sendMessage(channel, text) {
   return `Canal desconhecido: ${channel}`;
 }
 
-export async function sendEmail(account, to, subject, body) {
-  const c = getSettings().comms?.[account];
+export async function sendEmail(adminId, account, to, subject, body) {
+  if (!adminId) return "Sem proprietário válido: conta bloqueada.";
+  const c = getSettings(adminId).comms?.[account];
   if (!c?.enabled) return `Conta ${account} não habilitada.`;
   const nodemailer = (await import("nodemailer")).default;
   const t = nodemailer.createTransport({ host: HOSTS[account].smtp, port: 587, secure: false, auth: { user: c.user, pass: c.appPassword } });
   await t.sendMail({ from: c.user, to, subject, text: body });
-  audit("send_email", { account, to, subject });
+  audit("send_email", { admin: adminId, account });
   return "E-mail enviado.";
 }
 
-export async function readInbox(account, limit = 10) {
-  const c = getSettings().comms?.[account];
+export async function readInbox(adminId, account, limit = 10) {
+  if (!adminId) return "Sem proprietário válido: conta bloqueada.";
+  const c = getSettings(adminId).comms?.[account];
   if (!c?.enabled) return `Conta ${account} não habilitada.`;
   const { ImapFlow } = await import("imapflow");
   const client = new ImapFlow({ host: HOSTS[account].imap, port: 993, secure: true, auth: { user: c.user, pass: c.appPassword }, logger: false });
@@ -57,8 +60,9 @@ export async function readInbox(account, limit = 10) {
 }
 
 /** Reads an ICS feed (Google Calendar "secret address", Outlook published calendar, Nextcloud…). */
-export async function readCalendar(days = 7) {
-  const c = getSettings().comms?.calendar;
+export async function readCalendar(adminId, days = 7) {
+  if (!adminId) return "Agenda não configurada.";
+  const c = getSettings(adminId).comms?.calendar;
   if (!c?.enabled || !c.icsUrl) return "Agenda não configurada.";
   const ics = await (await fetch(c.icsUrl)).text();
   const events = [];
@@ -72,22 +76,27 @@ export async function readCalendar(days = 7) {
   return events.sort((a, b) => a.d - b.d).map((e) => `- ${e.d.toLocaleString()} — ${e.s}`).join("\n") || "Sem eventos nos próximos dias.";
 }
 
-/** Telegram long-poll: incoming messages are answered by the agent and can fire "message" bots. */
-export function startTelegramPolling(onMessage) {
-  let offset = 0;
-  const loop = async () => {
-    const c = getSettings().comms?.telegram;
-    if (c?.enabled && c.botToken) {
+/**
+ * Telegram long-poll, one loop per admin whose PERSONAL settings enable Telegram (P2).
+ * The owner comes only from whose configuration holds the bot token; the message content and
+ * sender are never trusted for identity. Only the configured chatId is accepted.
+ */
+export function startTelegramPolling(onMessage, listAdmins) {
+  const offsets = new Map();
+  const tick = async () => {
+    for (const adminId of listAdmins()) {
+      const c = getSettings(adminId).comms?.telegram;
+      if (!c?.enabled || !c.botToken) continue;
       try {
-        const r = await fetch(`https://api.telegram.org/bot${c.botToken}/getUpdates?timeout=25&offset=${offset}`);
+        const r = await fetch(`https://api.telegram.org/bot${c.botToken}/getUpdates?timeout=5&offset=${offsets.get(adminId) || 0}`);
         const j = await r.json();
         for (const u of j.result || []) {
-          offset = u.update_id + 1;
-          if (u.message?.text && String(u.message.chat.id) === String(c.chatId)) await onMessage("telegram", u.message.text);
+          offsets.set(adminId, u.update_id + 1);
+          if (u.message?.text && String(u.message.chat.id) === String(c.chatId)) await onMessage(adminId, "telegram", u.message.text);
         }
       } catch { /* network hiccup */ }
-    } else await new Promise((r) => setTimeout(r, 15000));
-    setTimeout(loop, 500);
+    }
+    setTimeout(tick, 3000);
   };
-  loop();
+  tick();
 }

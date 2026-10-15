@@ -4,6 +4,13 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 
 ---
 
+
+## [1.2.0] — Fase 2: preferências e isolamento
+- Migração v2 (só tabelas novas): propriedade de recursos, configurações pessoais/globais, configurações antigas preservadas.
+- Memórias, agentes, bots, execuções, aprovações e configurações isolados por administrador (rotas, ferramentas, agendador, Telegram).
+- Dados antigos sem proprietário bloqueados; atribuição explícita, atômica e auditada; bots sem proprietário não executam (`legacy_blocked`).
+- O agente padrão deixou de ser criado no banco; sem agente próprio usa-se um modelo embutido.
+
 ## [1.1.2] — 2026-10-14
 ### Segurança
 - Curinga `*` vinculado a sessão de administrador verificada e viva (registro privado em `server/auth.js`); objetos forjados são negados.

@@ -18,19 +18,22 @@ const ADMIN = auth.validateSession(auth.login({ username: "ana", password: "senh
 
 updateSettings({ host: { enabled: true, allowlist: "echo" }, integrations: { claude_code: { enabled: true, command: "echo {prompt}" } } });
 const approvals = () => db.prepare("SELECT COUNT(*) n FROM approvals").get().n;
-const ctx = (bot, autonomy = "full") => ({ autonomy, pending: [], principal: botPrincipal(bot) });
+const { assignNew } = await import("../server/ownership.js");
+// Phase 2: only bots with a recorded owner get a principal. Test bots are owned by the real admin.
+const owned = (bot) => { try { assignNew("bot", bot.id, ADMIN.adminId); } catch { /* already owned */ } return bot; };
+const ctx = (bot, autonomy = "full") => ({ autonomy, pending: [], principal: botPrincipal(bot.id === "legacy" ? bot : owned(bot)) });
 
 test("bot principal never carries the wildcard scope", () => {
-  for (const b of [{ id: "a" }, { id: "b", scopes: [] }, { id: "c", scopes: ["*", "approvals:resolve", "host:run"] }]) {
+  for (const b of [{ id: "a" }, { id: "b", scopes: [] }, { id: "c", scopes: ["*", "approvals:resolve", "host:run"] }].map(owned)) {
     assert.equal(botPrincipal(b).scopes.includes("*"), false);
     assert.equal(botPrincipal(b).scopes.includes("approvals:resolve"), false);
   }
 });
 
-test("legacy unowned bot without explicit scopes gets only the restricted compatibility policy", () => {
-  const p = botPrincipal({ id: "legacy" });
-  assert.equal(p.legacy, true);
-  assert.deepEqual(p.scopes, LEGACY_BOT_SCOPES);
+test("legacy unowned bot gets no principal at all (P4: execution blocked)", () => {
+  assert.equal(botPrincipal({ id: "legacy" }), null);
+  assert.equal(botPrincipal({ id: "legacy", owner_admin_id: ADMIN.adminId }), null, "JSON owner field alone is not proof of ownership");
+  assert.ok(LEGACY_BOT_SCOPES.length > 0); // constant kept for compatibility, no longer applied
 });
 
 test("bot without host:run cannot run commands, even in full autonomy", async () => {
