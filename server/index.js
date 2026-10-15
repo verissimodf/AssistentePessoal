@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { db, agents, bots, auth, audit } from "./db.js";
 import { AuthError, can, isVerifiedAdmin, sanitizeBotScopes, DEFAULT_BOT_SCOPES } from "./auth.js";
-import { publicSettings, updateSettings, legacySettingsInventory, claimLegacySettings } from "./settings.js";
+import { getSettings, publicSettings, updateSettings, legacySettingsInventory, claimLegacySettings } from "./settings.js";
 import { owns, ownerOf, ownedIds, assignNew, dropOwnership, tx, legacyInventory, claimLegacy, ClaimError, inactiveAdminInventory, transferResources, purgeResources, resumePurge, cancelPurge, listPurgeJobs } from "./ownership.js";
 import { runAgent, testProvider } from "./llm.js";
 import { remember, recall, resolveApproval } from "./tools.js";
@@ -18,6 +18,8 @@ import { listDocuments, getDocument, saveDocument, searchDocuments, deleteDocume
 import { runBot, listRuns, startScheduler, triggerByText, auditLegacyBlocked } from "./bots.js";
 import { tts, cloneVoice } from "./voice.js";
 import { startTelegramPolling, sendMessage } from "./comms.js";
+import { getMailService, setMailTransport } from "./mail-service.js";
+import { redactAccount, ACCOUNT_TYPES } from "./mail.js";
 
 const VERSION = "1.2.0";
 const COOKIE = "jarvis_sid";
@@ -249,6 +251,32 @@ route("POST", "/api/ownership/purge/:id/cancel", "session", ({ params, principal
   catch (e) { if (e instanceof ClaimError) throw new AuthError(e.status, e.code); throw e; }
 });
 
+// ---------- Phase 4: e-mail (F4.2/F4.3/F4.5/F4.9) ----------
+// The transport is a mock placeholder (see mail-service.js): no provider is contacted, nothing is
+// sent. Ownership is enforced in the service (account resolved per adminId); "not yours" and "does
+// not exist" are indistinguishable. Reads use `comms:read`; the manual send is human-session only
+// and requires the explicit confirmation ENVIAR (D9). No body is ever persisted or audited.
+const numParam = (v) => (v === null || v === "" ? undefined : Number(v));
+route("GET", "/api/mail/accounts", "comms:read", ({ principal }) => {
+  const comms = getSettings(principal.adminId)?.comms || {};
+  return ACCOUNT_TYPES.filter((t) => comms[t]).map((t) => redactAccount({ ...comms[t], type: t }));
+});
+route("GET", "/api/mail/:account/messages", "comms:read", ({ params, query, principal }) =>
+  getMailService().list(principal.adminId, params.account, { limit: numParam(query.get("limit")), offset: numParam(query.get("offset")) }));
+route("GET", "/api/mail/:account/search", "comms:read", ({ params, query, principal }) => {
+  // Forward every non-paging parameter so the core can reject forbidden/unknown filters explicitly.
+  const criteria = {};
+  for (const [k, v] of query) {
+    if (k === "limit" || k === "offset") continue;
+    criteria[k] = k === "unseen" ? v === "true" : v;
+  }
+  return getMailService().search(principal.adminId, params.account, criteria, { limit: numParam(query.get("limit")), offset: numParam(query.get("offset")) });
+});
+route("GET", "/api/mail/:account/messages/:id", "comms:read", ({ params, principal }) =>
+  getMailService().read(principal.adminId, params.account, params.id));
+route("POST", "/api/mail/:account/send", "session", ({ params, body, principal }) =>
+  getMailService().send(principal.adminId, params.account, body));
+
 // ---------- authentication + authorization (single choke point) ----------
 function authenticate(req) {
   const bearer = /^Bearer (.+)$/.exec(req.headers.authorization || "")?.[1];
@@ -256,7 +284,8 @@ function authenticate(req) {
   return { principal: auth.validateSession(readCookie(req)), via: "cookie" };
 }
 
-export function createApp() {
+export function createApp(opts = {}) {
+  setMailTransport(opts.mailTransport); // default: the mock placeholder transport
   return createServer(async (req, res) => {
     const origin = req.headers.origin;
     if (!trusted(origin)) return send(res, 403, { error: "origin_not_allowed" }, undefined);
