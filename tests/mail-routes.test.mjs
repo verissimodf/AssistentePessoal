@@ -313,7 +313,7 @@ test("mail: audit never contains the body, recipient or secret", async () => {
   assert.deepEqual(Object.keys(JSON.parse(sent.at(-1).detail)).sort(), ["account", "admin"]);
 });
 
-test("tools: read_email uses the core (sanitised); send_email is refused for agents", async () => {
+test("tools: read_email uses the core (sanitised); send_email prepares a draft (never sends)", async () => {
   const principal = { type: "service", adminId: A.id, scopes: ["comms:read", "comms:send"] };
   const ctx = () => ({ autonomy: "confirm", pending: [], principal });
 
@@ -322,12 +322,12 @@ test("tools: read_email uses the core (sanitised); send_email is refused for age
   assert.equal(read.includes("<script>"), false, "tool output is sanitised");
 
   const before = tstate.calls.send;
-  const refused = await callTool(
+  const drafted = await callTool(
     "send_email",
     { account: "gmail", to: "x@y.z", subject: "s", body: BODY },
     ctx(),
   );
-  assert.match(refused, /confirmacao humana/i);
+  assert.match(drafted, /Nada foi enviado/i);
   assert.equal(tstate.calls.send, before, "agent send never reaches the transport");
   assert.equal(auditText().includes(BODY), false);
 });

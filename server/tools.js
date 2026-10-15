@@ -9,7 +9,8 @@ import { searchDocuments } from "./documents.js";
 import { assignNew, owns, tx } from "./ownership.js";
 import { sendMessage, readCalendar } from "./comms.js";
 import { getMailService } from "./mail-service.js";
-import { MailError } from "./mail.js";
+import { getDraftStore } from "./mail-drafts.js";
+import { MailError, validateOutgoing } from "./mail.js";
 
 export const TOOL_DEFS = {
   web_search: { description: "Search the internet. Returns titles, links and snippets.", params: { query: "string" } },
@@ -214,12 +215,19 @@ export async function callTool(name, input, ctx) {
     }
     case "send_message": return sendMessage(adminId, input.channel, input.text);
     case "send_email": {
-      // D9: an agent/bot must never send without an explicit human approval. Implementing that flow
-      // would require carrying the message body from request to approval, i.e. persisting the body —
-      // which this phase forbids (docs/FASE-4-EMAIL.md §10/§11). Direct sending from a tool is
-      // therefore refused; the human sends from the panel with the explicit ENVIAR confirmation.
-      audit("send_email(blocked)", { status: "needs_approval", principal: who(ctx.principal) });
-      return "Envio de e-mail por agente/bot exige confirmacao humana e ainda nao esta disponivel. Use o painel (E-mail) para enviar com confirmacao explicita.";
+      // D9: an agent/bot never sends. We only prepare a DRAFT (in-memory, owner-bound, single-use and
+      // expiring — see mail-drafts.js) that a human reviews and confirms in the panel. Creating the
+      // draft is NOT an authorisation: the body is never persisted and the send needs a human ENVIAR.
+      try {
+        const outgoing = validateOutgoing({ to: input.to, subject: input.subject, body: input.body });
+        const { id, expiresAt } = getDraftStore().put({ adminId, account: input.account, to: outgoing.to, subject: outgoing.subject, body: outgoing.text });
+        audit("send_email(draft_created)", { status: "pending_review", principal: who(ctx.principal) });
+        const minutes = Math.max(1, Math.round((expiresAt - Date.now()) / 60000));
+        return `Nada foi enviado. Rascunho criado para revisao no painel (E-mail) — id ${id}, expira em ~${minutes} min. O envio exige confirmacao explicita do usuario.`;
+      } catch (e) {
+        if (e instanceof MailError) return `Nao foi possivel preparar o envio: ${e.code}.`;
+        throw e;
+      }
     }
     case "read_email": {
       try {

@@ -20,6 +20,7 @@ import { tts, cloneVoice } from "./voice.js";
 import { startTelegramPolling, sendMessage } from "./comms.js";
 import { getMailService, setMailTransport } from "./mail-service.js";
 import { redactAccount, ACCOUNT_TYPES } from "./mail.js";
+import { getDraftStore, setDraftStore } from "./mail-drafts.js";
 
 const VERSION = "1.2.0";
 const COOKIE = "jarvis_sid";
@@ -276,6 +277,19 @@ route("GET", "/api/mail/:account/messages/:id", "comms:read", ({ params, princip
   getMailService().read(principal.adminId, params.account, params.id));
 route("POST", "/api/mail/:account/send", "session", ({ params, body, principal }) =>
   getMailService().send(principal.adminId, params.account, body));
+// Drafts for human approval (D9): created by an agent/bot tool, reviewed and confirmed by a human.
+// The body lives only in process memory (mail-drafts.js) — never persisted, never audited.
+route("GET", "/api/mail/drafts/:id", "session", ({ params, principal }) => {
+  const d = getDraftStore().get(params.id, principal.adminId);
+  if (!d) throw new AuthError(404, "not_found");
+  return { id: d.id, account: d.account, to: d.to, subject: d.subject, body: d.body, expiresAt: new Date(d.expiresAt).toISOString() };
+});
+route("POST", "/api/mail/drafts/:id/send", "session", ({ params, body, principal }) => {
+  if (body.confirm !== "ENVIAR") throw new AuthError(400, "confirmation_required");
+  const draft = getDraftStore().consume(params.id, principal.adminId); // single-use, before sending
+  if (!draft) throw new AuthError(404, "not_found");
+  return getMailService().send(principal.adminId, draft.account, { to: draft.to, subject: draft.subject, body: draft.body, confirm: "ENVIAR" });
+});
 
 // ---------- authentication + authorization (single choke point) ----------
 function authenticate(req) {
@@ -286,6 +300,7 @@ function authenticate(req) {
 
 export function createApp(opts = {}) {
   setMailTransport(opts.mailTransport); // default: the mock placeholder transport
+  setDraftStore(opts.draftStore);
   return createServer(async (req, res) => {
     const origin = req.headers.origin;
     if (!trusted(origin)) return send(res, 403, { error: "origin_not_allowed" }, undefined);
