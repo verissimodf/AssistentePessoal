@@ -331,3 +331,42 @@ test("tools: read_email uses the core (sanitised); send_email prepares a draft (
   assert.equal(tstate.calls.send, before, "agent send never reaches the transport");
   assert.equal(auditText().includes(BODY), false);
 });
+
+test("mail: rate limits are enforced per admin+account, with retryAfter", async () => {
+  // Inject small limits; a fresh service (and limiter) is built by setMailTransport.
+  setMailTransport(transport, {
+    timeoutMs: 40,
+    retries: 2,
+    sleep: async () => {},
+    readPerMin: 2,
+    sendPerHour: 1,
+  });
+  try {
+    assert.equal((await req("/api/mail/gmail/messages", { s: A })).status, 200);
+    assert.equal((await req("/api/mail/gmail/messages", { s: A })).status, 200);
+    const limited = await json(await req("/api/mail/gmail/messages", { s: A }));
+    assert.equal(limited.status, 429);
+    assert.equal(limited.body.error, "rate_limited");
+    assert.ok(limited.body.retryAfter >= 1, "the client is told when to retry");
+    assert.equal(JSON.stringify(limited.body).includes(SECRET), false);
+
+    const first = await json(
+      await req("/api/mail/gmail/send", {
+        method: "POST",
+        body: { to: "x@y.z", subject: "s", body: "b", confirm: "ENVIAR" },
+        s: A,
+      }),
+    );
+    assert.equal(first.status, 200);
+    const blocked = await json(
+      await req("/api/mail/gmail/send", {
+        method: "POST",
+        body: { to: "x@y.z", subject: "s", body: "b", confirm: "ENVIAR" },
+        s: A,
+      }),
+    );
+    assert.equal(blocked.status, 429, "send has its own (hourly) bucket");
+  } finally {
+    setMailTransport(transport, { timeoutMs: 40, retries: 2, sleep: async () => {} });
+  }
+});

@@ -73,11 +73,9 @@ aprovação** — **não é decisão tomada**.
 **Bloqueador:** estes valores precisam de aprovação antes da implementação. Enquanto não aprovados, a
 Fase 4 **não** deve ser iniciada.
 
-> **Atualização (incremento 3, 2026-10-15):** os limites de **paginação**, **tamanho de corpo/filtro**,
-> **timeout/retry/backoff** já estão implementados como **mecanismo configurável** (`LIMITS` em
-> `server/mail.js`, sobrescrevível por `createMailService({ limits })`) — ver §10.2. **Rate limit**
-> (consulta/min, envio/hora) e **retenção** continuam **pendentes** (política): não foram implementados
-> para não inventar valores nem persistir corpos.
+> **Atualização (incremento 4, 2026-10-15):** os valores foram **consolidados como proposta definitiva**
+> em **§12** — inclusive **rate limit** (leitura 30/min, envio 20/h), já implementado e aplicado por
+> padrão. **Retenção não precisa de decisão**: nada de corpo/metadado de e-mail é persistido (§12.2).
 
 ## 4. Fora de escopo (Fase 4)
 
@@ -336,10 +334,12 @@ definitivos; ativar o transporte real (D7); valores de F4.11; transferência de 
 
 ## 11. Perguntas de produto (bloqueios indispensáveis)
 
-1. **F4.11 — pastas/filtros/limites/retenção (§3.1).** Aprovar os valores propostos?
-   (a) Aprovar como estão; (b) aprovar com ajustes (quais?); (c) manter pendente e seguir só com o
-   núcleo. *Consequência:* sem isso, não há pastas nomeadas nem limites "oficiais"; o núcleo usa os
-   valores provisórios injetáveis e **não** persiste corpo.
+1. **F4.11 — pastas/filtros/limites/retenção (§3.1, consolidado em §12).** Confirmar os valores
+   propostos como definitivos?
+   (a) Confirmar como estão (§12.1); (b) confirmar com ajustes (quais?); (c) reverter para provisório
+   (rate limit desligado). *Consequência:* os valores já estão implementados e **aplicados por padrão**;
+   (b)/(c) mudam uma constante em `LIMITS`. A **retenção não precisa de decisão**: nada de corpo/metadado
+   de e-mail é persistido (§12.2).
 2. **Aprovação da especificação + autorização de implementação.** Autorizar a construção das rotas e
    ferramentas (com mocks) sem credenciais reais? (a) Sim, com mocks; (b) sim, incluindo o adaptador de
    transporte real (mas ainda sem conta real); (c) não. *Consequência:* define se o próximo incremento
@@ -367,3 +367,55 @@ definitivos; ativar o transporte real (D7); valores de F4.11; transferência de 
 
 **A autorização para implementar código não autoriza** acesso a contas reais, uso de credenciais, envio
 de mensagens nem alteração de dados reais — essas operações exigem autorização explícita específica.
+
+## 12. Política operacional consolidada (F4.11) — valores propostos como definitivos
+
+**Estado (2026-10-15):** os valores que estavam **provisórios** foram consolidados. Os números abaixo são
+a **proposta definitiva**, já implementada em `LIMITS` (`server/mail.js`) e nos defaults do store de
+rascunhos, e **aplicados por padrão**. Ajustar qualquer valor = trocar uma constante (ou passar
+`createMailService({ limits })`). Confirmação formal: §11.1.
+
+### 12.1 Limites
+
+| Parâmetro | Valor | Chave | Justificativa | Impacto operacional |
+|---|---|---|---|---|
+| Paginação — padrão | 20 | `defaultPage` | leitura típica de caixa | resposta pequena por padrão |
+| Paginação — máximo | 50 | `maxPage` | protege memória/tempo (§3.1) | acima disso o servidor corta |
+| Teto por consulta | 500 | `maxTotal` | limita varredura profunda (§3.1) | teto duro |
+| Corpo no envio | 100 000 bytes | `maxBody` | cobre e-mail normal sem anexo | acima → `413` |
+| Filtro de busca | 200 caracteres | `maxFilter` | evita padrão abusivo | acima → `400` |
+| Timeout por tentativa | 8 000 ms | `timeoutMs` | provedor lento ainda responde | 8 s e desiste |
+| Retries (leitura/pesquisa) | 2 | `retries` | falhas transitórias de rede | até 3 tentativas |
+| Retries (envio) | **0** | (fixo no envio) | **evitar entrega dupla** | **1 tentativa por rascunho** |
+| Backoff base | 250 ms | `baseDelayMs` | alívio do provedor | 250/500/1000 ms |
+| Rate limit — leitura | 30/min | `readPerMin` | evita throttling (§3.1) | `429` + `retryAfter` |
+| Rate limit — envio | 20/hora | `sendPerHour` | evita spam/bloqueio (§3.1) | `429` + `retryAfter` |
+| TTL do rascunho (pendente) | 10 min | `ttlMs` | janela de revisão humana | expira → `expirado` |
+| TTL do desfecho | 5 min | `outcomeTtlMs` | mostrar `sent`/`failed`/`unknown` | some depois |
+| Capacidade de rascunhos | 200 | `max` | limita memória | descarta o mais antigo |
+
+O rate limit é por **(administrador, conta)** e por tipo (`read`/`send`), com janela deslizante em
+memória. `429` traz `retryAfter` (segundos) no corpo e no cabeçalho `retry-after`. Um envio bloqueado
+por rate limit **não consome** o rascunho (verificação antecipada).
+
+### 12.2 Retenção — inventário (o que existe e o que é mantido)
+
+| Dado | Onde vive | Retenção | Observação |
+|---|---|---|---|
+| Corpo do rascunho | **memória do processo** | só enquanto `pending` (≤ 10 min) | nunca em banco/disco/log/auditoria; apagado em transição terminal |
+| Corpo de mensagem lida | memória (resposta HTTP) | não persiste | sanitizado a cada chamada |
+| Metadados de mensagem | memória (resposta HTTP) | não persiste | não há tabela de e-mail |
+| Estado de conexão (F4.5) | — | não persistido | gestão de conexão ainda pendente |
+| Credenciais | `admin_settings` (cifradas) | enquanto a conta existir | AES-256-GCM; nunca devolvidas |
+| Eventos de auditoria | tabela `audit` | política existente do projeto | só `kind` + metadados sanitizados |
+
+**Conclusão:** F4.11 pede "**não** persistir corpo; no máximo metadados com TTL curto". O sistema **não
+persiste corpo nem metadados de e-mail** — portanto **não há política de retenção a definir**: a linha de
+retenção de F4.11 está satisfeita **por construção**. A única persistência relacionada são as
+**credenciais** (já cifradas, governadas por `settings.js`) e a **auditoria** (governada pela allowlist).
+
+### 12.3 O que continua fora (não implementado)
+
+- **Pastas nomeadas / regras**: apenas `INBOX` (a busca usa a caixa de entrada). Pastas são escopo futuro.
+- **Ativar o transporte real (D7)** e conectar contas — depende de decisão e de credenciais do operador.
+- **Retomada após falha de envio** (rascunho cifrado com TTL curto) — exige política própria (§11.5).
