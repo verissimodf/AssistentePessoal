@@ -66,5 +66,36 @@ Vá até a página original do repositório no GitHub, você verá um botão ver
 
 ---
 
+## 🧭 Política de desenvolvimento por risco
+
+Este é um projeto **interno** (ferramenta pessoal, sem finalidade comercial). Adotamos **desenvolvimento
+orientado a risco**: autonomia técnica para o rotineiro e controles explícitos **apenas onde o risco real
+justifica**. Revisão independente, múltiplas aprovações e relatórios extensos **não** são requisitos
+universais.
+
+| Nível | Exemplos | Processo |
+|---|---|---|
+| **Baixo** | documentação, testes, refatoração interna sem mudança de comportamento, correções pequenas | implementar no fluxo normal; rodar os testes relevantes; revisar o próprio diff; registrar um **resumo conciso** |
+| **Moderado** | novas funcionalidades internas, mudanças de fluxo, novos módulos, integrações com **mocks** | implementar e testar; checar regressões e permissões afetadas; registrar limitações; pedir revisão **só** se houver dúvida técnica concreta |
+| **Alto** | autenticação, autorização, isolamento entre usuários, migrações relevantes, titularidade | **testes específicos** para os riscos; verificar falhas de autorização e regressões; preparar recuperação/rollback; revisão adicional quando o impacto justificar |
+| **Irreversível / dados reais** | expurgo, transferência real de titularidade, alteração destrutiva de dados | **confirmação explícita antes da execução real** + validação de autorização + backup/recuperação quando aplicável + testes seguros prévios |
+
+**Autonomia:**
+- executar implementação e testes de **baixo e moderado** risco sem pedir autorização a cada subetapa;
+- corrigir falhas dentro do escopo; se surgir um **risco novo e relevante**, interromper **só a ação afetada** e explicar;
+- não pedir aprovações repetidas para decisões **já documentadas**;
+- não produzir relatórios extensos quando um **resumo com evidências** basta;
+- não reabrir PRs já mesclados para satisfazer formalidades retroativas.
+
+**Rastreabilidade mínima por alteração:** resumo da mudança · arquivos/componentes afetados · testes
+executados e resultados · riscos/limitações relevantes.
+
+**Sempre preservado:** segurança (auth/authz/isolamento), testes, recuperação/rollback e a integridade da
+`main`. Não desativar proteções do repositório nem ignorar falhas de CI sem justificativa documentada.
+Branches e PRs continuam disponíveis quando úteis (isolamento, CI, recuperação) — **não** como cerimônia
+obrigatória para toda alteração pequena.
+
+---
+
 Obrigado por ajudar a construir um assistente de IA mais privado e acessível! 🤖
 
