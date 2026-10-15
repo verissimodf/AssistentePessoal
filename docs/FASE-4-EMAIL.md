@@ -1,7 +1,9 @@
 # Fase 4 — E-mail (especificação proposta)
 
-**Status: proposta — aguarda aprovação.** Não implementar antes da aprovação. Deriva do Plano Mestre §6
-(Fase 4) e da matriz de rastreabilidade F4.1–F4.11 em `docs/CONTINUIDADE.md`.
+**Status: proposta — aguarda aprovação da especificação e de F4.11.** Deriva do Plano Mestre §6
+(Fase 4) e da matriz de rastreabilidade F4.1–F4.11 em `docs/CONTINUIDADE.md`. A parte **independente**
+(o **núcleo de e-mail** sem rede/credenciais + testes com mocks) foi iniciada — ver §10; o restante
+segue bloqueado (§9, §11).
 
 ## 1. Objetivo
 
@@ -139,3 +141,54 @@ confirmação para efeito documental. O que permanece **pendente**:
 
 **A Fase 4 permanece bloqueada** até que os itens 1–4 estejam satisfeitos. **Nenhuma implementação de
 e-mail foi iniciada.**
+
+## 10. Implementação incremental (partes que NÃO dependem das decisões pendentes)
+
+**Estado (2026-10-15):** iniciada a parte **independente** da Fase 4 — o **núcleo de e-mail**
+(`server/mail.js`) + testes com **mocks** (`tests/mail.test.mjs`). Não toca rede, credenciais, caixas
+reais nem dados reais; não acessa nem envia nada. Não altera os conectores existentes (F4.1 preservado).
+
+O que o núcleo já entrega (contrato reutilizável pelas rotas `/api/mail/*` e pelas ferramentas):
+
+| Item | Entrega |
+|---|---|
+| §6.1.3 conteúdo não confiável | `sanitizeEmailBody` — remove script/style/iframe/objeto, eventos inline e tags; **nunca emite `<`/`>`** (markup codificado como entidade permanece texto inerte). |
+| §6.1.1/§6.1.7 prompt injection | `labelUntrusted` + `UNTRUSTED_NOTICE` — delimita e rotula o conteúdo como **dado, nunca instrução**. |
+| F4.3 busca | `validateSearch` — **allowlist** (`from`, `subject`, `since`, `before`, `unseen`); recusa regex/`body`/chaves desconhecidas; valida datas e tamanho. |
+| §3.1 paginação | `clampPage` — nunca confia no cliente; aplica teto. |
+| §3.1 falhas/credenciais | `classifyConnectionError` — auth → `reconnect` (não repetir); transitório → `error` (repetível). |
+| F4.6 credenciais | `redactAccount` — nunca devolve a senha; mascara o endereço. |
+| §3.1 timeout/backoff | `withRetry`/timeout por tentativa com backoff exponencial (sleep injetável). |
+| F4.8 isolamento | `createMailService` + `settingsAccountResolver` — conta resolvida **por adminId**; "não é sua" e "não existe" são indistinguíveis. |
+| F4.9/D9 envio | confirmação explícita `ENVIAR`; validação de destinatário/corpo/tamanho; auditoria **sem** conteúdo. |
+
+**Limites (F4.11) são injetáveis** (`createMailService({ limits })`) e centralizados em `LIMITS`,
+marcados como **provisórios/pendentes de aprovação** — a política não foi decidida aqui. **Não** há
+persistência de corpo de mensagem (portanto, nenhuma janela de retenção a definir neste incremento).
+
+**Ainda dependente de decisão (não implementado):** rotas HTTP `/api/mail/*`, ferramentas
+`read_email`/`send_email` ligadas ao novo núcleo, adaptador de transporte real (IMAP/SMTP), gestão de
+conexão persistida (F4.5), pastas/regras e retenção (F4.11). Nada disso é iniciado sem as respostas da
+§11 e sem autorização explícita de operação real.
+
+## 11. Perguntas de produto (bloqueios indispensáveis)
+
+1. **F4.11 — pastas/filtros/limites/retenção (§3.1).** Aprovar os valores propostos?
+   (a) Aprovar como estão; (b) aprovar com ajustes (quais?); (c) manter pendente e seguir só com o
+   núcleo. *Consequência:* sem isso, não há pastas nomeadas nem limites "oficiais"; o núcleo usa os
+   valores provisórios injetáveis e **não** persiste corpo.
+2. **Aprovação da especificação + autorização de implementação.** Autorizar a construção das rotas e
+   ferramentas (com mocks) sem credenciais reais? (a) Sim, com mocks; (b) sim, incluindo o adaptador de
+   transporte real (mas ainda sem conta real); (c) não. *Consequência:* define se o próximo incremento
+   liga o núcleo às rotas/ferramentas.
+3. **Titularidade das contas após recuperação de acesso (D_REC cat. 3 / §8).** Quando um admin é
+   recuperado, as **contas de e-mail** dele: (a) seguem o dono atual (nada muda); (b) podem ser
+   **transferidas** explicitamente (como recursos D_REC-1); (c) são **expurgadas** manualmente (D_REC-2).
+   *Consequência:* a resposta usa os mecanismos já implementados de transferência/expurgo; a conta é
+   tratada como recurso com titularidade, **nunca** reativada por inferência.
+4. **Autenticação (D7).** Confirmar **IMAP/SMTP + senha de aplicativo** (OAuth fora do escopo inicial)?
+   (a) Confirmar; (b) reavaliar OAuth antes. *Consequência:* define o adaptador de transporte real e os
+   campos de credencial; **não** afeta o núcleo atual (que é agnóstico de transporte).
+
+**A autorização para implementar código não autoriza** acesso a contas reais, uso de credenciais, envio
+de mensagens nem alteração de dados reais — essas operações exigem autorização explícita específica.
