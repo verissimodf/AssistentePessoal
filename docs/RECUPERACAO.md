@@ -84,17 +84,35 @@ Fases 1 e 2 e é pré-requisito das fases seguintes. **Status: proposta — agua
 - A auditoria é **sanitizada** (`sanitizeAudit`): nunca grava segredos, tokens, senhas ou conteúdo de
   mensagens.
 
-### 5. Proibição de transferência automática
-- **Nenhum** recurso órfão é atribuído automaticamente — nem na migração v2, nem na recuperação de
-  acesso, nem ao desativar um administrador.
-- Ao desativar um administrador, os recursos que pertenciam a ele permanecem com ele e ficam
-  **inacessíveis**; só voltam a ser acessíveis por **reivindicação explícita e auditada**.
-- Bots sem dono comprovável não executam (`legacy_blocked`).
+### 5. Categorias de recursos e o que se aplica a cada uma
 
-### 6. Pendência aberta (a decidir)
-- **Recuperação da propriedade após recuperação de acesso.** Quando um administrador é desativado por
-  `recuperar-acesso.js`, os recursos dele ficam órfãos de fato (dono inativo) e **não há**, hoje, um
-  caminho aprovado para reatribuí-los. Esta política **proíbe a transferência automática**; a
-  reatribuição exige decisão explícita (reivindicação), que ainda **não está implementada** para
-  recursos cujo dono foi desativado. Decisão mínima necessária: definir se/como um administrador ativo
-  pode reivindicar recursos de um administrador desativado (com auditoria), ou manter o bloqueio.
+| # | Categoria | Situação | Acesso hoje |
+|---|---|---|---|
+| 1 | Recuperação de credenciais / primeiro acesso | break-glass local (§1) | reabre o primeiro acesso; **não** concede propriedade |
+| 2 | Recursos **sem proprietário comprovável** (legado) | nunca tiveram dono | invisíveis; reivindicáveis por **reivindicação explícita** (§3) |
+| 3 | Recursos **vinculados a administrador desativado** | têm dono, mas o dono está inativo | **bloqueados para todas as identidades** |
+| 4 | Reivindicação futura dos recursos da categoria 3 | **não existe hoje** | **indisponível** até procedimento aprovado e implementado |
+
+### 6. Invariantes (não negociáveis)
+
+- Recuperar acesso **não** concede propriedade automática.
+- Criar uma nova conta **não** transfere recursos existentes.
+- Recursos de uma administradora desativada permanecem **bloqueados para outras identidades**.
+- A reivindicação dos recursos da **categoria 3** permanece **indisponível** até existir procedimento
+  **aprovado e implementado** — não basta a política estar escrita.
+- **Não** permitir acesso ao **conteúdo privado** durante a triagem (só metadados).
+- **Não** reativar automaticamente tokens, bots, aprovações ou credenciais de e-mail ao recuperar acesso.
+- Qualquer transferência futura deve ser **granular, voluntária, auditada e resistente a concorrência**
+  (transação atômica; sem execução dupla).
+- O expurgo deve tratar **banco, arquivos e dados derivados**; **não** prometer atomicidade única entre
+  SQLite e o sistema de arquivos (o arquivo é removido após a transação, tolerando falha parcial).
+
+### 7. Pendência aberta (bloqueador)
+
+- **Reatribuição de recursos de administrador desativado (categorias 3 e 4):** hoje **não implementada**.
+  A política proíbe a transferência automática e **não** promete que a reivindicação desses recursos já
+  exista. Enquanto não houver procedimento aprovado e implementado, esses recursos permanecem
+  **inacessíveis**. Decisão mínima necessária: definir se/como um administrador ativo pode reivindicar
+  recursos de um administrador desativado (com auditoria e concorrência segura), ou manter o bloqueio.
+- **Não** implementar endpoints de transferência ou expurgo nesta fase; esta seção formaliza a política
+  e registra o bloqueio.

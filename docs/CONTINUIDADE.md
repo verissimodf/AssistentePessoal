@@ -148,15 +148,26 @@ especificação da Fase 4** (D7/D9/D10). **D_REC** é proposta nova, aguardando 
 | D10 — testes de e-mail | **mocks no CI** + conta dedicada para testes reais; sem expor/versionar credenciais | `docs/FASE-4-EMAIL.md` §2 |
 
 ### D_REC (nova) — recuperação, reivindicação e propriedade
-- **Proposta formalizada** em `docs/RECUPERACAO.md` §D_REC: recuperação de credenciais local, validação
-  de identidade, reivindicação voluntária e granular, auditoria sanitizada e **proibição de transferência
-  automática de recursos órfãos**.
-- **Pendência aberta:** reatribuição de recursos de administrador **desativado** (exige decisão explícita).
+- **Proposta formalizada** em `docs/RECUPERACAO.md` §D_REC (categorias 1–4, invariantes e pendência):
+  recuperação de credenciais local, validação de identidade, reivindicação voluntária e granular de
+  recursos **sem dono comprovável**, auditoria sanitizada e **proibição de transferência automática**.
+- **Bloqueio explícito:** a reivindicação de recursos **vinculados a administrador desativado**
+  (categoria 3) permanece **indisponível** até existir procedimento **aprovado e implementado**. Não há
+  endpoint de transferência nem de expurgo nesta fase.
+
+### Fase 4 — estado
+- **D7, D9 e D10 adotadas como diretrizes da especificação** (`docs/FASE-4-EMAIL.md` §2) — **não**
+  significam especificação aprovada nem autorização de implementação.
+- **Bloqueadores de implementação:** (1) aprovação da especificação; (2) autorização explícita;
+  (3) **F4.11** (pastas/filtros/limites/retenção — §3.1); (4) **D_REC** (categoria 3). Enquanto não
+  resolvidos, a Fase 4 permanece **bloqueada**.
 
 ### Itens ainda em aberto
 | Prioridade | Decisão | Próximo passo |
 |---|---|---|
-| Alta | D_REC — propriedade após recuperação de acesso | Aprovar a política e decidir a reatribuição |
+| Alta | D_REC — reivindicação de recursos de admin desativado | Aprovar a política; **implementação indisponível** até decisão |
+| Alta | F4.11 — pastas, filtros, limites, retenção | Aprovar a recomendação inicial (§3.1) |
+| Alta | Aprovação da especificação da Fase 4 + autorização de implementação | Revisão do PR #6 |
 | Posterior | D8 — limites/cota por documento | Definir valores |
 | Posterior | D2 — numeração | Ajustar ou registrar a equivalência no roadmap |
 
