@@ -4,8 +4,8 @@
 (Fase 4) e da matriz de rastreabilidade F4.1–F4.11 em `docs/CONTINUIDADE.md`. As partes **independentes**
 já iniciadas — **núcleo de e-mail**, **rotas/ferramentas com transporte mockado**, **adaptador IMAP/SMTP
 injetável (tecnicamente pronto, não ativado)**, **rascunho para aprovação humana** e **tela de rascunhos
-no painel** — estão em §10; o transporte real e sua ativação estão em §13; o restante segue bloqueado
-(§9, §11).
+no painel** — estão em §10; o transporte real, sua ativação e desativação estão em §13; o procedimento do
+primeiro teste real está em §14; o restante segue bloqueado (§9, §11).
 
 ## 1. Objetivo
 
@@ -376,6 +376,10 @@ a **proposta definitiva**, já implementada em `LIMITS` (`server/mail.js`) e nos
 rascunhos, e **aplicados por padrão**. Ajustar qualquer valor = trocar uma constante (ou passar
 `createMailService({ limits })`). Confirmação formal: §11.1.
 
+> **Decisão adotada (Gate 4D, 2026-10-15):** sem resposta a §11.1, mantém-se o **status quo** — os valores
+> de §12.1 continuam **aplicados por padrão** e a confirmação formal segue **pendente**. **Nenhum valor foi
+> alterado** nesta execução.
+
 ### 12.1 Limites
 
 | Parâmetro | Valor | Chave | Justificativa | Impacto operacional |
@@ -471,3 +475,58 @@ unset JARVIS_MAIL_TRANSPORT     # ou: JARVIS_MAIL_TRANSPORT=mock
   comportamento de um provedor específico (pastas, limites, mensagens de erro) só se confirma no uso real.
 - Rate limit é **por processo** (em memória); múltiplas instâncias não compartilham contadores.
 - `dotenv` está nas dependências do servidor mas **não é usado** (pendência de limpeza).
+
+### 13.4 Desativação imediata (kill switch)
+
+1. **Desligar o transporte:** remover a variável e reiniciar o serviço — `unset JARVIS_MAIL_TRANSPORT`
+   (ou `JARVIS_MAIL_TRANSPORT=mock`). A próxima chamada já usa o mock; nada a limpar no servidor.
+2. **Se a conta estiver comprometida:** revogar a **senha de aplicativo no provedor** e apagar o campo em
+   Configurações → Comunicação (o valor cifrado deixa de valer). Sessões/tokens não são afetados.
+3. **Rascunhos:** vivem só em memória — reiniciar o serviço os descarta; **não** há corpo persistido para
+   expurgar.
+4. **Auditoria:** permanece (é o registro de que a operação ocorreu); contém apenas metadados sanitizados.
+
+## 14. Procedimento do primeiro teste real (conta dedicada)
+
+**Isto é um procedimento, não uma autorização.** A execução exige autorização **explícita e específica**
+(§11.4) e uma conta de **teste dedicada**. Nada aqui foi executado.
+
+### 14.1 Pré-condições
+
+1. Autorização registrada para **a operação e o escopo** (D7), não uma autorização genérica.
+2. Conta de **teste dedicada** (Gmail/Outlook) — **nunca** credenciais de produção.
+3. Senha de aplicativo criada **no provedor** e entregue por **canal seguro** — nunca em chat, terminal,
+   log, relatório ou neste repositório.
+4. **Destino de teste controlado** (caixa do próprio operador) — nunca terceiros.
+5. Transporte ligado **apenas** no ambiente de teste: `JARVIS_MAIL_TRANSPORT=imap`.
+6. A conta de teste configurada para **um único** administrador (dono).
+
+### 14.2 Passo 1 — leitura e titularidade (sem envio)
+
+- `GET /api/mail/accounts` → a conta aparece para o dono, com endereço **mascarado** e `hasPassword: true`.
+- `GET /api/mail/<conta>/messages` → leitura real; conferir que o corpo volta **sanitizado** (texto).
+- **Titularidade:** um segundo admin **não** vê a conta (`404 account_not_found`).
+- **Sucesso:** leitura ok + isolamento confirmado.
+- **Interromper se:** vazamento entre admins, markup no corpo, ou credencial em resposta/auditoria.
+
+### 14.3 Passo 2 — envio (somente após autorização específica)
+
+- `send_email` por agente/bot → cria **rascunho**; nada é enviado.
+- Revisar no painel (E-mail) e confirmar com `ENVIAR` — **uma** tentativa, sem retry.
+- **Destino:** apenas a caixa de teste controlada.
+- **`sent`:** chegou ao destino de teste.
+- **`failed`:** não saiu; recriar o rascunho se quiser tentar de novo.
+- **`unknown`:** **não** reenviar automaticamente; conferir a caixa de destino antes de qualquer nova
+  tentativa (pode ter sido entregue).
+- **Interromper se:** envio para destino não previsto, ou resultado `unknown` → §13.4.
+
+### 14.4 Nunca
+
+- Reutilizar credenciais de produção.
+- Imprimir/registrar senhas (terminal, log, relatório, PR).
+- Ampliar o escopo (outra conta, outro destino) sem **nova** autorização.
+
+### 14.5 Registro do resultado
+
+Registrar apenas: data, conta (**mascarada**), passo, resultado (`sent`/`failed`/`unknown`) e se houve
+interrupção. **Nunca** o corpo, a senha ou o endereço completo do destinatário.

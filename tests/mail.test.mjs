@@ -174,6 +174,35 @@ test("classifySendError: only pre-transmission errors are a clean failure", () =
   );
 });
 
+test("classifySendError: TLS/certificate failures happen before transmission", () => {
+  assert.deepEqual(classifySendError(new Error("unable to verify the first certificate")), {
+    outcome: "failed",
+  });
+  assert.deepEqual(classifySendError(new Error("self signed certificate in certificate chain")), {
+    outcome: "failed",
+  });
+  assert.deepEqual(
+    classifySendError(
+      Object.assign(new Error("hostname mismatch"), { code: "ERR_TLS_CERT_ALTNAME_INVALID" }),
+    ),
+    { outcome: "failed" },
+  );
+});
+
+test("service: a TLS failure on send is a clean failure, never `unknown`", async () => {
+  const { transport } = mockTransport({
+    async send() {
+      throw Object.assign(new Error("unable to verify the first certificate"), { code: "ESOCKET" });
+    },
+  });
+  const { svc } = makeService({ transport });
+  const err = await catchErr(
+    svc.send("A", "gmail", { to: "x@y.z", subject: "s", body: "b", confirm: "ENVIAR" }),
+  );
+  assert.equal(err.status, 502);
+  assert.equal(err.outcome, "failed", "TLS fails before the message is handed over");
+});
+
 test("rate limiter: sliding window, peek never consumes", () => {
   let t = 0;
   const rl = createRateLimiter({ now: () => t });

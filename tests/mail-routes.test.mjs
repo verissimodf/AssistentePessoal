@@ -370,3 +370,26 @@ test("mail: rate limits are enforced per admin+account, with retryAfter", async 
     setMailTransport(transport, { timeoutMs: 40, retries: 2, sleep: async () => {} });
   }
 });
+
+test("mail: a client can never influence which transport is used", async () => {
+  // The transport is chosen server-side (env opt-in / injected). A body field or header claiming a
+  // transport must be ignored: the injected mock still handles the call.
+  const before = tstate.sent.length;
+  const viaBody = await json(
+    await req("/api/mail/gmail/send", {
+      method: "POST",
+      body: { to: "x@y.z", subject: "s", body: "b", confirm: "ENVIAR", transport: "imap" },
+      s: A,
+    }),
+  );
+  assert.equal(viaBody.status, 200);
+  assert.equal(tstate.sent.length, before + 1, "the injected mock handled it");
+
+  const viaHeader = await json(
+    await fetch(`${base}/api/mail/gmail/messages`, {
+      headers: { origin: ORIGIN, cookie: A.cookie, "x-jarvis-mail-transport": "imap" },
+    }),
+  );
+  assert.equal(viaHeader.status, 200);
+  assert.ok(Array.isArray(viaHeader.body.messages), "still the mock shape");
+});
