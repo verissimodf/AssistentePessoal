@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AgentesRouteImport } from './routes/agentes'
 import { Route as BotsRouteImport } from './routes/bots'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
+import { Route as DocumentosRouteImport } from './routes/documentos'
 import { Route as MemoriaRouteImport } from './routes/memoria'
 
 const IndexRoute = IndexRouteImport.update({
@@ -35,6 +36,11 @@ const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
   path: '/configuracoes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DocumentosRoute = DocumentosRouteImport.update({
+  id: '/documentos',
+  path: '/documentos',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MemoriaRoute = MemoriaRouteImport.update({
   id: '/memoria',
   path: '/memoria',
@@ -46,6 +52,7 @@ export interface FileRoutesByFullPath {
   '/agentes': typeof AgentesRoute
   '/bots': typeof BotsRoute
   '/configuracoes': typeof ConfiguracoesRoute
+  '/documentos': typeof DocumentosRoute
   '/memoria': typeof MemoriaRoute
 }
 export interface FileRoutesByTo {
@@ -53,6 +60,7 @@ export interface FileRoutesByTo {
   '/agentes': typeof AgentesRoute
   '/bots': typeof BotsRoute
   '/configuracoes': typeof ConfiguracoesRoute
+  '/documentos': typeof DocumentosRoute
   '/memoria': typeof MemoriaRoute
 }
 export interface FileRoutesById {
@@ -61,14 +69,23 @@ export interface FileRoutesById {
   '/agentes': typeof AgentesRoute
   '/bots': typeof BotsRoute
   '/configuracoes': typeof ConfiguracoesRoute
+  '/documentos': typeof DocumentosRoute
   '/memoria': typeof MemoriaRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/agentes' | '/bots' | '/configuracoes' | '/memoria'
+  fullPaths:
+    '/' | '/agentes' | '/bots' | '/configuracoes' | '/documentos' | '/memoria'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/agentes' | '/bots' | '/configuracoes' | '/memoria'
-  id: '__root__' | '/' | '/agentes' | '/bots' | '/configuracoes' | '/memoria'
+  to: '/' | '/agentes' | '/bots' | '/configuracoes' | '/documentos' | '/memoria'
+  id:
+    | '__root__'
+    | '/'
+    | '/agentes'
+    | '/bots'
+    | '/configuracoes'
+    | '/documentos'
+    | '/memoria'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -76,6 +93,7 @@ export interface RootRouteChildren {
   AgentesRoute: typeof AgentesRoute
   BotsRoute: typeof BotsRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
+  DocumentosRoute: typeof DocumentosRoute
   MemoriaRoute: typeof MemoriaRoute
 }
 
@@ -109,6 +127,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfiguracoesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/documentos': {
+      id: '/documentos'
+      path: '/documentos'
+      fullPath: '/documentos'
+      preLoaderRoute: typeof DocumentosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/memoria': {
       id: '/memoria'
       path: '/memoria'
@@ -124,6 +149,7 @@ const rootRouteChildren: RootRouteChildren = {
   AgentesRoute: AgentesRoute,
   BotsRoute: BotsRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
+  DocumentosRoute: DocumentosRoute,
   MemoriaRoute: MemoriaRoute,
 }
 export const routeTree = rootRouteImport

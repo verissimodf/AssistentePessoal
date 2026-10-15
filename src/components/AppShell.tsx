@@ -1,5 +1,5 @@
 import { Link, Outlet } from "@tanstack/react-router";
-import { Bot, Brain, LogOut, MessageSquare, Settings, Users } from "lucide-react";
+import { Bot, Brain, FileText, LogOut, MessageSquare, Settings, Users } from "lucide-react";
 import { logout, useAuthState, useBridgeStatus } from "@/lib/bridge";
 import { AuthGate, useAuthText } from "@/components/AuthGate";
 import { LANGS, useI18n, type Lang } from "@/lib/i18n";
@@ -12,6 +12,7 @@ export function AppShell() {
   const nav = [
     { to: "/", label: t("nav_chat"), icon: MessageSquare },
     { to: "/memoria", label: t("nav_memory"), icon: Brain },
+    { to: "/documentos", label: "Documentos", icon: FileText },
     { to: "/agentes", label: t("nav_agents"), icon: Users },
     { to: "/bots", label: t("nav_bots"), icon: Bot },
     { to: "/configuracoes", label: t("nav_settings"), icon: Settings },

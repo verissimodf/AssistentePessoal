@@ -193,7 +193,8 @@ http://127.0.0.1:7777 (server/index.js)
    ├─ db.js         SQLite embutido (node:sqlite) em data/
    ├─ llm.js        provedores + laço de ferramentas do agente + embeddings
    ├─ tools.js      pesquisa, memória, comandos, CLIs, mensagens, e-mail, agenda,
-   │                context7_docs (MCP), crawl_page (crawl4ai), openhands_task (OpenHands)
+   │                context7_docs (MCP), crawl_page (crawl4ai), openhands_task (OpenHands),
+   │                document_search (Fase 3 — documentos TXT do próprio administrador)
    ├─ hostpolicy.js regras de segurança dos comandos
    ├─ bots.js       agendador, observador de arquivos, gatilhos de texto
    ├─ comms.js      Telegram, WhatsApp, Signal, IMAP/SMTP, ICS

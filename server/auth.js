@@ -14,6 +14,7 @@ export const MIN_PASSWORD = 12;
 export const SCOPES = [
   "chat", "memories:read", "memories:write", "agents:read", "agents:write", "bots:read", "bots:write",
   "bots:run", "settings:read", "settings:write", "voice", "web", "host:run", "comms:read", "comms:send", "audit:read",
+  "documents:read", "documents:write",
 ];
 /** Scopes reserved for a human admin session — never grantable to a token. */
 export const ADMIN_ONLY = ["approvals:resolve", "admins:manage", "sessions:manage", "tokens:manage"];
@@ -22,7 +23,7 @@ export const ADMIN_ONLY = ["approvals:resolve", "admins:manage", "sessions:manag
 export const TOOL_SCOPES = {
   web_search: "web", fetch_url: "web", remember: "memories:write", recall: "memories:read",
   run_command: "host:run", cli_agent: "host:run", send_message: "comms:send", send_email: "comms:send",
-  read_email: "comms:read", read_calendar: "comms:read",
+  read_email: "comms:read", read_calendar: "comms:read", document_search: "documents:read",
 };
 
 /** Loopback sources (all local processes look identical here). */

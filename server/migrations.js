@@ -84,6 +84,42 @@ CREATE TABLE IF NOT EXISTS bootstrap (
     //  - everything else (memories, agents, approvals, unproven bots/runs) stays without owner.
     sql: (db) => V2_SCHEMA + V2_COPY.filter((c) => c.needs.every((t) => tableExists(db, t))).map((c) => c.sql).join("\n"),
   },
+  {
+    version: 3,
+    name: "documents: private local document store (TXT first)",
+    // Adds `documents` and extends the `ownership` CHECK to the new resource type 'document'.
+    // Only the ownership table is rebuilt (it is NOT in PRESERVED); preserved tables are
+    // read-only here, so the framework's count + SHA-256 check still proves they are untouched.
+    sql: `
+CREATE TABLE IF NOT EXISTS documents (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  path TEXT NOT NULL,
+  content_text TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_documents_created ON documents(created_at);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v2;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v2;
+DROP TABLE ownership_v2;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+  },
 ];
 
 const tableExists = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
