@@ -53,6 +53,9 @@ export function rawToBody(source) {
   return raw.slice(split).replace(/^\r?\n\r?\n/, "");
 }
 
+/** TLS hardening shared by IMAP and SMTP: verify the certificate chain, never silently downgrade. */
+const TLS_OPTIONS = { rejectUnauthorized: true, minVersion: "TLSv1.2" };
+
 /**
  * Create the IMAP/SMTP transport. `createImapClient` and `createSmtpTransport` are async factories
  * (injectable for contract tests); by default they load imapflow/nodemailer lazily, so importing this
@@ -82,11 +85,13 @@ export function createImapSmtpTransport({
       host: h.imap,
       port: imapPort,
       secure: true,
+      tls: TLS_OPTIONS,
       auth: { user: account.user, pass: account.appPassword },
       logger,
     });
-    await client.connect();
+    // connect() is INSIDE the try: a failed connect still tears the client down (no leaked socket).
     try {
+      await client.connect();
       const lock = await client.getMailboxLock("INBOX");
       try {
         return await fn(client);
@@ -97,7 +102,11 @@ export function createImapSmtpTransport({
       try {
         await client.logout();
       } catch {
-        /* best effort */
+        try {
+          client.close?.();
+        } catch {
+          /* best effort */
+        }
       }
     }
   };
@@ -158,6 +167,7 @@ export function createImapSmtpTransport({
         port: smtpPort,
         secure: false,
         requireTLS: true,
+        tls: TLS_OPTIONS,
         auth: { user: account.user, pass: account.appPassword },
       });
       try {
@@ -172,4 +182,16 @@ export function createImapSmtpTransport({
       }
     },
   };
+}
+
+/** Env var that opts into the real transport. */
+export const TRANSPORT_ENV = "JARVIS_MAIL_TRANSPORT";
+
+/**
+ * Server-side opt-in for the real IMAP/SMTP transport. ONLY the exact value `imap` enables it —
+ * absent, empty, misspelled or differently-cased values fall back to the mock (never a silent
+ * activation). It reads the process environment only: no request, header or client value can reach it.
+ */
+export function transportFromEnv(env = {}) {
+  return env[TRANSPORT_ENV] === "imap" ? createImapSmtpTransport() : null;
 }

@@ -1,11 +1,12 @@
 // Phase 4 — mail wiring. Single seam between the pure core (`mail.js`) and the rest of the service.
 //
-// IMPORTANT: the transport is a PLACEHOLDER. The real IMAP/SMTP adapter is NOT implemented and the
-// provider authentication step is a pending product decision (docs/FASE-4-EMAIL.md §9/§11, D7).
-// Until then the default transport is a deterministic in-memory mock: it never opens a socket,
-// never authenticates and never sends anything. `setMailTransport` exists so tests (and, later, the
-// approved real adapter) can inject a different transport without touching routes or tools.
+// The default transport is a deterministic in-memory mock: it never opens a socket, never
+// authenticates and never sends anything. The real IMAP/SMTP adapter (`mail-imap.js`) is used ONLY
+// when the process environment explicitly opts in with `JARVIS_MAIL_TRANSPORT=imap` — absent,
+// empty or invalid values keep the mock (no accidental activation). `setMailTransport` lets tests
+// inject a transport without touching routes or tools.
 import { createMailService, settingsAccountResolver } from "./mail.js";
+import { transportFromEnv } from "./mail-imap.js";
 import { getSettings } from "./settings.js";
 import { audit } from "./db.js";
 
@@ -83,11 +84,14 @@ function build(transport, limits) {
   });
 }
 
-let service = build(createMockTransport());
+/** The real transport only when explicitly opted in; otherwise the deterministic mock. */
+const defaultTransport = () => transportFromEnv(process.env) ?? createMockTransport();
 
-/** Replace the transport (tests inject a mock; the future real adapter plugs in here). */
+let service = build(defaultTransport());
+
+/** Replace the transport (tests inject a mock; the real adapter plugs in via the env opt-in). */
 export function setMailTransport(transport, limits) {
-  service = build(transport ?? createMockTransport(), limits);
+  service = build(transport ?? defaultTransport(), limits);
 }
 
 export const getMailService = () => service;
