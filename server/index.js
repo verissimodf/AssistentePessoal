@@ -299,7 +299,8 @@ route("POST", "/api/mail/drafts/:id/send", "session", async ({ params, body, pri
     getDraftStore().settle(params.id, principal.adminId, "sent");
     return { ...result, state: "sent" };
   } catch (e) {
-    getDraftStore().settle(params.id, principal.adminId, "failed");
+    // Ambiguous provider result → `unknown`: the message MAY have gone out, so never invite a resend.
+    getDraftStore().settle(params.id, principal.adminId, e?.outcome === "unknown" ? "unknown" : "failed");
     throw e;
   }
 });

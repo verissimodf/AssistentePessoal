@@ -14,8 +14,16 @@
 import { randomUUID } from "node:crypto";
 
 /** Exposed states. `sending` is the brief in-flight window; the others are terminal. */
-export const DRAFT_STATES = ["pending", "sending", "sent", "failed", "cancelled", "expired"];
-const TERMINAL = new Set(["sent", "failed", "cancelled", "expired"]);
+export const DRAFT_STATES = [
+  "pending",
+  "sending",
+  "sent",
+  "failed",
+  "unknown",
+  "cancelled",
+  "expired",
+];
+const TERMINAL = new Set(["sent", "failed", "unknown", "cancelled", "expired"]);
 
 /**
  * In-memory draft store. `ttlMs`, `outcomeTtlMs` and `max` are provisional bounds (exposure/memory),
@@ -108,7 +116,7 @@ export function createDraftStore({
     },
     /** Record the outcome of a claim. Only a `sending` draft can be settled. */
     settle(id, adminId, state) {
-      if (!["sent", "failed"].includes(state)) return false;
+      if (!["sent", "failed", "unknown"].includes(state)) return false;
       sweep();
       const d = owned(id, adminId);
       if (!d || d.state !== "sending") return false;

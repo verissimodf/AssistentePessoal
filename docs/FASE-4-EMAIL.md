@@ -300,27 +300,36 @@ transporte real (D7); valores de F4.11; transferência de conta (§11.3).
 - **Cancelar** (`DELETE /api/mail/drafts/:id`): descarta um rascunho **pendente**; o corpo é apagado.
 - **Enviar**: exige **confirmação explícita** em duas etapas na tela; a chamada usa o contrato
   `confirm: "ENVIAR"` (`POST /api/mail/drafts/:id/send`, `session` + CSRF).
-- **Estados exibidos**: `pendente`, `enviando…`, `enviado`, `falha`, `cancelado`, `expirado` — conforme
-  o estado real informado pelo servidor. Rascunhos não pendentes não podem ser enviados nem cancelados.
+- **Estados exibidos**: `pendente`, `enviando…`, `enviado`, `falha`, `desconhecido`, `cancelado`,
+  `expirado` — conforme o estado real informado pelo servidor. Rascunhos não pendentes não podem ser
+  enviados nem cancelados.
 - **Sem confiança no cliente**: identidade, titularidade e estado são decididos no servidor; rascunho de
   outro admin é **indistinguível** de inexistente (`404`). CSRF é exigido nas rotas mutantes.
 - **Sem persistência**: o corpo continua **só na memória do processo**; nada em banco, disco, log ou
   auditoria (verificado por teste que varre todas as tabelas).
 
-**Semântica de envio (consumo antes do envio) — proteção contra replay e sua limitação.** O rascunho é
+**Semântica de envio (consumo antes do envio) — proteção contra replay, sem reenvio cego.** O rascunho é
 **reivindicado** (pending → `sending`, corpo entregue ao transporte e apagado da memória) **antes** da
-tentativa de envio; depois o desfecho é gravado (`sent`/`failed`). Uma segunda confirmação **nunca**
-reenvia (`404`). **Limitação:** se o envio falhar (ex.: SMTP), o rascunho fica `failed` e o corpo **já
-não existe** — é preciso criá-lo de novo. Isso é **proposital**: sem reter o corpo, não há como
-reapresentá-lo. **Não** prometemos entrega exatamente uma vez (o provedor não a garante): o modelo é
-**no máximo uma tentativa por rascunho**, com desfecho explícito. Alternativa proposta para o futuro
-(decisão pendente): persistir um rascunho **cifrado com TTL curto** apenas enquanto pendente, o que
-permitiria retomar após falha — mas isso exige uma política de retenção (§11.5).
+tentativa de envio; depois o desfecho é gravado. Uma segunda confirmação **nunca** reenvia (`404`).
 
-Testes do painel: `src/test/drafts.test.tsx` (5 casos) — listagem com estados, abrir ≠ aprovar,
-confirmação explícita com `confirm: "ENVIAR"`, não pendente sem ações, cancelamento. Backend:
-`tests/mail-drafts.test.mjs` (15 casos) — inclui listagem por titularidade, cancelamento, expiração,
-CSRF, falha de transporte sem replay e ausência de vazamento.
+- **Envio nunca é repetido** (`retries: 0` na rota de envio): repetir após uma falha ambígua poderia
+  **entregar a mensagem duas vezes**. Leitura/pesquisa continuam com retry limitado.
+- **Desfecho classificado** (`classifySendError`): `sent` (o provedor aceitou), `failed` (**provadamente
+  não transmitida** — DNS/recusa de conexão/TLS/autenticação, antes de a mensagem ser entregue ao
+  servidor) ou `unknown` (**ambíguo** — timeout/reset depois da tentativa: a mensagem **pode** ter saído).
+- **`unknown` nunca vira reenvio:** o painel mostra "Resultado desconhecido" e explica que a mensagem pode
+  ter sido entregue; **não** oferece reenviar. Só criar um **novo** rascunho permite tentar de novo.
+- **Limitação (proposital):** o corpo **não existe** depois da tentativa (consumo único), então uma falha
+  `failed`/`unknown` exige criar outro rascunho. **Não** prometemos entrega exatamente uma vez (o provedor
+  não a garante): o modelo é **no máximo uma tentativa por rascunho**, com desfecho explícito e sem
+  reenvio cego. Alternativa proposta (decisão pendente): persistir um rascunho **cifrado com TTL curto**
+  apenas enquanto pendente, para permitir retomada — exige política de retenção (§11.5).
+
+Testes do painel: `src/test/drafts.test.tsx` (6 casos) — listagem com estados, abrir ≠ aprovar,
+confirmação explícita com `confirm: "ENVIAR"`, não pendente sem ações, **resultado desconhecido sem
+reenvio**, cancelamento. Backend: `tests/mail-drafts.test.mjs` (18 casos) — inclui listagem por
+titularidade, cancelamento, expiração, CSRF, **falha ambígua → `unknown` sem replay**, **falha
+determinística → `failed`**, **envio nunca repetido**, ausência de vazamento.
 
 **Ainda dependente de decisão:** política de retenção para retomada após falha (§11.5); TTL/capacidade
 definitivos; ativar o transporte real (D7); valores de F4.11; transferência de conta (§11.3).
