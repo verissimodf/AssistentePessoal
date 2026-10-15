@@ -44,3 +44,75 @@ Cria apenas tabelas novas: `ownership`, `admin_settings`, `global_settings`, `le
 - Atribuição: Configurações → Segurança → "Dados antigos". Só metadados aparecem; a atribuição é explícita, atômica e auditada. As configurações antigas são assumidas inteiras por um único administrador que ainda não tenha configurações pessoais.
 - Rollback: restaure o backup `jarvis-<data>-v1.db` (passos acima) e volte o código para a versão da Fase 1.
 - Atenção: `recuperar-acesso.js` desativa administradores; recursos que eram deles continuam pertencendo a eles e ficam inacessíveis (não são reatribuídos).
+
+## D_REC — Política de recuperação, reivindicação e propriedade (proposta para aprovação)
+
+Esta seção formaliza a política de recuperação de acesso e de propriedade de recursos. Vale para as
+Fases 1 e 2 e é pré-requisito das fases seguintes. **Status: proposta — aguarda aprovação.**
+
+### 1. Recuperação de credenciais (break-glass local)
+- A recuperação é **local**: exige acesso ao computador e o serviço **parado**. Não existe recuperação remota.
+- Procedimento (`node server/recuperar-acesso.js`), sempre com **backup verificado antes**:
+  1. desativa **todos** os administradores;
+  2. revoga **todas** as sessões e tokens de serviço;
+  3. recria os gatilhos de proteção do último administrador;
+  4. grava um novo código de primeiro acesso (`data/bootstrap-token.txt`, uso único, 15 min).
+- O que **não** muda: memórias, agentes, bots, execuções, aprovações, documentos e configurações
+  permanecem intactos.
+- **Proibido**: reatribuir, apagar ou “herdar” recursos durante a recuperação.
+
+### 2. Identidade e validação
+- Toda operação privilegiada (reivindicar recursos, assumir configurações antigas, criar/desativar
+  administradores) exige **sessão de administrador verificada** (`isVerifiedAdmin()`), com CSRF.
+- A recuperação break-glass exige acesso físico/lógico ao host; ela **não concede privilégio por si
+  só** — apenas reabre o primeiro acesso, que exige o código de uso único.
+
+### 3. Reivindicação voluntária e granular de recursos órfãos
+- Recursos sem proprietário (legado) ficam **invisíveis** até reivindicação explícita.
+- A reivindicação é **voluntária** (o administrador escolhe) e **granular** (por item; a API aceita
+  uma lista de ids de um único tipo), com confirmação literal (`confirm: "ASSUMIR"`).
+- É **atômica**: todos os ids precisam existir, ser únicos e ainda estar sem dono, revalidados dentro
+  da transação; qualquer falha desfaz tudo.
+- Aprovações órfãs pendentes são **invalidadas** (`legacy_expired`) na mesma transação — nunca se
+  tornam executáveis por herança.
+- A reivindicação grava `origin='claimed'` e é auditada (`legacy.claimed`).
+
+### 4. Auditoria
+- São auditados, entre outros: `auth.setup_first_admin`, `auth.login*`, `auth.admin_created`,
+  `auth.admin_disabled`, `auth.recovery`, `legacy.claimed`, `legacy.approvals_expired`,
+  `legacy.settings_claimed`, `authz.denied`, `authz.tool_denied`, `run_command(requested|approved|denied)`.
+- A auditoria é **sanitizada** (`sanitizeAudit`): nunca grava segredos, tokens, senhas ou conteúdo de
+  mensagens.
+
+### 5. Categorias de recursos e o que se aplica a cada uma
+
+| # | Categoria | Situação | Acesso hoje |
+|---|---|---|---|
+| 1 | Recuperação de credenciais / primeiro acesso | break-glass local (§1) | reabre o primeiro acesso; **não** concede propriedade |
+| 2 | Recursos **sem proprietário comprovável** (legado) | nunca tiveram dono | invisíveis; reivindicáveis por **reivindicação explícita** (§3) |
+| 3 | Recursos **vinculados a administrador desativado** | têm dono, mas o dono está inativo | **bloqueados para todas as identidades** |
+| 4 | Reivindicação futura dos recursos da categoria 3 | **não existe hoje** | **indisponível** até procedimento aprovado e implementado |
+
+### 6. Invariantes (não negociáveis)
+
+- Recuperar acesso **não** concede propriedade automática.
+- Criar uma nova conta **não** transfere recursos existentes.
+- Recursos de uma administradora desativada permanecem **bloqueados para outras identidades**.
+- A reivindicação dos recursos da **categoria 3** permanece **indisponível** até existir procedimento
+  **aprovado e implementado** — não basta a política estar escrita.
+- **Não** permitir acesso ao **conteúdo privado** durante a triagem (só metadados).
+- **Não** reativar automaticamente tokens, bots, aprovações ou credenciais de e-mail ao recuperar acesso.
+- Qualquer transferência futura deve ser **granular, voluntária, auditada e resistente a concorrência**
+  (transação atômica; sem execução dupla).
+- O expurgo deve tratar **banco, arquivos e dados derivados**; **não** prometer atomicidade única entre
+  SQLite e o sistema de arquivos (o arquivo é removido após a transação, tolerando falha parcial).
+
+### 7. Pendência aberta (bloqueador)
+
+- **Reatribuição de recursos de administrador desativado (categorias 3 e 4):** hoje **não implementada**.
+  A política proíbe a transferência automática e **não** promete que a reivindicação desses recursos já
+  exista. Enquanto não houver procedimento aprovado e implementado, esses recursos permanecem
+  **inacessíveis**. Decisão mínima necessária: definir se/como um administrador ativo pode reivindicar
+  recursos de um administrador desativado (com auditoria e concorrência segura), ou manter o bloqueio.
+- **Não** implementar endpoints de transferência ou expurgo nesta fase; esta seção formaliza a política
+  e registra o bloqueio.

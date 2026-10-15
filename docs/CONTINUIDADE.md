@@ -10,6 +10,8 @@ Procedência: **[V]** verificado nesta sessão · **[R]** reportado pelo respons
 - **Fase 3 — Gestão documental:** implementada com o **primeiro formato TXT** (sem dependência nova), conforme o PM §6 (“começando por PDF ou TXT, conforme a análise técnica”). Módulo `server/documents.js`, migração **v3** (tabela `documents` + extensão do CHECK de `ownership` para `document`), rotas `/api/documents*`, ferramenta de agente `document_search`, página **Documentos** e `tests/documents.test.mjs`. Validação de entrada, armazenamento local privado, busca por dono, exclusão e tratamento de conteúdo não confiável.
 - **Decisão técnica registrada (D6):** o primeiro formato é **TXT** — nenhuma biblioteca nova, menor superfície de risco; PDF fica para depois de validar o TXT (PM §6: “adicionar novos formatos somente após validar o anterior”).
 - **Pendências:** recuperação da propriedade dos recursos após recuperação de acesso continua em aberto; PDF, pesquisa semântica de documentos e Fase 4 (e-mail) não iniciados.
+- **Preparação da Fase 4 (2026-10-15):** especificação proposta em `docs/FASE-4-EMAIL.md` (D7/D9/D10 adotados) e política **D_REC** proposta em `docs/RECUPERACAO.md` §D_REC. **Implementação não iniciada** — aguarda aprovação.
+- **Testes de isolamento com embeddings:** ajustados para verificar propriedade (não resultado vazio) e comprovados com Ollama ativo (98/98 nas duas condições); ver PR de preparação.
 
 ## 1. Repositório e base
 | Item | Valor | Proc. |
@@ -129,8 +131,46 @@ Sempre [derivado]: suíte atual (58 + 7) passando; testes novos com dois admins 
 ## 11. Riscos
 Base divergente (X3) — regressão [V]; migração de dados sem dono pode ocultá-los ou transferir privilégio [I]; filtrar `recall` muda o comportamento de agentes e bots [I]; prompt injection por documentos [I]; biblioteca de PDF = dependência nova [I]; OAuth exige app registrado e callback local, e a verificação do Google pode restringir escopos [I]; senha de app contraria permissões mínimas [I]; 0600 não vale no Windows [V].
 
-## 12. Decisões pendentes
-Nenhuma decisão abaixo foi tomada neste documento.
+## 12. Decisões — estado
+Atualizado em 2026-10-15: decisões resolvidas pela implementação (D1/D3/D4/D5/D6) ou **adotadas para a
+especificação da Fase 4** (D7/D9/D10). **D_REC** é proposta nova, aguardando aprovação.
+
+### Decisões adotadas
+| Decisão | Adoção | Evidência |
+|---|---|---|
+| D1/D11 — base e repositório | `verissimodf/AssistentePessoal`, `main` | Fases 1–3 integradas |
+| D3 — dados sem dono | invisíveis até reivindicação explícita, atômica e auditada | migração v2 + `ownership.js` |
+| D4 — compartilhamento | por item (nesta fase) | Fase 2 |
+| D5 — pessoal × global | pessoal por admin (`admin_settings`), global (`global_settings`) | Fase 2 |
+| D6 — primeiro formato documental | **TXT** | §0 acima (Fase 3) |
+| D7 — e-mail | **IMAP/SMTP sobre TLS + senha de app**; OAuth fora do escopo inicial | `docs/FASE-4-EMAIL.md` §2 |
+| D9 — confirmações de e-mail | confirmação manual + **aprovação humana atômica** para agentes/bots, com titularidade no momento da execução | `docs/FASE-4-EMAIL.md` §2 |
+| D10 — testes de e-mail | **mocks no CI** + conta dedicada para testes reais; sem expor/versionar credenciais | `docs/FASE-4-EMAIL.md` §2 |
+
+### D_REC (nova) — recuperação, reivindicação e propriedade
+- **Proposta formalizada** em `docs/RECUPERACAO.md` §D_REC (categorias 1–4, invariantes e pendência):
+  recuperação de credenciais local, validação de identidade, reivindicação voluntária e granular de
+  recursos **sem dono comprovável**, auditoria sanitizada e **proibição de transferência automática**.
+- **Bloqueio explícito:** a reivindicação de recursos **vinculados a administrador desativado**
+  (categoria 3) permanece **indisponível** até existir procedimento **aprovado e implementado**. Não há
+  endpoint de transferência nem de expurgo nesta fase.
+
+### Fase 4 — estado
+- **D7, D9 e D10 adotadas como diretrizes da especificação** (`docs/FASE-4-EMAIL.md` §2) — **não**
+  significam especificação aprovada nem autorização de implementação.
+- **Bloqueadores de implementação:** (1) aprovação da especificação; (2) autorização explícita;
+  (3) **F4.11** (pastas/filtros/limites/retenção — §3.1); (4) **D_REC** (categoria 3). Enquanto não
+  resolvidos, a Fase 4 permanece **bloqueada**.
+
+### Itens ainda em aberto
+| Prioridade | Decisão | Próximo passo |
+|---|---|---|
+| Alta | D_REC — reivindicação de recursos de admin desativado | Aprovar a política; **implementação indisponível** até decisão |
+| Alta | F4.11 — pastas, filtros, limites, retenção | Aprovar a recomendação inicial (§3.1) |
+| Alta | Aprovação da especificação da Fase 4 + autorização de implementação | Revisão do PR #6 |
+| Posterior | D8 — limites/cota por documento | Definir valores |
+| Posterior | D2 — numeração | Ajustar ou registrar a equivalência no roadmap |
+
 
 | Prioridade | Decisão | Próximo passo |
 |---|---|---|
@@ -147,12 +187,12 @@ Nenhuma decisão abaixo foi tomada neste documento.
 - D3 Dados antigos sem dono (decisão de produto e segurança, não detalhe de migração): (a) somente leitura e compartilhados; (b) ocultos até um admin assumir, com auditoria; (c) compartilhados com leitura e escrita, marcados como legado; (d) outra. Preferência técnica registrada pelo revisor [R]: preservar os dados, fazer backup verificável e exigir uma política explícita de acesso antes de torná-los disponíveis aos administradores.
 - D4 Compartilhamento: (a) por item; (b) espaço comum entre os dois admins; (c) nenhum nesta fase.
 - D5 Quais configurações são globais e quais são pessoais (provedores e chaves, idioma, voz, agente ativo, host).
-- D6 Primeiro formato: TXT (sem dependência nova) ou PDF (provável biblioteca nova).
-- D7 E-mail: OAuth, senha de app ou ambos. Nenhum deles será implementado antes de verificar os requisitos e a documentação oficial atual do Google e da Microsoft.
+- D6 Primeiro formato: **TXT** (adotado — ver §0).
+- D7 E-mail: **IMAP/SMTP sobre TLS + senha de aplicativo**; OAuth 2.0 fora do escopo inicial (adotado — `docs/FASE-4-EMAIL.md`).
 - D8 Tamanho máximo por documento e cota por admin.
-- D9 Operações de e-mail que exigem confirmação.
-- D10 Conta de teste autorizada para Gmail e Outlook (sem enviar credenciais por mensagem).
-- D11 Repositório de referência: AssistentePessoal ou Jarvis.
+- D9 Operações de e-mail que exigem confirmação: **envio manual confirmado; agentes/bots com aprovação humana atômica** (adotado — `docs/FASE-4-EMAIL.md`).
+- D10 Conta de teste autorizada: **mocks no CI + conta dedicada para testes reais**, sem expor/versionar credenciais (adotado — `docs/FASE-4-EMAIL.md`).
+- D11 Repositório de referência: **`verissimodf/AssistentePessoal`** (adotado).
 
 Próximo passo após a gravação: revisar o arquivo criado e confirmar a base oficial (D1). A Fase 2 só começa depois de aprovada, com os critérios de migração e isolamento definidos.
 
