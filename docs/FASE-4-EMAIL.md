@@ -3,8 +3,8 @@
 **Status: proposta — aguarda aprovação da especificação e de F4.11.** Deriva do Plano Mestre §6
 (Fase 4) e da matriz de rastreabilidade F4.1–F4.11 em `docs/CONTINUIDADE.md`. As partes **independentes**
 já iniciadas — **núcleo de e-mail**, **rotas/ferramentas com transporte mockado**, **adaptador IMAP/SMTP
-injetável (não ativado)** e **rascunho para aprovação humana** — estão em §10; o restante segue bloqueado
-(§9, §11).
+injetável (não ativado)**, **rascunho para aprovação humana** e **tela de rascunhos no painel** — estão em
+§10; o restante segue bloqueado (§9, §11).
 
 ## 1. Objetivo
 
@@ -288,6 +288,43 @@ com o dono após desativação).
 **Ainda dependente de decisão:** TTL/capacidade definitivos do rascunho (provisórios aqui); ativar o
 transporte real (D7); valores de F4.11; transferência de conta (§11.3).
 
+### 10.4 Incremento 4 — interface do painel para rascunhos
+
+**Estado (2026-10-15):** tela **E-mail — rascunhos** no painel (`src/routes/rascunhos.tsx`, nav
+"E-mail"), limitada ao administrador autenticado (o servidor valida a titularidade em toda chamada).
+
+- **Listagem** (`GET /api/mail/drafts`, `session`): **apenas metadados** dos rascunhos do próprio admin
+  (`id`, conta, destinatário, assunto, **estado**, criação, expiração) — **nunca** o corpo.
+- **Revisão** (`GET /api/mail/drafts/:id`): mostra remetente/conta, destinatário, assunto e corpo.
+  **Abrir/visualizar NÃO é aprovação** — não dispara envio.
+- **Cancelar** (`DELETE /api/mail/drafts/:id`): descarta um rascunho **pendente**; o corpo é apagado.
+- **Enviar**: exige **confirmação explícita** em duas etapas na tela; a chamada usa o contrato
+  `confirm: "ENVIAR"` (`POST /api/mail/drafts/:id/send`, `session` + CSRF).
+- **Estados exibidos**: `pendente`, `enviando…`, `enviado`, `falha`, `cancelado`, `expirado` — conforme
+  o estado real informado pelo servidor. Rascunhos não pendentes não podem ser enviados nem cancelados.
+- **Sem confiança no cliente**: identidade, titularidade e estado são decididos no servidor; rascunho de
+  outro admin é **indistinguível** de inexistente (`404`). CSRF é exigido nas rotas mutantes.
+- **Sem persistência**: o corpo continua **só na memória do processo**; nada em banco, disco, log ou
+  auditoria (verificado por teste que varre todas as tabelas).
+
+**Semântica de envio (consumo antes do envio) — proteção contra replay e sua limitação.** O rascunho é
+**reivindicado** (pending → `sending`, corpo entregue ao transporte e apagado da memória) **antes** da
+tentativa de envio; depois o desfecho é gravado (`sent`/`failed`). Uma segunda confirmação **nunca**
+reenvia (`404`). **Limitação:** se o envio falhar (ex.: SMTP), o rascunho fica `failed` e o corpo **já
+não existe** — é preciso criá-lo de novo. Isso é **proposital**: sem reter o corpo, não há como
+reapresentá-lo. **Não** prometemos entrega exatamente uma vez (o provedor não a garante): o modelo é
+**no máximo uma tentativa por rascunho**, com desfecho explícito. Alternativa proposta para o futuro
+(decisão pendente): persistir um rascunho **cifrado com TTL curto** apenas enquanto pendente, o que
+permitiria retomar após falha — mas isso exige uma política de retenção (§11.5).
+
+Testes do painel: `src/test/drafts.test.tsx` (5 casos) — listagem com estados, abrir ≠ aprovar,
+confirmação explícita com `confirm: "ENVIAR"`, não pendente sem ações, cancelamento. Backend:
+`tests/mail-drafts.test.mjs` (15 casos) — inclui listagem por titularidade, cancelamento, expiração,
+CSRF, falha de transporte sem replay e ausência de vazamento.
+
+**Ainda dependente de decisão:** política de retenção para retomada após falha (§11.5); TTL/capacidade
+definitivos; ativar o transporte real (D7); valores de F4.11; transferência de conta (§11.3).
+
 ## 11. Perguntas de produto (bloqueios indispensáveis)
 
 1. **F4.11 — pastas/filtros/limites/retenção (§3.1).** Aprovar os valores propostos?
@@ -313,10 +350,11 @@ transporte real (D7); valores de F4.11; transferência de conta (§11.3).
    o TTL — política de retenção);
    (c) o agente prepara um **rascunho transitório em memória** (não persistido em banco/disco) e o humano
    revisa e confirma no painel.
-   *Consequência:* **(c) foi implementado** (§10.3) — rascunho em memória, vinculado ao dono, de uso único
-   e com expiração; a confirmação é uma etapa humana explícita. **Pendente:** a **tela do painel** para
-   revisar/confirmar e o **valor definitivo** do TTL (provisório: 10 min). (b) continua fora do escopo
-   por exigir decisão de retenção.
+   *Consequência:* **(c) foi implementado** (§10.3 + §10.4) — rascunho em memória, vinculado ao dono, de
+   uso único, com expiração, **e a tela do painel** para revisar/confirmar/cancelar. **Pendente:** o
+   **valor definitivo** do TTL (provisório: 10 min) e a política de **retomada após falha** (hoje:
+   no máximo uma tentativa por rascunho, sem reter o corpo). (b) continua fora do escopo por exigir
+   decisão de retenção.
 
 **A autorização para implementar código não autoriza** acesso a contas reais, uso de credenciais, envio
 de mensagens nem alteração de dados reais — essas operações exigem autorização explícita específica.
