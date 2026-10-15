@@ -35,8 +35,10 @@ Habilite-as em **Agentes → Ferramentas** e configure as URLs/chaves em **Confi
 - **MCP** (Context7): informe a URL do servidor MCP (`http://127.0.0.1:8000/mcp`); o agente usa a ferramenta `context7_docs`.
 - **Claude Desktop (MCP)**: em `claude_desktop_config.json`:
   ```json
-  { "mcpServers": { "jarvis": { "command": "node", "args": ["C:/jarvis/server/mcp.js"] } } }
+  { "mcpServers": { "jarvis": { "command": "node", "args": ["C:/jarvis/server/mcp.js"],
+      "env": { "JARVIS_SERVICE_TOKEN": "jst_..." } } } }
   ```
+  Crie o token em **Configurações → Segurança → Tokens de serviço**, marcando só os escopos necessários (ex.: `chat`, `memories:read`). Ele aparece uma vez e pode ser revogado a qualquer momento. Tokens nunca aprovam ações no host.
   O mesmo servidor MCP serve para Claude Code (`claude mcp add jarvis node /caminho/server/mcp.js`), Codex e OpenCode.
 
 ## Comunicação

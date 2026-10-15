@@ -1,114 +1,229 @@
 // Jarvis local service — http://127.0.0.1:7777
-// The web panel auto-detects this address; no token or manual pairing is needed because the
-// service only listens on localhost and only accepts browser requests from trusted origins.
+// Security model (Phase 1): every route except the explicit PUBLIC list requires either
+//  - an admin session (HttpOnly SameSite=Strict cookie) + X-Jarvis-CSRF header on every
+//    state-changing request (POST/PUT/PATCH/DELETE), logout included; or
+//  - a revocable, scoped service token (Authorization: Bearer jst_…) for MCP/scripts.
+// CORS/Origin checks are kept as defense in depth, never as authentication.
 import { createServer } from "node:http";
-import { db, agents, bots, now, uid } from "./db.js";
-import { publicSettings, updateSettings, getSettings } from "./settings.js";
+import { timingSafeEqual } from "node:crypto";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
+import { db, agents, bots, auth, audit } from "./db.js";
+import { AuthError, can, isVerifiedAdmin, sanitizeBotScopes, DEFAULT_BOT_SCOPES } from "./auth.js";
+import { publicSettings, updateSettings } from "./settings.js";
 import { runAgent, testProvider } from "./llm.js";
 import { remember, recall, resolveApproval } from "./tools.js";
 import { runBot, listRuns, startScheduler, triggerByText } from "./bots.js";
 import { tts, cloneVoice } from "./voice.js";
 import { startTelegramPolling, sendMessage } from "./comms.js";
 
-const PORT = Number(process.env.JARVIS_PORT || 7777);
-const HOST = process.env.JARVIS_HOST || "127.0.0.1";
+const VERSION = "1.1.0";
+const COOKIE = "jarvis_sid";
+const SECURE_COOKIE = process.env.JARVIS_COOKIE_SECURE === "1";
+const MAX_BODY = 1_000_000;
+const MAX_UPLOAD = Number(process.env.JARVIS_MAX_UPLOAD) || 25_000_000;
+
+/** Parse multipart enforcing the limit on bytes actually read (Content-Length may be absent/chunked). */
+async function readLimitedForm(req, url, max) {
+  let n = 0, over = false;
+  const stream = new ReadableStream({
+    async start(c) {
+      try {
+        for await (const chunk of req) {
+          n += chunk.length;
+          if (n > max) { over = true; c.error(new AuthError(413, "payload_too_large")); return; }
+          c.enqueue(chunk);
+        }
+        c.close();
+      } catch (e) { c.error(e); }
+    },
+  });
+  const headers = Object.fromEntries(Object.entries(req.headers).filter(([k]) => !["content-length", "transfer-encoding"].includes(k)));
+  try {
+    return await new Request(url, { method: req.method, headers, body: stream, duplex: "half" }).formData();
+  } catch (e) {
+    if (over) throw new AuthError(413, "payload_too_large");
+    throw new AuthError(400, "invalid_form");
+  }
+}
 const EXTRA_ORIGINS = (process.env.JARVIS_ALLOWED_ORIGINS || "").split(",").filter(Boolean);
-const VERSION = "1.0.0";
 
 const trusted = (o) =>
   !o || /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(o) ||
   /^https:\/\/[a-z0-9-]+\.(lovable\.app|lovableproject\.com)$/.test(o) || EXTRA_ORIGINS.includes(o);
+const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-function send(res, status, body, origin, type = "application/json") {
-  res.writeHead(status, {
+function headers(origin, type, extra = {}) {
+  return {
     "content-type": type,
-    "access-control-allow-origin": origin || "*",
+    ...(origin ? { "access-control-allow-origin": origin, "access-control-allow-credentials": "true" } : {}),
     "access-control-allow-methods": "GET,POST,PUT,DELETE,OPTIONS",
-    "access-control-allow-headers": "content-type",
+    "access-control-allow-headers": "content-type,x-jarvis-csrf,authorization",
     "access-control-allow-private-network": "true",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
     vary: "origin",
-  });
+    ...extra,
+  };
+}
+function send(res, status, body, origin, type = "application/json", extra) {
+  res.writeHead(status, headers(origin, type, extra));
   res.end(type === "application/json" ? JSON.stringify(body) : body);
 }
+const cookieHeader = (sid, maxAge) =>
+  `${COOKIE}=${sid}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${SECURE_COOKIE ? "; Secure" : ""}`;
+const readCookie = (req) => (req.headers.cookie || "").split(/;\s*/).map((c) => c.split("=")).find(([k]) => k === COOKIE)?.[1] || null;
+const eq = (a, b) => { const x = Buffer.from(String(a || "")), y = Buffer.from(String(b || "")); return x.length > 0 && x.length === y.length && timingSafeEqual(x, y); };
 
 async function readJson(req) {
   let raw = "";
-  for await (const c of req) raw += c;
-  return raw ? JSON.parse(raw) : {};
+  for await (const c of req) { raw += c; if (raw.length > MAX_BODY) throw new AuthError(413, "payload_too_large"); }
+  try { return raw ? JSON.parse(raw) : {}; } catch { throw new AuthError(400, "invalid_json"); }
 }
 
+// ---------- routing ----------
+// access: "public" | "session" (human admin only) | <scope string>
 const routes = [];
-const route = (method, pattern, fn) => routes.push({ method, re: new RegExp(`^${pattern.replace(/:(\w+)/g, "(?<$1>[^/]+)")}$`), fn });
+const route = (method, pattern, access, fn) =>
+  routes.push({ method, pattern, access, re: new RegExp(`^${pattern.replace(/:(\w+)/g, "(?<$1>[^/]+)")}$`), fn });
+export const routeTable = () => routes.map(({ method, pattern, access }) => ({ method, pattern, access }));
 
-route("GET", "/api/health", () => ({ ok: true, version: VERSION, name: getSettings().general?.agentName, platform: process.platform }));
-route("GET", "/api/settings", () => publicSettings());
-route("PUT", "/api/settings", async ({ body }) => updateSettings(body));
-route("POST", "/api/providers/:id/test", ({ params }) => testProvider(params.id));
-
-route("POST", "/api/chat", async ({ body }) => {
-  const last = body.messages?.at(-1)?.content || "";
-  triggerByText("voice", last);
-  return runAgent({ agentId: body.agentId, messages: body.messages || [], autonomy: "confirm" });
+// Public (explicit, minimal). Health reveals only operational status.
+route("GET", "/api/health", "public", () => ({ ok: true, version: VERSION, setupRequired: auth.setupRequired() }));
+route("POST", "/api/auth/setup", "public", ({ body }) => auth.setupFirstAdmin(body));
+route("POST", "/api/auth/login", "public", ({ body, req, res }) => {
+  const r = auth.login({ username: body.username, password: body.password, ip: req.socket.remoteAddress, userAgent: req.headers["user-agent"], previousSid: readCookie(req) });
+  res.setCookie = cookieHeader(r.sid, 12 * 3600);
+  return { admin: r.admin, csrf: r.csrf };
 });
-route("POST", "/api/approvals/:id", async ({ params, body }) => resolveApproval(params.id, !!body.approve));
 
-route("GET", "/api/memories", ({ query }) =>
+// Session (human admin)
+route("GET", "/api/auth/me", "session", ({ principal }) => ({ admin: { id: principal.adminId, username: principal.username }, csrf: principal.csrf }));
+route("POST", "/api/auth/logout", "session", ({ req, res }) => { auth.revokeSession(readCookie(req)); res.setCookie = cookieHeader("", 0); return { ok: true }; });
+route("GET", "/api/auth/admins", "session", () => auth.listAdmins());
+route("POST", "/api/auth/admins", "session", ({ principal, body }) => auth.createAdmin(principal, body));
+route("DELETE", "/api/auth/admins/:id", "session", ({ principal, params }) => auth.removeAdmin(principal, params.id));
+route("GET", "/api/auth/sessions", "session", ({ principal }) => auth.listSessions(principal.adminId));
+route("DELETE", "/api/auth/sessions/:id", "session", ({ principal, params }) => auth.revokeSessionById(principal.adminId, params.id));
+route("GET", "/api/auth/tokens", "session", () => auth.listServiceTokens());
+route("POST", "/api/auth/tokens", "session", ({ principal, body }) => auth.createServiceToken(principal, body));
+route("DELETE", "/api/auth/tokens/:id", "session", ({ principal, params }) => auth.revokeServiceToken(principal, params.id));
+route("POST", "/api/approvals/:id", "session", ({ params, body, principal }) => resolveApproval(params.id, !!body.approve, principal));
+route("GET", "/api/audit", "audit:read", () => db.prepare("SELECT id, at, kind, detail FROM audit ORDER BY id DESC LIMIT 200").all());
+
+route("GET", "/api/settings", "settings:read", () => publicSettings());
+route("PUT", "/api/settings", "settings:write", ({ body }) => updateSettings(body));
+route("POST", "/api/providers/:id/test", "settings:write", ({ params }) => testProvider(params.id));
+
+route("POST", "/api/chat", "chat", async ({ body, principal }) => {
+  const last = body.messages?.at(-1)?.content || "";
+  if (can(principal, "bots:run")) triggerByText("voice", last);
+  return runAgent({ agentId: body.agentId, messages: body.messages || [], autonomy: "confirm", principal });
+});
+
+route("GET", "/api/memories", "memories:read", ({ query }) =>
   query.get("q") ? recall(query.get("q"), 50) : db.prepare("SELECT id, content, tags, created_at FROM memories ORDER BY created_at DESC").all());
-route("POST", "/api/memories", ({ body }) => remember(body.content, body.tags));
-route("PUT", "/api/memories/:id", ({ params, body }) => { db.prepare("UPDATE memories SET content=?, tags=? WHERE id=?").run(body.content, body.tags || "", params.id); return { ok: true }; });
-route("DELETE", "/api/memories/:id", ({ params }) => { db.prepare("DELETE FROM memories WHERE id=?").run(params.id); return { ok: true }; });
+route("POST", "/api/memories", "memories:write", ({ body }) => remember(body.content, body.tags));
+route("PUT", "/api/memories/:id", "memories:write", ({ params, body }) => { db.prepare("UPDATE memories SET content=?, tags=? WHERE id=?").run(body.content, body.tags || "", params.id); return { ok: true }; });
+route("DELETE", "/api/memories/:id", "memories:write", ({ params }) => { db.prepare("DELETE FROM memories WHERE id=?").run(params.id); return { ok: true }; });
 
 for (const [name, store] of [["agents", agents], ["bots", bots]]) {
-  route("GET", `/api/${name}`, () => store.list());
-  route("POST", `/api/${name}`, ({ body }) => store.save(body));
-  route("PUT", `/api/${name}/:id`, ({ params, body }) => store.save({ ...body, id: params.id }));
-  route("DELETE", `/api/${name}/:id`, ({ params }) => { store.remove(params.id); return { ok: true }; });
+  route("GET", `/api/${name}`, `${name}:read`, () => store.list());
+  // New bots record their owner; existing records are never re-assigned implicitly.
+  const stamp = (body, principal, existing) =>
+    name === "bots"
+      ? { ...body, owner_admin_id: existing ? existing.owner_admin_id ?? null : principal.adminId, scopes: sanitizeBotScopes(body.scopes) ?? existing?.scopes ?? DEFAULT_BOT_SCOPES }
+      : body;
+  route("POST", `/api/${name}`, `${name}:write`, ({ body, principal }) => store.save(stamp({ ...body, id: undefined }, principal, null)));
+  route("PUT", `/api/${name}/:id`, `${name}:write`, ({ params, body, principal }) => store.save(stamp({ ...body, id: params.id }, principal, store.get(params.id))));
+  route("DELETE", `/api/${name}/:id`, `${name}:write`, ({ params }) => { store.remove(params.id); return { ok: true }; });
 }
-route("POST", "/api/bots/:id/run", ({ params }) => runBot(bots.get(params.id), "manual"));
-route("GET", "/api/bots/:id/runs", ({ params }) => listRuns(params.id));
+route("POST", "/api/bots/:id/run", "bots:run", ({ params }) => runBot(bots.get(params.id), "manual"));
+route("GET", "/api/bots/:id/runs", "bots:read", ({ params }) => listRuns(params.id));
 
-route("POST", "/api/tts", async ({ body }) => { const a = await tts(body.text, body.lang); return { __raw: a.data, __type: a.type }; });
-route("POST", "/api/voice/clone", async ({ form }) => {
+route("POST", "/api/tts", "voice", async ({ body }) => { const a = await tts(body.text, body.lang); return { __raw: a.data, __type: a.type }; });
+route("POST", "/api/voice/clone", "settings:write", async ({ form }) => {
   const r = await cloneVoice(form.get("file"), form.get("engine"));
   updateSettings({ voice: { clonedVoiceId: r.voiceId, clonedEngine: r.engine } });
   return r;
 });
 
-const server = createServer(async (req, res) => {
-  const origin = req.headers.origin;
-  if (!trusted(origin)) return send(res, 403, { error: "origin not allowed" }, origin);
-  if (req.method === "OPTIONS") return send(res, 204, "", origin, "text/plain");
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  for (const r of routes) {
-    const m = r.method === req.method && url.pathname.match(r.re);
-    if (!m) continue;
+// ---------- authentication + authorization (single choke point) ----------
+function authenticate(req) {
+  const bearer = /^Bearer (.+)$/.exec(req.headers.authorization || "")?.[1];
+  if (bearer) return { principal: auth.validateServiceToken(bearer), via: "token" };
+  return { principal: auth.validateSession(readCookie(req)), via: "cookie" };
+}
+
+export function createApp() {
+  return createServer(async (req, res) => {
+    const origin = req.headers.origin;
+    if (!trusted(origin)) return send(res, 403, { error: "origin_not_allowed" }, undefined);
+    if (req.method === "OPTIONS") return send(res, 204, "", origin, "text/plain");
+    const url = new URL(req.url, "http://127.0.0.1");
+    const r = routes.find((x) => x.method === req.method && x.re.test(url.pathname));
+    if (!r) return send(res, 404, { error: "not_found" }, origin);
     try {
+      let principal = null;
+      if (r.access !== "public") {
+        const a = authenticate(req);
+        principal = a.principal;
+        if (!principal) return send(res, 401, { error: "unauthenticated" }, origin);
+        // CSRF: cookie sessions must echo the session-bound token on every state change.
+        if (a.via === "cookie" && MUTATING.has(req.method) && !eq(req.headers["x-jarvis-csrf"], principal.csrf)) {
+          audit("authz.csrf_rejected", { path: url.pathname });
+          return send(res, 403, { error: "csrf" }, origin);
+        }
+        const ok = r.access === "session" ? isVerifiedAdmin(principal) : can(principal, r.access);
+        if (!ok) {
+          audit("authz.denied", { path: url.pathname, need: r.access, principal: principal.type });
+          return send(res, 403, { error: "forbidden", need: r.access }, origin);
+        }
+      }
       const ct = req.headers["content-type"] || "";
       let body = {}, form = null;
       if (ct.includes("multipart/form-data")) {
-        form = await new Request(url, { method: req.method, headers: req.headers, body: req, duplex: "half" }).formData();
+        if (Number(req.headers["content-length"] || 0) > MAX_UPLOAD) throw new AuthError(413, "payload_too_large");
+        form = await readLimitedForm(req, url, MAX_UPLOAD);
       } else if (req.method !== "GET" && req.method !== "DELETE") body = await readJson(req);
-      const out = await r.fn({ params: m.groups || {}, query: url.searchParams, body, form });
-      if (out?.__raw) return send(res, 200, out.__raw, origin, out.__type);
-      return send(res, 200, out ?? { ok: true }, origin);
+      const m = url.pathname.match(r.re);
+      const out = await r.fn({ params: m.groups || {}, query: url.searchParams, body, form, principal, req, res });
+      const extra = res.setCookie ? { "set-cookie": res.setCookie } : undefined;
+      if (out?.__raw) return send(res, 200, out.__raw, origin, out.__type, extra);
+      return send(res, 200, out ?? { ok: true }, origin, "application/json", extra);
     } catch (e) {
-      console.error(e);
-      return send(res, 500, { error: e.message }, origin);
+      if (e instanceof AuthError) {
+        if (e.status === 413) res.setHeader("connection", "close"); // unread body: never reuse this socket
+        const extra = e.retryAfter ? { "retry-after": String(e.retryAfter) } : undefined;
+        return send(res, e.status, { error: e.code, ...(e.retryAfter ? { retryAfter: e.retryAfter } : {}) }, origin, "application/json", extra);
+      }
+      console.error(`[erro] ${req.method} ${url.pathname}: ${e.message}`); // never logs bodies/headers
+      return send(res, 500, { error: "internal_error" }, origin);
     }
-  }
-  send(res, 404, { error: "not found" }, origin);
-});
+  });
+}
 
-server.listen(PORT, HOST, () => {
-  console.log(`\n  J.A.R.V.I.S. local ativo em http://${HOST}:${PORT}`);
-  console.log(`  Painel: http://localhost:8080  (o painel detecta este serviço automaticamente)\n`);
-});
-
-startScheduler();
-startTelegramPolling(async (channel, text) => {
-  await Promise.all(triggerByText("message", text));
-  const r = await runAgent({ messages: [{ role: "user", content: text }], autonomy: "confirm" });
-  await sendMessage(channel, r.reply + (r.pending.length ? "\n\n(Há uma ação aguardando sua aprovação no painel.)" : ""));
-});
-
-export { server, uid, now };
+// ---------- main ----------
+const isMain = !!process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
+if (isMain && !process.env.JARVIS_NO_LISTEN) {
+  const PORT = Number(process.env.JARVIS_PORT || 7777);
+  const HOST = process.env.JARVIS_HOST || "127.0.0.1";
+  const boot = auth.ensureBootstrap();
+  createApp().listen(PORT, HOST, () => {
+    console.log(`\n  J.A.R.V.I.S. local ativo em http://${HOST}:${PORT}`);
+    console.log("  Painel: http://localhost:8080  (o painel detecta este serviço automaticamente)");
+    if (boot) {
+      console.log("\n  PRIMEIRO ACESSO: nenhum administrador cadastrado.");
+      console.log(`  O código de configuração (uso único, válido por 15 min) está em: ${boot.file}`);
+      console.log("  Abra o arquivo, copie o código e cole no painel. Ao reiniciar o serviço, um novo código é gerado.\n");
+    }
+  });
+  setInterval(() => auth.purgeAttempts(), 3600_000).unref();
+  startScheduler();
+  const channelPrincipal = { type: "channel", channel: "telegram", adminId: null, scopes: ["chat", "web", "memories:read"] }; // no host/comms from an inbound message
+  startTelegramPolling(async (channel, text) => {
+    await Promise.all(triggerByText("message", text));
+    const r = await runAgent({ messages: [{ role: "user", content: text }], autonomy: "confirm", principal: channelPrincipal });
+    await sendMessage(channel, r.reply + (r.pending.length ? "\n\n(Há uma ação aguardando sua aprovação no painel.)" : ""));
+  });
+}

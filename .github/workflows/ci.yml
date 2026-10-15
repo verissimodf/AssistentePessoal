@@ -20,13 +20,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
-      - run: npm install
+      - run: npm ci
+      - run: npm ci
         working-directory: server
       - name: Testes do painel
         run: npx vitest run
       - name: Testes do serviço local
-        run: node --no-warnings --test tests/hostpolicy.test.mjs
+        run: node --no-warnings --test tests/*.test.mjs
       - name: Serviço sobe e responde
         shell: bash
         run: |

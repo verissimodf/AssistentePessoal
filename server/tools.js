@@ -3,6 +3,7 @@ import { exec } from "node:child_process";
 import { db, now, uid, audit } from "./db.js";
 import { getSettings } from "./settings.js";
 import { decide } from "./hostpolicy.js";
+import { can, TOOL_SCOPES } from "./auth.js";
 import { embed, cosine } from "./llm.js";
 import { sendMessage, sendEmail, readInbox, readCalendar } from "./comms.js";
 
@@ -136,18 +137,16 @@ export async function recall(query, limit = 6) {
   return scored.filter((r) => r.score > 0.2).sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
-async function cliAgent(agent, prompt) {
-  const s = getSettings();
-  const cfg = s.integrations?.[agent];
-  if (!cfg?.enabled) return `Integração "${agent}" não está habilitada em Configurações.`;
-  const quoted = JSON.stringify(prompt);
-  const cmd = String(cfg.command || "").replace("{prompt}", quoted);
-  audit("cli_agent", cmd);
-  return runShell(cmd, 600000);
-}
+const who = (p) => (p ? `${p.type}:${p.adminId || p.tokenId || p.botId || p.channel || "?"}` : "none");
 
-/** ctx: { autonomy: "confirm"|"safe"|"full", pending: [] } */
+/** ctx: { autonomy: "confirm"|"safe"|"full", pending: [], principal } — authorization is re-checked here, at execution time. */
 export async function callTool(name, input, ctx) {
+  const scope = TOOL_SCOPES[name];
+  if (!scope) return `Ferramenta desconhecida: ${name}`;
+  if (!can(ctx.principal, scope)) {
+    audit("authz.tool_denied", { tool: name, scope, principal: who(ctx.principal) });
+    return `Permissão negada: a identidade desta execução não tem o escopo "${scope}".`;
+  }
   const s = getSettings();
   switch (name) {
     case "web_search": return webSearch(input.query);
@@ -163,13 +162,28 @@ export async function callTool(name, input, ctx) {
       if (verdict === "ask") {
         const id = uid();
         db.prepare("INSERT INTO approvals (id, command, status, created_at) VALUES (?, ?, 'pending', ?)").run(id, input.command, now());
+        audit("run_command(requested)", { command: input.command, principal: who(ctx.principal) });
         ctx.pending.push({ id, command: input.command });
         return "Comando enviado para aprovação do usuário. Informe que ele precisa aprovar no painel.";
       }
-      audit("run_command", input.command);
+      audit("run_command", { command: input.command, principal: who(ctx.principal) });
       return runShell(input.command);
     }
-    case "cli_agent": return cliAgent(input.agent, input.prompt);
+    case "cli_agent": {
+      // External agents run arbitrary work on the host and have no validated policy of their own,
+      // so EVERY delegation needs human approval, whatever the autonomy (confirm, safe or full).
+      // decide() is still consulted so a disabled host or a destructive command is refused.
+      const cfg = s.integrations?.[input.agent];
+      if (!cfg?.enabled) return `Integração "${input.agent}" não está habilitada em Configurações.`;
+      const command = String(cfg.command || "").replace("{prompt}", JSON.stringify(String(input.prompt ?? "")));
+      const verdict = decide(command, { enabled: !!s.host?.enabled, allowlist: "", autonomy: "confirm" });
+      if (verdict === "deny") return "Ações no host estão desabilitadas.";
+      const id = uid();
+      db.prepare("INSERT INTO approvals (id, command, status, created_at) VALUES (?, ?, 'pending', ?)").run(id, command, now());
+      audit("cli_agent(requested)", { agent: input.agent, autonomy: ctx.autonomy, principal: who(ctx.principal) });
+      ctx.pending.push({ id, command });
+      return "Delegação enviada para aprovação do usuário no painel.";
+    }
     case "send_message": return sendMessage(input.channel, input.text);
     case "send_email": return sendEmail(input.account, input.to, input.subject, input.body);
     case "read_email": return readInbox(input.account);
@@ -181,14 +195,18 @@ export async function callTool(name, input, ctx) {
   }
 }
 
-export async function resolveApproval(id, approve) {
+/** Only a human admin session reaches this (route requires approvals:resolve). */
+export async function resolveApproval(id, approve, principal) {
   const row = db.prepare("SELECT * FROM approvals WHERE id = ?").get(id);
-  if (!row || row.status !== "pending") return { output: "Aprovação inexistente ou já resolvida." };
-  if (!approve) {
-    db.prepare("UPDATE approvals SET status='denied' WHERE id = ?").run(id);
-    return { output: "Negado pelo usuário." };
+  // Atomic claim: two concurrent approvals of the same id can never both run the command.
+  const claimed = db.prepare("UPDATE approvals SET status = ? WHERE id = ? AND status = 'pending'").run(approve ? "running" : "denied", id).changes;
+  if (!row || !claimed) return { output: "Aprovação inexistente ou já resolvida." };
+  if (!approve) { audit("run_command(denied)", { command: row.command, principal: who(principal) }); return { output: "Negado pelo usuário." }; }
+  if (!getSettings().host?.enabled) {
+    db.prepare("UPDATE approvals SET status='denied', output=? WHERE id = ?").run("Ações no host desabilitadas.", id);
+    return { output: "Ações no host estão desabilitadas; comando não executado." };
   }
-  audit("run_command(approved)", row.command);
+  audit("run_command(approved)", { command: row.command, principal: who(principal) });
   const output = await runShell(row.command);
   db.prepare("UPDATE approvals SET status='done', output=? WHERE id = ?").run(output, id);
   return { output };

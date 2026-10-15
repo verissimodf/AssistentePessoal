@@ -4,6 +4,29 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 
 ---
 
+## [1.1.2] — 2026-10-14
+### Segurança
+- Curinga `*` vinculado a sessão de administrador verificada e viva (registro privado em `server/auth.js`); objetos forjados são negados.
+- `createServiceToken()` exige sessão verificada e rejeita `*`, escopos de administrador, desconhecidos e listas inválidas com códigos específicos.
+- Rotas `session` usam `isVerifiedAdmin()`.
+### Testes
+- Novos testes de identidade forjada, revogação/expiração/desativação e emissão de tokens; fixtures de admin sintético substituídos por login real.
+
+## [1.1.1] — 2026-10-14
+### Adicionado
+- Autenticação de administradores (máx. 2) no serviço local: sessão em cookie HttpOnly/SameSite=Strict, expiração por inatividade (30 min) e absoluta (12 h), rotação no login, revogação no servidor.
+- Proteção CSRF em toda operação que altera estado (inclusive logout).
+- Primeiro acesso com código de uso único (15 min) gravado em `data/bootstrap-token.txt` (permissão 0600), consumido atomicamente.
+- Limite progressivo de tentativas de login por origem+conta, origem e conta, com resposta genérica.
+- Tokens de serviço com escopos e revogação para MCP e scripts; autorização reaplicada em cada ferramenta.
+- Identidade responsável por execução de bots; novos bots registram proprietário; bots antigos não são reatribuídos.
+- Migrações versionadas com backup verificado em `data/backups/` e reversão total em caso de falha.
+- Aba Segurança no painel (administradores, sessões, tokens) e telas de entrada/primeiro acesso.
+### Alterado
+- `/api/health` passa a expor só `ok`, `version`, `setupRequired`.
+- `cli_agent` em modo de confirmação exige aprovação no painel.
+- O MCP exige `JARVIS_SERVICE_TOKEN`.
+
 ## [1.1.0] — 2026-10-14
 ### Adicionado
 - **Novas ferramentas de agente** (`server/tools.js`):

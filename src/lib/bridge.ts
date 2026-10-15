@@ -13,15 +13,61 @@ export const bridgeUrl = () =>
 let online: boolean | null = null;
 const listeners = new Set<(v: boolean) => void>();
 
+let setupRequired = false;
 export async function ping(): Promise<boolean> {
   try {
     const r = await fetch(`${bridgeUrl()}/api/health`, { signal: AbortSignal.timeout(1500) });
     online = r.ok;
+    if (r.ok) setupRequired = !!(await r.json()).setupRequired;
   } catch {
     online = false;
   }
   listeners.forEach((l) => l(online!));
   return online;
+}
+
+// ---------- authentication (local service) ----------
+// The session lives in an HttpOnly cookie the panel cannot read. The CSRF token is kept only
+// in memory (never localStorage) and re-fetched from /api/auth/me after a reload.
+export type AuthState = "unknown" | "demo" | "setup" | "login" | "ok";
+let csrf: string | null = null;
+let authState: AuthState = "unknown";
+let me: { id: string; username: string } | null = null;
+const authListeners = new Set<(s: AuthState) => void>();
+const setAuth = (s: AuthState) => { authState = s; authListeners.forEach((l) => l(s)); };
+export const currentAdmin = () => me;
+
+export async function refreshAuth(): Promise<AuthState> {
+  if (!(await ping())) { csrf = null; me = null; setAuth("demo"); return authState; }
+  if (setupRequired) { setAuth("setup"); return authState; }
+  const r = await fetch(`${bridgeUrl()}/api/auth/me`, { credentials: "include" }).catch(() => null);
+  if (r?.ok) { const j = await r.json(); csrf = j.csrf; me = j.admin; setAuth("ok"); }
+  else { csrf = null; me = null; setAuth("login"); }
+  return authState;
+}
+export function useAuthState() {
+  const [s, setS] = useState<AuthState>(authState);
+  useEffect(() => { authListeners.add(setS); refreshAuth(); return () => { authListeners.delete(setS); }; }, []);
+  return s;
+}
+async function authPost(path: string, body: unknown) {
+  const r = await fetch(`${bridgeUrl()}${path}`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(j.error || String(r.status)), { code: j.error, retryAfter: j.retryAfter });
+  return j;
+}
+export async function login(username: string, password: string) {
+  const j = await authPost("/api/auth/login", { username, password });
+  csrf = j.csrf; me = j.admin; setAuth("ok");
+}
+export async function setupFirstAdmin(token: string, username: string, password: string) {
+  await authPost("/api/auth/setup", { token: token.trim(), username, password });
+  setupRequired = false;
+  await login(username, password);
+}
+export async function logout() {
+  await api("/api/auth/logout", { method: "POST", body: "{}" }).catch(() => undefined);
+  csrf = null; me = null; setAuth("login");
 }
 
 export function useBridgeStatus() {
@@ -40,10 +86,12 @@ export function useBridgeStatus() {
 
 export async function api<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
   const isForm = init.body instanceof FormData;
-  const r = await fetch(`${bridgeUrl()}${path}`, {
-    ...init,
-    headers: (isForm ? init.headers : { "content-type": "application/json", ...((init.headers as Record<string, string>) || {}) }) as HeadersInit,
-  });
+  const method = (init.method || "GET").toUpperCase();
+  const h: Record<string, string> = { ...((init.headers as Record<string, string>) || {}) };
+  if (!isForm) h["content-type"] = "application/json";
+  if (method !== "GET" && csrf) h["x-jarvis-csrf"] = csrf;
+  const r = await fetch(`${bridgeUrl()}${path}`, { ...init, credentials: "include", headers: h });
+  if (r.status === 401) { csrf = null; me = null; setAuth(setupRequired ? "setup" : "login"); }
   if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
   const ct = r.headers.get("content-type") || "";
   return (ct.includes("json") ? r.json() : r.blob()) as Promise<T>;
@@ -58,7 +106,7 @@ export type Agent = {
 export type Bot = {
   id: string; name: string; goal: string; agent_id: string;
   trigger_type: "daily" | "interval" | "voice" | "file" | "message"; trigger_value: string;
-  autonomy: "confirm" | "safe" | "full"; max_steps: number; enabled: boolean; last_run?: string;
+  autonomy: "confirm" | "safe" | "full"; max_steps: number; enabled: boolean; last_run?: string; scopes?: string[]; owner_admin_id?: string | null;
 };
 export type Run = { id: string; bot_id: string; started_at: string; status: string; output: string };
 

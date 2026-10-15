@@ -4,6 +4,8 @@ import { mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { migrate } from "./migrations.js";
+import { createAuth } from "./auth.js";
 
 export const DATA_DIR = process.env.JARVIS_DATA_DIR || join(dirname(fileURLToPath(import.meta.url)), "..", "data");
 mkdirSync(join(DATA_DIR, "voices"), { recursive: true });
@@ -21,6 +23,10 @@ CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, bot_id TEXT, started_at TE
 CREATE TABLE IF NOT EXISTS approvals (id TEXT PRIMARY KEY, command TEXT, status TEXT, output TEXT, created_at TEXT);
 CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, kind TEXT, detail TEXT);
 `);
+
+// Versioned migrations: verified backup first, one transaction per step, abort on failure.
+export const migration = migrate(db, DATA_DIR);
+if (migration.backup) console.log(`[db] schema v${migration.from} → v${migration.to}; backup verificado em ${migration.backup}`);
 
 export const now = () => new Date().toISOString();
 export const uid = () => randomUUID();
@@ -59,3 +65,5 @@ if (agents.list().length === 0) {
     tools: ["web_search", "fetch_url", "remember", "recall", "run_command", "cli_agent", "send_message"],
   });
 }
+
+export const auth = createAuth(db, { dataDir: DATA_DIR, audit });
