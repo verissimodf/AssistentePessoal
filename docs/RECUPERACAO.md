@@ -44,3 +44,57 @@ Cria apenas tabelas novas: `ownership`, `admin_settings`, `global_settings`, `le
 - Atribuição: Configurações → Segurança → "Dados antigos". Só metadados aparecem; a atribuição é explícita, atômica e auditada. As configurações antigas são assumidas inteiras por um único administrador que ainda não tenha configurações pessoais.
 - Rollback: restaure o backup `jarvis-<data>-v1.db` (passos acima) e volte o código para a versão da Fase 1.
 - Atenção: `recuperar-acesso.js` desativa administradores; recursos que eram deles continuam pertencendo a eles e ficam inacessíveis (não são reatribuídos).
+
+## D_REC — Política de recuperação, reivindicação e propriedade (proposta para aprovação)
+
+Esta seção formaliza a política de recuperação de acesso e de propriedade de recursos. Vale para as
+Fases 1 e 2 e é pré-requisito das fases seguintes. **Status: proposta — aguarda aprovação.**
+
+### 1. Recuperação de credenciais (break-glass local)
+- A recuperação é **local**: exige acesso ao computador e o serviço **parado**. Não existe recuperação remota.
+- Procedimento (`node server/recuperar-acesso.js`), sempre com **backup verificado antes**:
+  1. desativa **todos** os administradores;
+  2. revoga **todas** as sessões e tokens de serviço;
+  3. recria os gatilhos de proteção do último administrador;
+  4. grava um novo código de primeiro acesso (`data/bootstrap-token.txt`, uso único, 15 min).
+- O que **não** muda: memórias, agentes, bots, execuções, aprovações, documentos e configurações
+  permanecem intactos.
+- **Proibido**: reatribuir, apagar ou “herdar” recursos durante a recuperação.
+
+### 2. Identidade e validação
+- Toda operação privilegiada (reivindicar recursos, assumir configurações antigas, criar/desativar
+  administradores) exige **sessão de administrador verificada** (`isVerifiedAdmin()`), com CSRF.
+- A recuperação break-glass exige acesso físico/lógico ao host; ela **não concede privilégio por si
+  só** — apenas reabre o primeiro acesso, que exige o código de uso único.
+
+### 3. Reivindicação voluntária e granular de recursos órfãos
+- Recursos sem proprietário (legado) ficam **invisíveis** até reivindicação explícita.
+- A reivindicação é **voluntária** (o administrador escolhe) e **granular** (por item; a API aceita
+  uma lista de ids de um único tipo), com confirmação literal (`confirm: "ASSUMIR"`).
+- É **atômica**: todos os ids precisam existir, ser únicos e ainda estar sem dono, revalidados dentro
+  da transação; qualquer falha desfaz tudo.
+- Aprovações órfãs pendentes são **invalidadas** (`legacy_expired`) na mesma transação — nunca se
+  tornam executáveis por herança.
+- A reivindicação grava `origin='claimed'` e é auditada (`legacy.claimed`).
+
+### 4. Auditoria
+- São auditados, entre outros: `auth.setup_first_admin`, `auth.login*`, `auth.admin_created`,
+  `auth.admin_disabled`, `auth.recovery`, `legacy.claimed`, `legacy.approvals_expired`,
+  `legacy.settings_claimed`, `authz.denied`, `authz.tool_denied`, `run_command(requested|approved|denied)`.
+- A auditoria é **sanitizada** (`sanitizeAudit`): nunca grava segredos, tokens, senhas ou conteúdo de
+  mensagens.
+
+### 5. Proibição de transferência automática
+- **Nenhum** recurso órfão é atribuído automaticamente — nem na migração v2, nem na recuperação de
+  acesso, nem ao desativar um administrador.
+- Ao desativar um administrador, os recursos que pertenciam a ele permanecem com ele e ficam
+  **inacessíveis**; só voltam a ser acessíveis por **reivindicação explícita e auditada**.
+- Bots sem dono comprovável não executam (`legacy_blocked`).
+
+### 6. Pendência aberta (a decidir)
+- **Recuperação da propriedade após recuperação de acesso.** Quando um administrador é desativado por
+  `recuperar-acesso.js`, os recursos dele ficam órfãos de fato (dono inativo) e **não há**, hoje, um
+  caminho aprovado para reatribuí-los. Esta política **proíbe a transferência automática**; a
+  reatribuição exige decisão explícita (reivindicação), que ainda **não está implementada** para
+  recursos cujo dono foi desativado. Decisão mínima necessária: definir se/como um administrador ativo
+  pode reivindicar recursos de um administrador desativado (com auditoria), ou manter o bloqueio.
