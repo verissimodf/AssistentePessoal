@@ -1,6 +1,7 @@
 # Fase 4 — E-mail (especificação proposta)
 
-**Status: proposta — aguarda aprovação da especificação e de F4.11.** Deriva do Plano Mestre §6
+**Status: F4.11 aprovada (2026-10-15, §12).** A especificação como documento, D7 e as autorizações
+operacionais (§13, §14) seguem pendentes. Deriva do Plano Mestre §6
 (Fase 4) e da matriz de rastreabilidade F4.1–F4.11 em `docs/CONTINUIDADE.md`. As partes **independentes**
 já iniciadas — **núcleo de e-mail**, **rotas/ferramentas com transporte mockado**, **adaptador IMAP/SMTP
 injetável (tecnicamente pronto, não ativado)**, **rascunho para aprovação humana** e **tela de rascunhos
@@ -53,12 +54,12 @@ permissões aprovadas e o isolamento por administrador da Fase 2.
 | F4.8 | Contas por usuário | Cada administrador tem as **suas** contas; a de A é invisível para B (Fase 2). |
 | F4.9 | Confirmação de operações sensíveis | Envio sempre confirmado/aprovado (D9). |
 | F4.10 | Teste real com conta autorizada | Só com a conta dedicada (D10). |
-| F4.11 | Pastas, filtros, limites e retenção | **Bloqueador** — configuração inicial proposta em §3.1, pendente de aprovação. |
+| F4.11 | Pastas, filtros, limites e retenção | **Aprovada** (2026-10-15) — valores em §12.1; retenção satisfeita por construção (§12.2). |
 
-### 3.1 F4.11 — Pastas, filtros, limites e retenção (bloqueador; recomendação inicial)
+### 3.1 F4.11 — Pastas, filtros, limites e retenção (**aprovada**)
 
-**Estado:** não definido no Plano Mestre (lacuna L3). Abaixo uma **recomendação conservadora, pendente de
-aprovação** — **não é decisão tomada**.
+**Estado:** **aprovada em 2026-10-15, sem ajustes.** A recomendação conservadora abaixo foi implementada
+como os **valores aprovados** de **§12.1**; o registro formal da decisão está em **§12**.
 
 | Parâmetro | Recomendação inicial | Impacto (segurança/privacidade/desempenho/disco) |
 |---|---|---|
@@ -71,12 +72,11 @@ aprovação** — **não é decisão tomada**.
 | Falhas do provedor | backoff exponencial; marcar conexão como `erro` e não repetir em loop | resiliência |
 | Credenciais revogadas | detectar falha de autenticação, marcar `reconectar` e **não** reter a senha | segurança |
 
-**Bloqueador:** estes valores precisam de aprovação antes da implementação. Enquanto não aprovados, a
-Fase 4 **não** deve ser iniciada.
+**Resolvido:** estes valores **foram aprovados** (§12) e já estão implementados e aplicados por padrão.
 
-> **Atualização (incremento 4, 2026-10-15):** os valores foram **consolidados como proposta definitiva**
-> em **§12** — inclusive **rate limit** (leitura 30/min, envio 20/h), já implementado e aplicado por
-> padrão. **Retenção não precisa de decisão**: nada de corpo/metadado de e-mail é persistido (§12.2).
+> **Atualização (2026-10-15):** os valores foram **aprovados sem ajustes** e estão em **§12.1** —
+> inclusive **rate limit** (leitura 30/min, envio 20/h), implementado e aplicado por padrão. **Retenção
+> não precisa de decisão**: nada de corpo/metadado de e-mail é persistido (§12.2).
 
 ## 4. Fora de escopo (Fase 4)
 
@@ -140,13 +140,13 @@ confirmação para efeito documental. O que permanece **pendente**:
 |---|---|---|---|
 | 1 | Aprovação da especificação como documento | pendente | **Sim** |
 | 2 | Autorização explícita para iniciar a implementação | pendente | **Sim** |
-| 3 | F4.11 — pastas, filtros, limites e retenção (§3.1) | recomendação pendente de aprovação | **Sim** |
+| 3 | F4.11 — pastas, filtros, limites e retenção (§3.1) | **Aprovada** (2026-10-15) — §12 | Não |
 | 4 | D_REC — reivindicação de recursos de administrador desativado (`docs/RECUPERACAO.md` §D_REC) | pendente | **Sim** (gestão de contas após recuperação) |
 | 5 | Conta dedicada para testes reais (D10) | a preparar pelo responsável | Não (só testes reais) |
 | 6 | Controles de conteúdo não confiável (§6.1) | definidos como critérios de aceite | Não (são a própria implementação) |
 
-**A Fase 4 permanece bloqueada** até que os itens 1–4 estejam satisfeitos. **Nenhuma implementação de
-e-mail foi iniciada.**
+**Bloqueio remanescente:** os itens **1, 2 e 4**. A aprovação de F4.11 (item 3) **não** autoriza nenhuma
+operação real — as autorizações operacionais são **separadas** e continuam pendentes (§13, §14).
 
 ## 10. Implementação incremental (partes que NÃO dependem das decisões pendentes)
 
@@ -168,9 +168,9 @@ O que o núcleo já entrega (contrato reutilizável pelas rotas `/api/mail/*` e 
 | F4.8 isolamento | `createMailService` + `settingsAccountResolver` — conta resolvida **por adminId**; "não é sua" e "não existe" são indistinguíveis. |
 | F4.9/D9 envio | confirmação explícita `ENVIAR`; validação de destinatário/corpo/tamanho; auditoria **sem** conteúdo. |
 
-**Limites (F4.11) são injetáveis** (`createMailService({ limits })`) e centralizados em `LIMITS`,
-marcados como **provisórios/pendentes de aprovação** — a política não foi decidida aqui. **Não** há
-persistência de corpo de mensagem (portanto, nenhuma janela de retenção a definir neste incremento).
+**Limites (F4.11) são injetáveis** (`createMailService({ limits })`) e centralizados em `LIMITS` —
+**aprovados em §12** (sem ajustes). **Não** há persistência de corpo de mensagem (portanto, nenhuma janela
+de retenção a definir).
 
 ### 10.1 Incremento 2 — rotas e ferramentas ligadas ao núcleo (mock)
 
@@ -200,20 +200,21 @@ nenhum provedor é contatado, nada é enviado, nenhuma credencial é usada.
   inválidas, sucesso/falha do mock, timeout, retry, sanitização, envio sem/com confirmação, auditoria
   sem conteúdo, token de serviço recusado no envio.
 
-**Ainda dependente de decisão (não implementado):** autenticação no provedor (D7); aprovação humana para
-envio por agente/bot (§11.5); gestão de conexão persistida (F4.5); pastas/regras e **valores** de F4.11.
-Nada disso é iniciado sem as respostas da §11 e sem autorização explícita de operação real.
+**Ainda dependente de decisão (não implementado):** autenticação no provedor (D7); política de retomada
+após falha de envio (§11.5); gestão de conexão persistida (F4.5); pastas nomeadas/regras. F4.11 está
+**aprovada** (§12). Nada disso é iniciado sem as respostas da §11 e sem autorização explícita de operação
+real.
 
 ### 10.2 Incremento 3 — F4.11 (limites explícitos) e D7 (adaptador IMAP/SMTP)
 
-**Estado (2026-10-15):** (a) os **limites provisórios** foram tornados explícitos e continuam
-configuráveis por serviço; (b) o **adaptador IMAP/SMTP** (D7) foi implementado como interface
+**Estado (2026-10-15):** (a) os **limites de F4.11** foram tornados explícitos e continuam configuráveis
+por serviço — **aprovados** em §12; (b) o **adaptador IMAP/SMTP** (D7) foi implementado como interface
 injetável — **não** ativado por padrão e **não** conectado a provedor algum.
 
-**a) Limites provisórios (F4.11) — mecanismo pronto, valores pendentes.** Todos vêm de `LIMITS`
-(`server/mail.js`) e podem ser sobrescritos por `createMailService({ limits })`:
+**a) Limites (F4.11) — aprovados (§12).** Todos vêm de `LIMITS` (`server/mail.js`) e podem ser
+sobrescritos por `createMailService({ limits })`:
 
-| Chave | Valor provisório | Corresponde a (§3.1) |
+| Chave | Valor aprovado | Corresponde a (§3.1) |
 |---|---|---|
 | `defaultPage` | 20 | paginação (default) |
 | `maxPage` | 50 | paginação — `limit` ≤ 50 |
@@ -224,9 +225,9 @@ injetável — **não** ativado por padrão e **não** conectado a provedor algu
 | `timeoutMs` | 8 000 | falhas do provedor — timeout |
 | `baseDelayMs` | 250 | backoff exponencial |
 
-**Não** há rate limit implementado (consulta/min, envio/hora): é **política** de F4.11 e continua
-pendente — implementar sem valor aprovado seria inventar política. Também **não** há retenção nem
-persistência de corpo.
+O **rate limit** (consulta/min, envio/hora) foi implementado e **aprovado** em §12 (30/min leitura,
+20/h envio), por administrador/conta e **por processo**. Também **não** há retenção nem persistência de
+corpo.
 
 **b) Adaptador D7 (`server/mail-imap.js`).** Implementa a mesma interface do núcleo
 (`list`/`read`/`search`/`send`) sobre **IMAP/SMTP + senha de aplicativo** (OAuth fora do escopo):
@@ -246,8 +247,8 @@ persistência de corpo.
   logout, janela de paginação, mapeamento de busca, envio + fechamento, provedor desconhecido, falha de
   auth classificada como 502 **sem vazar a senha**.
 
-**Ainda dependente de decisão:** ativar o transporte real (D7) e a autenticação no provedor; valores de
-F4.11 (rate limit).
+**Ainda dependente de decisão:** ativar o transporte real (D7) e a autenticação no provedor. F4.11 está
+**aprovada** (§12).
 
 ### 10.3 Incremento 3 — rascunho para aprovação (D9) e titularidade
 
@@ -260,7 +261,7 @@ humana**, sem persistir o corpo. Contas permanecem vinculadas ao titular origina
 - **Vínculo ao dono:** `get`/`consume` exigem o mesmo `adminId`; rascunho de outro admin é
   **indistinguível** de inexistente (`404`).
 - **Uso único:** `consume` remove o rascunho antes de enviar (sem replay).
-- **Expiração e descarte:** TTL provisório (10 min, configurável) + limite de entradas (200, com descarte
+- **Expiração e descarte:** TTL aprovado (10 min, configurável) + limite de entradas (200, com descarte
   do mais antigo). Nada é retido após expirar/usar.
 
 Fluxo: a ferramenta `send_email` de um agente/bot **não envia** — cria o rascunho e audita
@@ -284,8 +285,8 @@ rascunho pelo agente sem envio, entrada inválida, revisão só por sessão, con
 único, isolamento entre admins, corpo **não** persistido em nenhuma tabela, e titularidade (conta fica
 com o dono após desativação).
 
-**Ainda dependente de decisão:** TTL/capacidade definitivos do rascunho (provisórios aqui); ativar o
-transporte real (D7); valores de F4.11; transferência de conta (§11.3).
+**Ainda dependente de decisão:** política de retomada após falha (§11.5); ativar o transporte real (D7);
+transferência de conta (§11.3). F4.11 está **aprovada** (§12).
 
 ### 10.4 Incremento 4 — interface do painel para rascunhos
 
@@ -331,16 +332,18 @@ titularidade, cancelamento, expiração, CSRF, **falha ambígua → `unknown` se
 determinística → `failed`**, **envio nunca repetido**, ausência de vazamento.
 
 **Ainda dependente de decisão:** política de retenção para retomada após falha (§11.5); TTL/capacidade
-definitivos; ativar o transporte real (D7); valores de F4.11; transferência de conta (§11.3).
+definitivos; ativar o transporte real (D7); transferência de conta (§11.3). F4.11 está **aprovada** (§12).
 
-## 11. Perguntas de produto (bloqueios indispensáveis)
+## 11. Decisões de produto e autorizações operacionais (separadas)
 
-1. **F4.11 — pastas/filtros/limites/retenção (§3.1, consolidado em §12).** Confirmar os valores
-   propostos como definitivos?
-   (a) Confirmar como estão (§12.1); (b) confirmar com ajustes (quais?); (c) reverter para provisório
-   (rate limit desligado). *Consequência:* os valores já estão implementados e **aplicados por padrão**;
-   (b)/(c) mudam uma constante em `LIMITS`. A **retenção não precisa de decisão**: nada de corpo/metadado
-   de e-mail é persistido (§12.2).
+As **decisões de produto** (itens 1–5) são separadas das **autorizações operacionais** (ao final desta
+seção). Aprovar uma decisão de produto **não** concede nenhuma autorização operacional.
+
+1. **F4.11 — pastas/filtros/limites/retenção (§3.1, §12) — DECIDIDA.** **Aprovada em 2026-10-15, sem
+   ajustes**: valem os valores de **§12.1** e a política de retenção de **§12.2**. Registro da decisão em
+   **§12**. Isto é uma **decisão de produto** e **não** autoriza nenhuma operação real — as autorizações
+   **operacionais** (D7, primeira conexão, envio, escopo adicional) são **separadas** e continuam
+   pendentes (§13, §14).
 2. **Aprovação da especificação + autorização de implementação.** Autorizar a construção das rotas e
    ferramentas (com mocks) sem credenciais reais? (a) Sim, com mocks; (b) sim, incluindo o adaptador de
    transporte real (mas ainda sem conta real); (c) não. *Consequência:* define se o próximo incremento
@@ -361,24 +364,50 @@ definitivos; ativar o transporte real (D7); valores de F4.11; transferência de 
    (c) o agente prepara um **rascunho transitório em memória** (não persistido em banco/disco) e o humano
    revisa e confirma no painel.
    *Consequência:* **(c) foi implementado** (§10.3 + §10.4) — rascunho em memória, vinculado ao dono, de
-   uso único, com expiração, **e a tela do painel** para revisar/confirmar/cancelar. **Pendente:** o
-   **valor definitivo** do TTL (provisório: 10 min) e a política de **retomada após falha** (hoje:
-   no máximo uma tentativa por rascunho, sem reter o corpo). (b) continua fora do escopo por exigir
+   uso único, com expiração (**TTL aprovado: 10 min**, §12.1), **e a tela do painel** para
+   revisar/confirmar/cancelar. **Pendente:** a política de **retomada após falha** (hoje: no máximo uma
+   tentativa por rascunho, sem reter o corpo). (b) continua fora do escopo por exigir
    decisão de retenção.
 
 **A autorização para implementar código não autoriza** acesso a contas reais, uso de credenciais, envio
 de mensagens nem alteração de dados reais — essas operações exigem autorização explícita específica.
 
-## 12. Política operacional consolidada (F4.11) — valores propostos como definitivos
+### Autorizações operacionais pendentes (separadas das decisões de produto)
 
-**Estado (2026-10-15):** os valores que estavam **provisórios** foram consolidados. Os números abaixo são
-a **proposta definitiva**, já implementada em `LIMITS` (`server/mail.js`) e nos defaults do store de
-rascunhos, e **aplicados por padrão**. Ajustar qualquer valor = trocar uma constante (ou passar
-`createMailService({ limits })`). Confirmação formal: §11.1.
+Estas **não** são decisões de produto e **não** foram concedidas. Cada uma exige autorização **explícita,
+específica** (operador + escopo):
 
-> **Decisão adotada (Gate 4D, 2026-10-15):** sem resposta a §11.1, mantém-se o **status quo** — os valores
-> de §12.1 continuam **aplicados por padrão** e a confirmação formal segue **pendente**. **Nenhum valor foi
-> alterado** nesta execução.
+| # | Autorização | Estado |
+|---|---|---|
+| O1 | **D7** — ativar o transporte IMAP/SMTP real (`JARVIS_MAIL_TRANSPORT=imap`) no ambiente designado | **pendente** |
+| O2 | **Primeira conexão** — conectar a **conta de teste dedicada** e executar **apenas** o passo 1 (leitura + titularidade, §14.2) | **pendente** |
+| O3 | **Envio real** — autorização **independente** para **uma** mensagem de teste, com conta remetente e destino **controlados e previamente definidos** (§14.3) | **pendente** |
+| O4 | **Escopo adicional** — qualquer outra conta, destinatário ou operação | **pendente** (autorização própria) |
+
+> A aprovação de F4.11 (§12) **não** concede nenhuma destas autorizações; `JARVIS_MAIL_TRANSPORT` continua
+> desligado por padrão.
+
+## 12. Política operacional consolidada (F4.11) — **aprovada**
+
+**Estado (2026-10-15):** **F4.11 aprovada, sem ajustes.** Os valores de **§12.1** e a política de retenção
+de **§12.2** estão implementados em `LIMITS` (`server/mail.js`) e nos defaults do store de rascunhos, e
+**aplicados por padrão**. Ajustar qualquer valor = trocar uma constante (ou passar
+`createMailService({ limits })`).
+
+### Registro da decisão — F4.11 aprovada (2026-10-15)
+
+| Campo | Conteúdo |
+|---|---|
+| **Data** | 2026-10-15 |
+| **Escopo** | F4.11 — pastas, filtros, limites e retenção (§3.1), **sem ajustes** |
+| **Decisão** | Aprovar os valores de **§12.1** e a política de retenção de **§12.2** |
+| **Valores aprovados** | paginação 20 / 50 / 500 · corpo 100 000 B · filtro 200 · timeout 8 000 ms · retries leitura 2, envio **0** · backoff 250 ms · rate limit leitura **30/min**, envio **20/h** · TTL rascunho 10 min · TTL desfecho 5 min · capacidade 200 |
+| **Justificativa** | valores conservadores, já implementados e testados; protegem memória, tempo de resposta, o provedor e a privacidade; a retenção é satisfeita **por construção** (§12.2) |
+| **Limites conhecidos** | rate limit é **por (administrador, conta)** e **por processo** — **sem coordenação entre múltiplas instâncias**; pastas nomeadas/regras fora de escopo; envio é **no máximo 1 tentativa por rascunho** |
+| **Não autoriza** | ativar o transporte real (D7), conectar contas, enviar mensagens ou ampliar escopo — cada uma exige autorização **operacional própria** (§13, §14) |
+
+> **Decisão de produto ≠ autorização operacional.** A aprovação de F4.11 **não** libera nenhuma operação
+> real: `JARVIS_MAIL_TRANSPORT` continua desligado por padrão e as autorizações de §14 seguem pendentes.
 
 ### 12.1 Limites
 
@@ -395,12 +424,12 @@ rascunhos, e **aplicados por padrão**. Ajustar qualquer valor = trocar uma cons
 | Backoff base | 250 ms | `baseDelayMs` | alívio do provedor | 250/500/1000 ms |
 | Rate limit — leitura | 30/min | `readPerMin` | evita throttling (§3.1) | `429` + `retryAfter` |
 | Rate limit — envio | 20/hora | `sendPerHour` | evita spam/bloqueio (§3.1) | `429` + `retryAfter` |
-| TTL do rascunho (pendente) | 10 min | `ttlMs` | janela de revisão humana | expira → `expirado` |
+| TTL do rascunho (aprovado) | 10 min | `ttlMs` | janela de revisão humana | expira → `expirado` |
 | TTL do desfecho | 5 min | `outcomeTtlMs` | mostrar `sent`/`failed`/`unknown` | some depois |
 | Capacidade de rascunhos | 200 | `max` | limita memória | descarta o mais antigo |
 
 O rate limit é por **(administrador, conta)** e por tipo (`read`/`send`), com janela deslizante em
-memória. `429` traz `retryAfter` (segundos) no corpo e no cabeçalho `retry-after`. Um envio bloqueado
+memória, e é **por processo**: instâncias distintas **não** compartilham contadores. `429` traz `retryAfter` (segundos) no corpo e no cabeçalho `retry-after`. Um envio bloqueado
 por rate limit **não consome** o rascunho (verificação antecipada).
 
 ### 12.2 Retenção — inventário (o que existe e o que é mantido)
