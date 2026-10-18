@@ -12,7 +12,12 @@ export E2E_PANEL="http://127.0.0.1:$PANEL"
 
 echo "dir do ensaio: $TMP"
 cd "$REPO"
-[ -f .output/server/index.mjs ] || NITRO_PRESET=node-server npm run build >/dev/null 2>&1
+# O painel tem de ser um build de SERVIDOR NODE: `vite build` puro gera o preset errado (fetch
+# handler sem `listen`) e o E2E falha à primeira ligação. Por isso reconstrói se o marcador
+# `NodeResponse` (preset `node-server`) não estiver no bundle.
+if [ ! -f .output/server/index.mjs ] || ! grep -q NodeResponse .output/server/index.mjs; then
+  NITRO_PRESET=node-server npm run build >/dev/null 2>&1
+fi
 
 JARVIS_DATA_DIR="$TMP" JARVIS_PORT=$API JARVIS_ALLOWED_ORIGINS="$E2E_PANEL" \
   node server/index.js >"$TMP/api.log" 2>&1 &

@@ -39,6 +39,23 @@ const info = {
   mode: clean(process.env.NODE_ENV),
 };
 
+// Validação estrita de release (P0.3.1): `RELEASE_BUILD=1` exige identidade COMPLETA e válida.
+// Um release sem SHA/versão/instante verificáveis é FALHA de build — nunca um "unknown" silencioso
+// que só se descobre em produção. Builds de desenvolvimento continuam tolerantes (fallbacks honestos).
+if (process.env.RELEASE_BUILD === "1") {
+  const problems = [];
+  if (!/^[0-9a-f]{40}$/.test(info.commit))
+    problems.push(`GIT_SHA inválido ("${info.commit}") — tem de ser o SHA completo (40 hex) do commit efetivamente construído`);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(info.buildTime))
+    problems.push(`BUILD_TIME inválido ("${info.buildTime}") — tem de ser UTC em RFC3339 (ex.: 2026-10-18T17:40:00Z)`);
+  if (!info.appVersion || info.appVersion === "unknown" || info.appVersion === "sem-build")
+    problems.push("APP_VERSION ausente — tem de vir do manifesto (package.json) ou de --build-arg");
+  if (problems.length) {
+    console.error(`[build-info] RELEASE_BUILD com metadados inválidos:\n - ${problems.join("\n - ")}`);
+    process.exit(1);
+  }
+}
+
 // Mesma regra do serviço: `JARVIS_DATA_DIR` → cwd. Assim o `server/build-info.json` vai para onde
 // `server/build-info.js` procura, e nunca deixa artefactos fora do diretório de dados.
 const out = resolve(process.env.JARVIS_DATA_DIR || process.cwd(), "server", "build-info.json");
