@@ -19,6 +19,23 @@ test("safe mode denies command outside the allowlist", () => {
 test("chaining is never allowlisted", () => {
   assert.equal(isAllowlisted("ls; rm -rf ~", base.allowlist), false);
 });
+test("quebra de linha nunca é permitida (bypass comprovado: `ls \\n rm -rf`)", () => {
+  assert.equal(isAllowlisted("ls \nrm -rf /", base.allowlist), false);
+  assert.equal(isAllowlisted("ls\r\nid", base.allowlist), false);
+  assert.equal(isAllowlisted("ls\tid", base.allowlist), false);
+  assert.equal(decide("ls \nrm -rf /", { ...base, autonomy: "safe" }), "deny");
+});
+test("redirecionamento, substituição e subshell nunca são permitidos", () => {
+  for (const c of ["ls > /tmp/x", "ls >> /tmp/x", "ls < /etc/passwd", "ls ${HOME}", "ls $(id)", "ls `id`", "ls | id", "(ls)", "ls & id", "ls \\x", "ls 2>&1"]) {
+    assert.equal(isAllowlisted(c, base.allowlist), false, c);
+    assert.equal(decide(c, { ...base, autonomy: "safe" }), "deny", c);
+  }
+});
+test("prefixo permitido com argumentos simples continua válido", () => {
+  assert.equal(isAllowlisted("ls -la /tmp", base.allowlist), true);
+  assert.equal(isAllowlisted("git status", base.allowlist), true);
+  assert.equal(isAllowlisted("", base.allowlist), false);
+});
 test("full autonomy still denies destructive commands", () => {
   assert.equal(decide("rm -rf /", { ...base, autonomy: "full" }), "deny");
 });

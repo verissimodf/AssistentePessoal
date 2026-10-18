@@ -29,6 +29,12 @@ export const AGENT_INTEGRATIONS = [
   { id: "headroom", name: "Headroom (proxy)", kind: "http", command: "http://127.0.0.1:8787/v1" },
   { id: "crawl4ai", name: "crawl4ai", kind: "http", command: "http://192.168.2.29:11235" },
   { id: "claude_desktop", name: "Claude Desktop (MCP)", kind: "mcp", command: "node server/mcp.js" },
+  // REA: análise estática de artefatos (mandar {path} não é editável do lado do agente —
+  // o executor usa argv fixo; o campo comando é apenas documental e divergência é recusada).
+  { id: "rea", name: "REA (engenharia reversa)", kind: "cli", command: "rea analyze-javascript-application {path} --json" },
+  // Gigabrain: memória local persistente compartilhada — store no volume data/gigabrain/,
+  // ferramentas gigabrain_recall/gigabrain_remember no JARVIS (escopos memories:*).
+  { id: "gigabrain", name: "Gigabrain (memória compartilhada)", kind: "cli", command: "gigabrain-mcp --config {config}" },
 ] as const;
 
 export const COMMS = [
@@ -40,7 +46,7 @@ export const COMMS = [
   { id: "calendar", name: "Agenda (ICS / CalDAV)", fields: ["icsUrl"] },
 ] as const;
 
-export const TOOLS = ["web_search", "fetch_url", "remember", "recall", "run_command", "cli_agent", "send_message", "send_email", "read_calendar", "context7_docs", "crawl_page", "openhands_task"] as const;
+export const TOOLS = ["web_search", "fetch_url", "remember", "recall", "run_command", "cli_agent", "send_message", "send_email", "read_calendar", "context7_docs", "crawl_page", "openhands_task", "rea_analyze", "gigabrain_recall", "gigabrain_remember"] as const;
 
 export const TEMPLATES = [
   { name: "J.A.R.V.I.S. clássico", text: "Você é J.A.R.V.I.S., assistente pessoal leal, preciso e levemente espirituoso. Trate o usuário por 'senhor' ou 'senhora'. Seja breve ao falar." },

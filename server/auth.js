@@ -25,6 +25,15 @@ export const TOOL_SCOPES = {
   web_search: "web", fetch_url: "web", remember: "memories:write", recall: "memories:read",
   run_command: "host:run", cli_agent: "host:run", send_message: "comms:send", send_email: "comms:send",
   read_email: "comms:read", read_calendar: "comms:read", document_search: "documents:read",
+  // Declared in TOOL_DEFS and dispatched by callTool; without a scope here they were
+  // unreachable ("Ferramenta desconhecida"). Network fetchers → "web"; delegation → "host:run".
+  context7_docs: "web", crawl_page: "web", openhands_task: "host:run",
+  // REA: análise estática de artefatos — abre um analisador local sobre o alvo; mesmo
+  // portão de execução das demais delegações (host:run + aprovação humana sempre).
+  rea_analyze: "host:run",
+  // Gigabrain: memória local persistente própria — mesma classe de leitura/escrita das
+  // memórias nativas do JARVIS (sem shell; argv fixo; a store é do próprio admin).
+  gigabrain_recall: "memories:read", gigabrain_remember: "memories:write",
 };
 
 /** Loopback sources (all local processes look identical here). */
@@ -300,11 +309,43 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
     return !!r && !r.revoked_at && !!r.reauth_at && (clock() - r.reauth_at) <= maxMs;
   }
 
+  // ---------- self-service password change (Fase G) ----------
+  // Rotina do administrador logado: re-verifica a senha atual com o mesmo scrypt existente e grava
+  // o novo hash de forma ATÔMICA, encerrando todas as OUTRAS sessões deste administrador na mesma
+  // transação. A sessão que trocou continua válida; sessões revogadas são re-lidas ao vivo por
+  // validateSession/VERIFIED e nunca voltam a valer. Nada de senha/hash em log ou auditoria.
+  // Sem recuperação por e-mail, sem reset público, sem bypass.
+  function changePassword(principal, { currentPassword, newPassword, confirmPassword } = {}) {
+    if (!isVerifiedAdmin(principal) || !principal.sessionHash) throw new AuthError(403, "admin_session_required");
+    if (typeof newPassword !== "string" || newPassword.length < MIN_PASSWORD || newPassword.length > 256) {
+      audit("auth.password_change_denied", { admin: principal.adminId, reason: "weak_password" });
+      throw new AuthError(400, "weak_password");
+    }
+    if (typeof confirmPassword !== "string" || confirmPassword !== newPassword) throw new AuthError(400, "password_mismatch");
+    const acc = db.prepare("SELECT password_hash FROM admins WHERE id = ? AND active = 1").get(principal.adminId);
+    if (!acc || typeof currentPassword !== "string" || !verifyPassword(currentPassword, acc.password_hash)) {
+      audit("auth.password_change_denied", { admin: principal.adminId, reason: "reauth_failed" });
+      throw new AuthError(403, "reauth_failed");
+    }
+    db.exec("BEGIN IMMEDIATE");
+    let revoked;
+    try {
+      db.prepare("UPDATE admins SET password_hash = ? WHERE id = ? AND active = 1").run(hashPassword(newPassword), principal.adminId);
+      revoked = db.prepare("UPDATE sessions SET revoked_at = ? WHERE admin_id = ? AND id_hash != ? AND revoked_at IS NULL").run(clock(), principal.adminId, principal.sessionHash).changes;
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
+    audit("auth.password_changed", { admin: principal.adminId, count: revoked });
+    return { ok: true, sessionsRevoked: revoked };
+  }
+
   return {
     ensureBootstrap, setupRequired, setupFirstAdmin, createAdmin, removeAdmin, listAdmins,
     login, validateSession, revokeSession, listSessions, revokeSessionById, purgeAttempts,
     createServiceToken, validateServiceToken, listServiceTokens, revokeServiceToken,
-    reauth, hasRecentReauth,
+    reauth, hasRecentReauth, changePassword,
   };
 }
 

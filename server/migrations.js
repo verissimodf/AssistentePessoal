@@ -196,6 +196,113 @@ CREATE TABLE IF NOT EXISTS purge_quarantine (
 );
 `,
   },
+  {
+    version: 6,
+    name: "approval_actions: structured action bound to the concrete operation",
+    // `approvals.command` stays the human-readable description shown in the panel. The exact
+    // operation (kind + payload + destination fingerprint) lives in a side table so an approval
+    // authorizes only that operation and can never be replayed for a different one.
+    // Tabela lateral (e não uma coluna em `approvals`): `approvals` está em PRESERVED e a
+    // checagem de migração compara o conteúdo das linhas — adicionar coluna a alteraria.
+    sql: `
+CREATE TABLE IF NOT EXISTS approval_actions (
+  approval_id TEXT PRIMARY KEY,
+  action TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+`,
+  },
+  {
+    version: 7,
+    name: "conversations: persistent, owner-scoped chat history (cascade delete)",
+    // Fase H: histórico persistente de conversas. O proprietário é a própria coluna `admin_id`
+    // (não a tabela `ownership`): a conversa nasce e morre com o seu dono — nunca é reivindicada
+    // nem transferida, e toda consulta filtra pelo dono. `reply_to` liga a resposta à mensagem
+    // do usuário (no máximo uma resposta por mensagem — índice único parcial) e `client_msg_id`
+    // (único por conversa) torna o envio idempotente: reenvio/retry não duplica mensagens.
+    // Exclusão: mensagens filhas são removidas na mesma transação da conversa.
+    sql: `
+CREATE TABLE IF NOT EXISTS conversations (
+  id TEXT PRIMARY KEY,
+  admin_id TEXT NOT NULL REFERENCES admins(id),
+  title TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_conversations_admin ON conversations(admin_id, updated_at DESC);
+CREATE TABLE IF NOT EXISTS conversation_messages (
+  id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK (role IN ('user','assistant')),
+  content TEXT NOT NULL,
+  meta TEXT,
+  client_msg_id TEXT,
+  reply_to TEXT REFERENCES conversation_messages(id),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_convmsg_conv ON conversation_messages(conversation_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_convmsg_client ON conversation_messages(conversation_id, client_msg_id) WHERE client_msg_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_convmsg_reply ON conversation_messages(reply_to) WHERE reply_to IS NOT NULL;
+`,
+  },
+  {
+    version: 8,
+    name: "conversations.agent_id: per-conversation agent/model choice (additive ALTER)",
+    // A v7 já havia sido aplicada em instalações existentes quando esta coluna foi introduzida —
+    // por isso a v7 permanece exatamente como aplicada e a v8 apenas ACRESCENTA a coluna (ALTER
+    // aditivo, sem tocar em nenhuma linha). `agent_id` fixa o agente escolhido PARA AQUELA conversa
+    // na criação (NULL = padrão do dono); nunca altera configurações globais nem outras conversas.
+    // Sem chave estrangeira de propósito: se o agente for excluído, a conversa simplesmente volta
+    // ao padrão do administrador (a posse do agente é validada na leitura/uso).
+    sql: `ALTER TABLE conversations ADD COLUMN agent_id TEXT;`,
+  },
+  {
+    version: 9,
+    name: "approval_actions: structured correlation id (additive ALTER + audit triggers)",
+    // Adiciona a coluna `correlation_id` a `approval_actions`, faz backfill a partir do JSON
+    // `action.correlation` (registros sem correlação ficam NULL), cria índice e triggers de
+    // integridade append-only na tabela `audit`. `approval_actions` NÃO está em PRESERVED, então
+    // a checagem de snapshot não afeta a migração. A coluna é aditiva e idempotente.
+    // Os triggers só são criados quando `audit` já existe (criada pelo esquema base do serviço
+    // antes das migrações). Num banco sem `audit` (ex.: testes que migram do zero) não há trilha
+    // a proteger — e criá-la aqui mudaria o snapshot de tabelas preservadas.
+    sql: (db) => {
+      const hasAudit = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit'").get();
+      return `
+ALTER TABLE approval_actions ADD COLUMN correlation_id TEXT;
+UPDATE approval_actions SET correlation_id = json_extract(action, '$.correlation') WHERE json_extract(action, '$.correlation') IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_approval_actions_correlation ON approval_actions(correlation_id);
+${hasAudit ? `CREATE TRIGGER IF NOT EXISTS trg_audit_no_update BEFORE UPDATE ON audit BEGIN SELECT RAISE(ABORT, 'audit_immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_audit_no_delete BEFORE DELETE ON audit BEGIN SELECT RAISE(ABORT, 'audit_immutable'); END;` : ""}
+`;
+    },
+  },
+  {
+    version: 10,
+    name: "execution_evidence: ledger de evidências por execução (P0)",
+    // Tabela NOVA (não está em PRESERVED). Ledger de evidência por execução, ligado à trilha de
+    // auditoria por `audit_id`. Guarda apenas metadados técnicos — estado do processo, código de
+    // saída, verificação da pós-condição, hash da entrada canônica e correlação — nunca conteúdo
+    // privado, caminhos sensíveis ou segredos. `state`/`verification` são conjuntos fechados
+    // validados no código (EVIDENCE_STATES/EVIDENCE_VERIFICATIONS em db.js).
+    sql: `
+CREATE TABLE IF NOT EXISTS execution_evidence (
+  id TEXT PRIMARY KEY,
+  approval_id TEXT,
+  kind TEXT NOT NULL,
+  state TEXT NOT NULL,
+  exit_code INTEGER,
+  verification TEXT NOT NULL,
+  verified_by TEXT NOT NULL,
+  input_hash TEXT,
+  correlation TEXT,
+  audit_id INTEGER,
+  at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_execution_evidence_approval ON execution_evidence(approval_id);
+CREATE INDEX IF NOT EXISTS idx_execution_evidence_correlation ON execution_evidence(correlation);
+`,
+  },
 ];
 
 const tableExists = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);

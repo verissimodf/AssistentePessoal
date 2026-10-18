@@ -43,17 +43,19 @@ export async function runBot(bot, reason = "manual", triggerType = "manual") {
     db.prepare("INSERT INTO runs (id, bot_id, started_at, status, output) VALUES (?, ?, ?, 'running', '')").run(id, bot.id, now());
     assignNew("run", id, principal.adminId);
   });
-  audit("bot_run", { bot: bot.id, trigger_type: trig, owner: principal.adminId, scopes: principal.scopes });
+  audit("bot_run", { bot: bot.id, trigger_type: trig, owner: principal.adminId, scopes: principal.scopes, correlation: id });
   try {
     const r = await runAgent({
       agentId: bot.agent_id,
       autonomy: bot.autonomy || "confirm",
       principal,
+      runId: id,
       maxSteps: Math.min(50, Number(bot.max_steps) || 8),
       messages: [{ role: "user", content: `[Tarefa autônoma "${bot.name}" disparada por: ${reason}]\n${bot.goal}` }],
       extraSystem: "Você está executando uma tarefa autônoma sem o usuário presente. Conclua o objetivo usando as ferramentas e termine com um resumo curto do que foi feito.",
     });
-    const status = r.pending.length ? "awaiting_approval" : "done";
+    const cancelled = /^Execução cancelada/.test(String(r.reply || ""));
+    const status = cancelled ? "cancelled" : r.pending.length ? "awaiting_approval" : "done";
     db.prepare("UPDATE runs SET status=?, output=? WHERE id=?").run(status, r.reply, id);
     bots.save({ ...bot, last_run: now() });
     return { id, status, output: r.reply };

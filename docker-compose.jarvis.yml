@@ -1,0 +1,46 @@
+# J.A.R.V.I.S. — implantação em container na rede Docker existente `CNC_APP_PROD_01`.
+#
+# Regras de contenção:
+#   - NENHUM `ports:` — o assistente não publica porta alguma no host.
+#   - O container escuta no próprio endereço da rede Docker (nunca 0.0.0.0).
+#   - O Nginx (`nginx-app`) alcança painel e API pelo DNS do serviço na mesma rede.
+#
+# Uso (somente após aprovação e com o serviço systemd original parado):
+#   docker compose -f docker-compose.jarvis.yml up -d --build
+#   docker compose -f docker-compose.jarvis.yml ps
+#   docker compose -f docker-compose.jarvis.yml logs -f
+name: assistente-pessoal
+
+services:
+  assistente:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: assistente-pessoal:1.2.2-gigabrain1
+    container_name: assistente-pessoal
+    restart: unless-stopped
+    # Não-root vem da própria imagem (`USER 1000:1000`), não duplicado aqui.
+    # Endurecimento: sem privilégios extras e sem capabilities.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      NODE_ENV: production
+      JARVIS_PORT: "7777"
+      PANEL_PORT: "8090"
+      # Ponte de voz -> xtts-service pela rede Docker.
+      XTTS_URL: "http://xtts-service:8000"
+      # Origens autorizadas (header Origin), sem curingas. Inclui tailnet (relé no host)
+      # e o hostname HTTPS (ativado na Fase 7).
+      JARVIS_ALLOWED_ORIGINS: "http://100.87.104.126:8090,http://app.tail43f1fb.ts.net:8090,https://jarvis.laytech.com.br"
+    volumes:
+      # Banco SQLite (+ WAL/SHM), master.key, vozes e backups — mesmo volume persistente.
+      - /opt/laytech-ai/AssistentePessoal/data:/app/data
+    networks:
+      CNC_APP_PROD_01:
+        ipv4_address: 192.168.2.40
+
+networks:
+  CNC_APP_PROD_01:
+    external: true

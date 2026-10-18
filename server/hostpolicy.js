@@ -10,10 +10,15 @@ export function isDangerous(cmd) {
   return DANGEROUS.some((r) => r.test(cmd));
 }
 
-/** Command is allowed when it starts with an allowlisted prefix and has no chaining operators. */
+/** Metacaracteres de shell que nunca aparecem num comando permitido.
+ *  Inclui controles (quebra de linha/CR: `ls \n rm -rf` era aceito) e redirecionamento
+ *  (`ls > arquivo` era aceito), além de encadeamento, substituição e subshell. */
+const SHELL_METACHARS = /[\x00-\x1f\x7f;&|`<>$()\\]/;
+
+/** Command is allowed when it starts with an allowlisted prefix and has no shell metacharacters. */
 export function isAllowlisted(cmd, allowlist) {
-  const c = cmd.trim();
-  if (/[;&|`]|\$\(/.test(c)) return false;
+  const c = String(cmd ?? "").trim();
+  if (!c || SHELL_METACHARS.test(c)) return false;
   return parseAllowlist(allowlist).some((p) => c === p || c.startsWith(p + " "));
 }
 

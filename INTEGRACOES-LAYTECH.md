@@ -48,6 +48,8 @@ journalctl --user -u assistente-pessoal.service -n 50 --no-pager
 | `crawl_page` | crawl4ai | `http://192.168.2.29:11235` (Bearer) | ✅ markdown |
 | `openhands_task` | OpenHands | `http://127.0.0.1:8085` | ✅ cria conversa |
 | `cli_agent` | Claude Code / Codex / OpenCode / Hermes | CLIs locais | `opencode run` ✅ |
+| `rea_analyze` | REA (`rea-agents@6.5.0` na imagem) | argv fixo, Evidence em `data/rea/` | ✅ (`tests/rea-analyze.test.mjs`) |
+| `gigabrain_recall` / `gigabrain_remember` | Gigabrain (`@legendaryvibecoder/gigabrain@0.11.0` na imagem) | MCP stdio, argv fixo, store em `data/gigabrain/` | ✅ (`tests/gigabrain.test.mjs`) |
 | `run_command` | Host (ações no host) | — | ✅ (com aprovação) |
 
 Integrações HTTP informativas: OpenClaw, Odysseus, Headroom.

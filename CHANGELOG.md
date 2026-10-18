@@ -5,6 +5,29 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 ---
 
 
+## [1.2.2] — Memória compartilhada local (Gigabrain)
+### Adicionado
+- Ferramentas de agente `gigabrain_recall` (escopo `memories:read`) e `gigabrain_remember` (escopo `memories:write`): camada de memória local persistente e compartilhada com o pacote oficial `@legendaryvibecoder/gigabrain@0.11.0` (MIT) via MCP sobre stdio.
+- Store no volume persistente `data/gigabrain/` (SQLite + notas diárias + perfil do usuário). Bootstrap standalone idempotente no `container-entrypoint.sh` via `gigabrain-codex-setup` (só roda quando `data/gigabrain/config.json` ainda não existe; sem depender de agentes CLI detectados).
+- Cada operação é um processo MCP efêmero com argv fixo (`spawn` sem shell; nenhum byte do chamador no shell); consulta e conteúdo entram como argumentos JSON únicos com limite de tamanho. O `command` do painel é documental — divergência é recusada.
+- Chamadas são leitura/escrita de memória de próprio dono (sem fila de aprovação, como as memórias nativas); tokens de serviço precisam dos escopos `memories:*` e são checados no momento da execução.
+- Resultado de recall apresentado como **evidência candidata** (fonte, escopo e data) com nota explícita ao agente; orientação de uso no system prompt (recall sob demanda, sempre por pedido explícito do usuário, meta `project` by default e `user` apenas para preferências pessoais).
+- Cartão **Gigabrain (memória compartilhada)** em Configurações → Integrações; config da store restrito a `data/` (sem traversal).
+- `@legendaryvibecoder/gigabrain@0.11.0` na imagem do container (linha dos agentes CLI, versão fixa).
+- Testes: `tests/gigabrain.test.mjs` (8 casos: validação de config, recusas, ciclo real remember→recall com o pacote de publicação, comando alterado recusado, escopos de token).
+
+## [1.2.1] — Integração REA (engenharia reversa de artefatos)
+### Adicionado
+- Ferramenta de agente `rea_analyze` (escopo `host:run`): análise estática de aplicativos JavaScript/Electron/ASAR com o REA (`rea-agents@6.5.0`, MIT), com todos os resultados acompanhados de Evidence.
+- Fluxo idêntico às demais delegações no host: aprovação humana **sempre**, ação estruturada congelada (`kind: rea_analyze`) com revalidação de caminho/raízes/fingerprint no momento da aprovação.
+- Executor sem shell (`spawn` com argv fixo `rea analyze-javascript-application <path> --json`); o campo `command` da integração no painel é documental — qualquer divergência é recusada.
+- Gravação integral da saída em `data/rea/`: `<file>.json` (Evidence completa), `<file>.log` (saída cru em falhas/timeout) e `index.jsonl` (recibo por execução: caminho, exit, bytes, `evidence_id`, hora). Resumo devolvido ao agente é marcado como conteúdo não confiável.
+- Cartão **REA (engenharia reversa)** em Configurações → Integrações (habilitar/desabilitar; caminho do alvo dentro de `data/rea/targets` por padrão, raízes configuráveis em `integrations.rea.roots`).
+- Comando determinístico no chat: **`/rea /caminho/do/app`** enfileira a aprovação direto, **sem passar pelo LLM** (modelos locais pequenos têm tool-calling instável — medido: ≤2/4 com o catálogo completo). Sem provider configurado, também funciona. Mesmo portão de segurança (aprovação, fingerprint, raízes reavaliadas). Testes dedicados em `tests/rea-analyze.test.mjs`.
+- `rea_analyze` no template de agente padrão (`DEFAULT_AGENT`) e orientação de uso no system prompt do chat (raiz de alvos, aprovação, `data/rea/`), para que o modelo saiba chamar a ferramenta.
+- `rea-agents@6.5.0` na imagem do container (linha dos agentes CLI, versão fixa) + `procps` no runtime (o provider de ownership de processos do REA exige `ps` no PATH).
+- Testes: `tests/rea-analyze.test.mjs` (7 casos: validação, aprovação, execução, negação, revalidação, recusa de comando alterado).
+
 ## [1.3.0] — Fase 3: gestão documental (TXT)
 ### Adicionado
 - Armazenamento local **privado** de documentos (primeiro formato: **TXT**), com propriedade por administrador via a tabela `ownership` (migração v3).

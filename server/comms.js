@@ -1,6 +1,7 @@
 // Messaging, email and calendar connectors. All credentials come from local encrypted settings.
+import { createHash } from "node:crypto";
 import { getSettings } from "./settings.js";
-import { runShell } from "./tools.js";
+import { safeFetch } from "./urlpolicy.js";
 import { audit } from "./db.js";
 
 const HOSTS = {
@@ -8,10 +9,40 @@ const HOSTS = {
   outlook: { imap: "outlook.office365.com", smtp: "smtp.office365.com" },
 };
 
-export async function sendMessage(adminId, channel, text) {
-  if (!adminId) return "Sem proprietário válido: canal bloqueado.";
+/**
+ * Resolve o canal e o destinatário efetivos SEM enviar nada. É o que a ferramenta usa para
+ * montar a aprovação — e o que o resolvedor reavalia antes de enviar.
+ * O canal `signal` fica indisponível enquanto `signal-cli` não tiver um executor estruturado:
+ * hoje ele seria chamado por shell, fora da allowlist de comandos.
+ */
+export function describeSend(adminId, channel, text) {
+  if (!adminId) return { ok: false, reason: "Sem proprietário válido: canal bloqueado." };
+  if (channel === "signal") {
+    return { ok: false, reason: "Canal signal desabilitado: requer execução estruturada e limitada (não usa shell livre)." };
+  }
   const c = getSettings(adminId).comms?.[channel];
-  if (!c?.enabled) return `Canal ${channel} não habilitado.`;
+  if (!c?.enabled) return { ok: false, reason: `Canal ${channel} não habilitado.` };
+  const destination = channel === "telegram" ? c.chatId : channel === "whatsapp" ? c.to : null;
+  if (destination === null || destination === undefined || String(destination) === "") {
+    return { ok: false, reason: `Canal ${channel} sem destinatário configurado.` };
+  }
+  return { ok: true, channel, destination: String(destination), text: String(text ?? "") };
+}
+
+/** Impressão digital estável de (canal, destinatário, texto): prende a aprovação ao conteúdo. */
+export function sendFingerprint({ channel, destination, text }) {
+  return createHash("sha256").update(JSON.stringify([channel, destination, text])).digest("hex").slice(0, 32);
+}
+
+/**
+ * Envia de fato. `expect` (opcional) revalida a impressão digital: se o canal, o destinatário
+ * ou o texto mudaram desde a aprovação, nada é enviado.
+ */
+export async function sendMessage(adminId, channel, text, expect) {
+  const d = describeSend(adminId, channel, text);
+  if (!d.ok) return d.reason;
+  if (expect && sendFingerprint(d) !== expect) return "Envio cancelado: o canal/destinatário mudou desde a aprovação.";
+  const c = getSettings(adminId).comms[channel];
   audit("send_message", { admin: adminId, channel });
   if (channel === "telegram") {
     const r = await fetch(`https://api.telegram.org/bot${c.botToken}/sendMessage`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chat_id: c.chatId, text }) });
@@ -25,7 +56,8 @@ export async function sendMessage(adminId, channel, text) {
     return r.ok ? "Enviado no WhatsApp." : `WhatsApp ${r.status}: ${await r.text()}`;
   }
   if (channel === "signal") {
-    return runShell(`signal-cli -a ${JSON.stringify(c.number)} send -m ${JSON.stringify(text)} ${JSON.stringify(c.to)}`);
+    // Não suportado: `signal-cli` exigiria shell livre, fora da allowlist e do fluxo aprovado.
+    return "Canal signal desabilitado.";
   }
   return `Canal desconhecido: ${channel}`;
 }
@@ -64,7 +96,11 @@ export async function readCalendar(adminId, days = 7) {
   if (!adminId) return "Agenda não configurada.";
   const c = getSettings(adminId).comms?.calendar;
   if (!c?.enabled || !c.icsUrl) return "Agenda não configurada.";
-  const ics = await (await fetch(c.icsUrl)).text();
+  // Mesma política de destinos das ferramentas de rede: a URL vem das settings (admin), mas
+  // não pode alcançar loopback/privados/metadados.
+  const r = await safeFetch(c.icsUrl, { timeoutMs: 20000 });
+  if (r.status >= 400) return `Agenda indisponível (HTTP ${r.status}).`;
+  const { text: ics } = await r.body();
   const events = [];
   for (const block of ics.split("BEGIN:VEVENT").slice(1)) {
     const get = (k) => block.match(new RegExp(`${k}[^:]*:(.*)`))?.[1]?.trim();

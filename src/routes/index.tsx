@@ -1,11 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { Check, Mic, Plus, Send, Square, Wrench, X } from "lucide-react";
+import { Check, History, Mic, Plus, RotateCcw, Send, Square, Trash2, Wrench, X } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar3D, type AvatarState } from "@/components/Avatar3D";
 import { Button } from "@/components/ui/button";
-import { api, chat, loadSettings, type ChatReply, type Settings } from "@/lib/bridge";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  api, chatConversation, deleteConversation, listConversations, loadSettings, openConversation,
+  type ConversationSummary, type PendingAction, type Settings, type ToolCall,
+} from "@/lib/bridge";
+import { formatConversationDate, getStoredActive, newClientMsgId, pickActiveConversation, storeActive } from "@/lib/conversations";
 import { speechLang, useI18n } from "@/lib/i18n";
 import { listenOnce, speak, useWake } from "@/lib/voice";
 
@@ -21,9 +30,10 @@ export const Route = createFileRoute("/")({
   component: ChatPage,
 });
 
-type Msg = { role: "user" | "assistant"; content: string; meta?: ChatReply };
+type Meta = { reasoning?: string | undefined; tools?: ToolCall[] | undefined; pending?: PendingAction[] | undefined };
+type Msg = { role: "user" | "assistant"; content: string; meta?: Meta | undefined; clientMsgId?: string | undefined; failed?: boolean | undefined };
 
-function ChatPage() {
+export function ChatPage() {
   const { t, lang } = useI18n();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -31,27 +41,114 @@ function ChatPage() {
   const [level, setLevel] = useState(0);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [wakeOn, setWakeOn] = useState(false);
+  // Fase H: histórico persistente — o servidor é a fonte da verdade; aqui só a seleção local.
+  const [convs, setConvs] = useState<ConversationSummary[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [msgsLoading, setMsgsLoading] = useState(false);
+  const [listError, setListError] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ConversationSummary | null>(null);
+  // Seleção de modelo por conversa: fixada na criação; nunca altera as outras conversas.
+  const [agents, setAgents] = useState<{ id: string; name: string }[]>([]);
+  const [pin, setPin] = useState<string>("");
   const endRef = useRef<HTMLDivElement>(null);
   const sl = speechLang(lang);
 
   useEffect(() => { loadSettings().then(setSettings); }, []);
+  useEffect(() => {
+    api<{ id: string; name: string }[]>("/api/agents")
+      .then((a) => setAgents(a.map(({ id, name }) => ({ id, name }))))
+      .catch(() => {});
+  }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
 
-  const send = async (text: string, viaVoice = false) => {
-    if (!text.trim()) return;
-    const next: Msg[] = [...msgs, { role: "user", content: text }];
-    setMsgs(next);
+  const refreshList = async () => {
+    try {
+      setConvs(await listConversations());
+      setListError(false);
+    } catch {
+      setListError(true);
+    }
+  };
+
+  /** Abre a conversa (do servidor). Se não existir mais, limpa a seleção e volta para a lista. */
+  const loadMessages = async (id: string) => {
+    setMsgsLoading(true);
+    try {
+      const { conversation, messages } = await openConversation(id);
+      setActiveId(conversation.id);
+      storeActive(conversation.id);
+      setPin(conversation.agent_id || "");
+      setMsgs(messages.map((m) => {
+        const msg: Msg = { role: m.role, content: m.content };
+        if (m.meta) msg.meta = { reasoning: m.meta.reasoning, tools: m.meta.tools, pending: m.meta.pending };
+        return msg;
+      }));
+    } catch {
+      storeActive(null);
+      setActiveId(null);
+      setMsgs([]);
+      await refreshList();
+    } finally {
+      setMsgsLoading(false);
+    }
+  };
+
+  // Ao carregar (ou recarregar) a página: mantém a conversa selecionada se ela ainda existir;
+  // senão abre a mais recente; sem conversas, começa uma nova — nunca apaga as anteriores.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const list = await listConversations();
+        if (!alive) return;
+        setConvs(list);
+        const pick = pickActiveConversation(getStoredActive(), list);
+        if (pick) await loadMessages(pick);
+      } catch {
+        if (alive) setListError(true);
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const newChat = () => {
+    setActiveId(null);
+    storeActive(null);
+    setMsgs([]);
+    setSheetOpen(false);
+  };
+
+  const send = async (text: string, viaVoice = false, retry?: Msg) => {
+    const content = text.trim();
+    if (!content || state === "thinking") return;
+    const clientMsgId = retry?.clientMsgId || newClientMsgId();
+    if (retry) setMsgs((m) => m.map((x) => (x === retry ? { ...x, failed: false } : x)));
+    else setMsgs((m) => [...m, { role: "user", content, clientMsgId }]);
     setInput("");
     setState("thinking");
     try {
-      const r = await chat(next.map(({ role, content }) => ({ role, content })));
-      setMsgs([...next, { role: "assistant", content: r.reply, meta: r }]);
+      const r = await chatConversation(activeId, content, clientMsgId, pin || undefined);
+      if (r.conversation) {
+        const conv = r.conversation;
+        setActiveId(conv.id);
+        storeActive(conv.id);
+        setPin(conv.agent_id || "");
+        setConvs((prev) => [conv, ...prev.filter((c) => c.id !== conv.id)]);
+      }
+      setMsgs((m) => [...m, {
+        role: "assistant", content: r.reply,
+        meta: { reasoning: r.reasoning, tools: r.tools, pending: r.pending },
+      }]);
       if (viaVoice) {
         setState("speaking");
         await speak(r.reply, sl, settings?.voice?.tts || "browser", setLevel);
       }
-    } catch (e) {
-      toast.error(String((e as Error).message));
+    } catch {
+      // A mensagem do usuário foi preservada no servidor; oferecer retry com o MESMO id (sem duplicar).
+      setMsgs((m) => m.map((x) => (x.clientMsgId === clientMsgId && x.role === "user" ? { ...x, failed: true } : x)));
+      toast.error(t("send_failed"));
     } finally {
       setState("idle");
     }
@@ -77,11 +174,39 @@ function ChatPage() {
     onWake: voice,
   });
 
-  const decide = async (id: string, approve: boolean, i: number) => {
+  const decide = async (id: string, approve: boolean, i: number, k: number) => {
     try {
-      const r = await api<{ output: string }>(`/api/approvals/${id}`, { method: "POST", body: JSON.stringify({ approve }) });
-      setMsgs((m) => m.map((x, j) => j === i ? { ...x, content: x.content + `\n\n\`\`\`\n${r.output}\n\`\`\``, meta: { ...x.meta!, pending: [] } } : x));
+      // O estado final vem do BACKEND (done|error|interrupted|denied): a interface NUNCA declara
+      // sucesso quando o resultado é desconhecido ou falhou (ver docs/EXECUCAO-VERIFICAVEL.md).
+      const r = await api<{ output: string; status?: string }>(`/api/approvals/${id}`, { method: "POST", body: JSON.stringify({ approve }) });
+      setMsgs((m) => m.map((x, j) => j === i ? {
+        ...x,
+        content: x.content + `\n\n\`\`\`\n${r.output}\n\`\`\``,
+        meta: { ...x.meta, pending: (x.meta?.pending || []).map((p, q) => (q === k ? { ...p, status: r.status || (approve ? "done" : "denied") } : p)) },
+      } : x));
     } catch (e) { toast.error(String((e as Error).message)); }
+  };
+
+  /** Exclusão com confirmação: o servidor verifica a propriedade e remove tudo em transação. */
+  const doDelete = async () => {
+    const target = deleteTarget;
+    if (!target) return;
+    setDeleteTarget(null);
+    try {
+      await deleteConversation(target.id);
+      toast.success(t("conversation_deleted"));
+      const list = await listConversations();
+      setConvs(list);
+      if (activeId === target.id) {
+        const next = pickActiveConversation(null, list);
+        if (next) await loadMessages(next);
+        else { setActiveId(null); storeActive(null); setMsgs([]); }
+      }
+    } catch {
+      // 404 = já não existia; a lista (servidor) é a fonte da verdade.
+      await refreshList();
+      if (activeId === target.id) { setActiveId(null); storeActive(null); setMsgs([]); }
+    }
   };
 
   const stateLabel = { idle: t("idle"), listening: t("listening"), thinking: t("thinking"), speaking: t("speaking") }[state];
@@ -104,17 +229,41 @@ function ChatPage() {
       <section className="flex min-h-0 flex-col">
         <div className="flex items-center justify-between border-b border-border px-6 py-3">
           <span className="hud-label">{t("nav_chat")} · {settings?.general?.agentName || "Jarvis"}</span>
-          <Button size="sm" variant="ghost" onClick={() => setMsgs([])}><Plus className="h-4 w-4" />{t("new_chat")}</Button>
+          <div className="flex items-center gap-1">
+            <select
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              disabled={activeId !== null}
+              aria-label={t("model")}
+              title={t("model")}
+              className="h-8 max-w-[150px] truncate rounded-md border border-input bg-secondary px-2 text-xs text-foreground outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
+            >
+              <option value="">{t("agent_default")}</option>
+              {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            <Button size="sm" variant="ghost" onClick={() => setSheetOpen(true)}>
+              <History className="h-4 w-4" />{t("conversations")}{convs.length ? ` (${convs.length})` : ""}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={newChat}><Plus className="h-4 w-4" />{t("new_chat")}</Button>
+          </div>
         </div>
         <div className="flex-1 space-y-5 overflow-y-auto px-6 py-6">
-          {msgs.length === 0 && (
+          {msgsLoading && <p className="text-center text-sm text-muted-foreground">{t("loading")}</p>}
+          {!msgsLoading && msgs.length === 0 && (
             <div className="mx-auto mt-16 max-w-md text-center text-sm text-muted-foreground">
               <p className="font-display text-xl text-foreground">“{t("placeholder")}”</p>
               <p className="mt-3">{t("local_only")}</p>
             </div>
           )}
           {msgs.map((m, i) => m.role === "user" ? (
-            <div key={i} className="ml-auto max-w-[80%] rounded-lg bg-primary px-4 py-2 text-sm text-primary-foreground">{m.content}</div>
+            <div key={i} className="ml-auto flex max-w-[80%] flex-col items-end gap-1">
+              <div className={`rounded-lg px-4 py-2 text-sm ${m.failed ? "border border-destructive/60 bg-destructive/10 text-foreground" : "bg-primary text-primary-foreground"}`}>{m.content}</div>
+              {m.failed && (
+                <Button size="sm" variant="outline" onClick={() => send(m.content, false, m)}>
+                  <RotateCcw className="h-3 w-3" />{t("retry")}
+                </Button>
+              )}
+            </div>
           ) : (
             <div key={i} className="max-w-[90%] space-y-2">
               {m.meta?.reasoning && (
@@ -127,12 +276,18 @@ function ChatPage() {
                 </details>
               )}
               <div className="prose prose-sm prose-invert max-w-none text-foreground"><ReactMarkdown>{m.content}</ReactMarkdown></div>
-              {m.meta?.pending?.map((p) => (
+              {m.meta?.pending?.map((p, k) => (!p.status || p.status === "pending") ? (
                 <div key={p.id} className="hud-panel flex flex-wrap items-center gap-3 border-accent px-3 py-2 text-sm">
                   <span className="hud-label">{t("pending_action")}</span>
                   <code className="font-mono text-accent">{p.command}</code>
-                  <Button size="sm" onClick={() => decide(p.id, true, i)}><Check className="h-3 w-3" />{t("approve")}</Button>
-                  <Button size="sm" variant="outline" onClick={() => decide(p.id, false, i)}><X className="h-3 w-3" />{t("deny")}</Button>
+                  <Button size="sm" onClick={() => decide(p.id, true, i, k)}><Check className="h-3 w-3" />{t("approve")}</Button>
+                  <Button size="sm" variant="outline" onClick={() => decide(p.id, false, i, k)}><X className="h-3 w-3" />{t("deny")}</Button>
+                </div>
+              ) : (
+                <div key={p.id} className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="hud-label">{t("pending_action")}</span>
+                  <code className="font-mono text-muted-foreground">{p.command}</code>
+                  <span className={p.status === "done" ? "text-muted-foreground" : "text-destructive"}>{t(`approval_${p.status}`)}</span>
                 </div>
               ))}
             </div>
@@ -154,6 +309,51 @@ function ChatPage() {
           <Button type="submit" size="icon" disabled={state === "thinking"} aria-label={t("send")}><Send className="h-4 w-4" /></Button>
         </form>
       </section>
+
+      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+        <SheetContent side="right" className="flex w-[320px] flex-col p-0">
+          <SheetHeader className="border-b border-border px-4 py-3 text-left">
+            <SheetTitle className="hud-label">{t("conversations")}</SheetTitle>
+          </SheetHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            {listError && (
+              <div className="p-2">
+                <Button size="sm" variant="outline" onClick={() => { setListError(false); void refreshList(); }}>{t("retry")}</Button>
+              </div>
+            )}
+            {!listError && convs.length === 0 && (
+              <p className="p-3 text-sm text-muted-foreground">{t("no_conversations")}</p>
+            )}
+            {convs.map((c) => (
+              <div key={c.id} className={`flex items-center gap-1 rounded-md px-2 py-2 hover:bg-secondary ${c.id === activeId ? "bg-secondary" : ""}`}>
+                <button type="button" onClick={() => { setSheetOpen(false); void loadMessages(c.id); }} className="min-w-0 flex-1 text-left">
+                  <div className="truncate text-sm text-foreground">{c.title}</div>
+                  <div className="hud-label">{formatConversationDate(c.updated_at, lang)}</div>
+                </button>
+                <Button size="icon" variant="ghost" aria-label={t("delete_conversation")} onClick={() => setDeleteTarget(c)}>
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+          <div className="border-t border-border p-3">
+            <Button size="sm" variant="outline" className="w-full" onClick={newChat}><Plus className="h-4 w-4" />{t("new_chat")}</Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("delete_conversation")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("delete_conversation_confirm")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void doDelete()}>{t("delete")}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

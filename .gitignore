@@ -36,3 +36,6 @@ data/
 .env
 server/node_modules/
 scripts/voz/.venv/
+
+# Grafo de conhecimento gerado (graphify) — artefato, não fonte
+graphify-out/

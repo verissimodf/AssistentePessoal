@@ -3,9 +3,33 @@
 // so the interface still works in the online preview.
 import { useEffect, useState } from "react";
 
+// Loopback hosts keep the explicit service port (local development / systemd service).
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+/**
+ * Where the panel should reach the local service.
+ *  - loopback            → http://localhost:7777 (local dev, service on its own port)
+ *  - HTTPS origin        → the page's own origin (a reverse proxy serves the panel and the
+ *                          API under one hostname; no fixed :7777 and no cross-origin CORS)
+ *  - any other HTTP host → <protocol>//<hostname>:7777 (e.g. the Tailscale relay, where the
+ *                          API stays on port 7777 of the same tailnet host)
+ * Kept pure so it can be unit-tested without a DOM.
+ */
+export function resolveBridge(loc: {
+  protocol: string;
+  hostname?: string;
+  origin?: string;
+}): string {
+  const hostname = loc?.hostname || "";
+  if (!hostname) return "http://localhost:7777";
+  if (LOOPBACK_HOSTS.has(hostname)) return `${loc.protocol}//${hostname}:7777`;
+  if (loc.protocol === "https:") return loc.origin || `https://${hostname}`;
+  return `${loc.protocol}//${hostname}:7777`;
+}
+
 export const DEFAULT_BRIDGE =
-  typeof window !== "undefined" && window.location?.hostname
-    ? `${window.location.protocol}//${window.location.hostname}:7777`
+  typeof window !== "undefined" && window.location
+    ? resolveBridge(window.location)
     : "http://localhost:7777";
 export const bridgeUrl = () =>
   (typeof localStorage !== "undefined" && localStorage.getItem("jarvis.bridge")) || DEFAULT_BRIDGE;
@@ -183,17 +207,101 @@ export async function saveSettings(s: Settings) {
   return undefined;
 }
 
-// ---------- chat ----------
+// ---------- chat & histórico de conversas (Fase H: fonte da verdade no servidor) ----------
 export type ToolCall = { name: string; input: unknown; output?: string };
-export type ChatReply = { reply: string; reasoning?: string; tools?: ToolCall[]; pending?: { id: string; command: string }[] };
+export type PendingAction = { id: string; command: string; status?: string };
+export type ChatReply = { reply: string; reasoning?: string; tools?: ToolCall[]; pending?: PendingAction[] };
+export type ConversationSummary = { id: string; title: string; agent_id?: string | null; created_at: string; updated_at: string };
+export type ConversationMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+  meta?: { reasoning?: string; tools?: ToolCall[]; pending?: PendingAction[] } | null;
+};
+export type ChatExchange = ChatReply & {
+  conversation: ConversationSummary | null;
+  userMessage?: { id: string; content: string; created_at: string };
+  assistantMessageId?: string;
+  duplicate?: boolean;
+};
 
-export async function chat(messages: { role: string; content: string }[], agentId?: string): Promise<ChatReply> {
-  if (await ping()) return api<ChatReply>("/api/chat", { method: "POST", body: JSON.stringify({ messages, agentId }) });
-  const last = messages[messages.length - 1]?.content || "";
+/** Conversas do administrador, mais recentes primeiro (vazio no modo demonstração). */
+export async function listConversations(): Promise<ConversationSummary[]> {
+  if (await ping()) return api<ConversationSummary[]>("/api/conversations");
+  return [];
+}
+
+/** Uma conversa com as mensagens persistidas (404 se não existir ou não for do usuário). */
+export async function openConversation(id: string): Promise<{ conversation: ConversationSummary; messages: ConversationMessage[] }> {
+  return api(`/api/conversations/${encodeURIComponent(id)}`);
+}
+
+export async function deleteConversation(id: string): Promise<void> {
+  if (await ping()) await api(`/api/conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/**
+ * Envia UMA mensagem e recebe a troca persistida. `clientMsgId` é gerado no cliente e reutilizado
+ * em retries — o servidor nunca duplica a mesma mensagem. Com `conversationId` nulo, o servidor
+ * cria a conversa (título derivado da mensagem).
+ */
+export async function chatConversation(
+  conversationId: string | null,
+  message: string,
+  clientMsgId: string,
+  agentId?: string,
+): Promise<ChatExchange> {
+  if (await ping())
+    return api<ChatExchange>("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ conversationId: conversationId ?? undefined, message, clientMsgId, agentId }),
+    });
   await new Promise((r) => setTimeout(r, 700));
   return {
-    reply: `**Modo demonstração.** Recebi: _"${last}"_.\n\nPara respostas reais, instale o Jarvis local (scripts/instalar) e configure um provedor como Ollama em **Configurações**.`,
+    conversation: null,
+    reply: `**Modo demonstração.** Recebi: _"${message}"_.\n\nPara respostas reais, instale o Jarvis local (scripts/instalar) e configure um provedor como Ollama em **Configurações**.`,
     reasoning: "Serviço local indisponível; resposta simulada.",
     tools: [],
+    pending: [],
   };
+}
+
+// --- Fase I: Diagnóstico Operacional (somente leitura, sessão administrativa) -------------
+
+export type DiagnosticEvidence = {
+  metodo: "codigo" | "config" | "teste" | "execucao" | "documento";
+  ref: string;
+  data: string | null;
+  nota?: string;
+};
+
+export type DiagnosticItem = {
+  id: string;
+  categoria: "servico" | "ferramenta" | "acesso" | "integracao" | "automacao" | "dados";
+  nome: string;
+  estado: string;
+  flags: { implementado: boolean; habilitado: boolean; testado: boolean };
+  evidencias: DiagnosticEvidence[];
+  limitacoes: string[];
+  confianca: "alta" | "media" | "baixa";
+  detalhes?: Record<string, string | number | boolean | null>;
+};
+
+export type DiagnosticInventory = {
+  generatedAt: string;
+  versao: { app: string | null; banco: number | null; node: string | null; uptimeSegundos: number };
+  resumo: { saude: "ok" | "atencao"; total: number; porEstado: Record<string, number>; pendencias: number };
+  itens: DiagnosticItem[];
+  testes: Array<{ arquivo: string; area: string }>;
+  riscos: string[];
+  oportunidades: string[];
+  decisoesHumanas: string[];
+  notas: string[];
+};
+
+/** Inventário de diagnóstico (somente leitura; exige sessão administrativa no servidor). */
+export async function loadDiagnostics(): Promise<DiagnosticInventory | null> {
+  if (await ping()) return api<DiagnosticInventory>("/api/diagnostics");
+  return null;
 }

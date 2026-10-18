@@ -8,16 +8,19 @@ import { createServer } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { db, agents, bots, auth, audit } from "./db.js";
+import { db, agents, bots, auth, audit, uid, listEvidence } from "./db.js";
 import { AuthError, can, isVerifiedAdmin, sanitizeBotScopes, DEFAULT_BOT_SCOPES } from "./auth.js";
 import { getSettings, publicSettings, updateSettings, legacySettingsInventory, claimLegacySettings } from "./settings.js";
 import { owns, ownerOf, ownedIds, assignNew, dropOwnership, tx, legacyInventory, claimLegacy, ClaimError, inactiveAdminInventory, transferResources, purgeResources, resumePurge, cancelPurge, listPurgeJobs } from "./ownership.js";
-import { runAgent, testProvider } from "./llm.js";
+import { runAgent, testProvider, cancelRun } from "./llm.js";
+import { collectDiagnostics } from "./diagnostics.js";
+import { callTool, reaSlashCommand } from "./tools.js";
 import { remember, recall, resolveApproval } from "./tools.js";
 import { listDocuments, getDocument, saveDocument, searchDocuments, deleteDocument } from "./documents.js";
+import { createConversation, listConversations, getConversation, chatExchange, deleteConversation } from "./conversations.js";
 import { runBot, listRuns, startScheduler, triggerByText, auditLegacyBlocked } from "./bots.js";
 import { tts, cloneVoice } from "./voice.js";
-import { startTelegramPolling, sendMessage } from "./comms.js";
+import { startTelegramPolling, sendMessage, describeSend, sendFingerprint } from "./comms.js";
 import { getMailService, setMailTransport } from "./mail-service.js";
 import { redactAccount, ACCOUNT_TYPES } from "./mail.js";
 import { getDraftStore, setDraftStore } from "./mail-drafts.js";
@@ -95,6 +98,10 @@ export const routeTable = () => routes.map(({ method, pattern, access }) => ({ m
 
 // Public (explicit, minimal). Health reveals only operational status.
 route("GET", "/api/health", "public", () => ({ ok: true, version: VERSION, setupRequired: auth.setupRequired() }));
+
+// Fase I — Diagnóstico Operacional (etapas 1–3): inventário tipado, somente leitura, restrito à
+// sessão administrativa verificada. Sem sondas externas, sem segredos e sem qualquer mutação.
+route("GET", "/api/diagnostics", "session", ({ principal }) => collectDiagnostics({ adminId: principal.adminId, version: VERSION }));
 route("POST", "/api/auth/setup", "public", ({ body }) => auth.setupFirstAdmin(body));
 route("POST", "/api/auth/login", "public", ({ body, req, res }) => {
   const r = auth.login({ username: body.username, password: body.password, ip: req.socket.remoteAddress, userAgent: req.headers["user-agent"], previousSid: readCookie(req) });
@@ -113,9 +120,17 @@ route("DELETE", "/api/auth/sessions/:id", "session", ({ principal, params }) => 
 route("GET", "/api/auth/tokens", "session", () => auth.listServiceTokens());
 route("POST", "/api/auth/tokens", "session", ({ principal, body }) => auth.createServiceToken(principal, body));
 route("DELETE", "/api/auth/tokens/:id", "session", ({ principal, params }) => auth.revokeServiceToken(principal, params.id));
+// Fase G: troca da PRÓPRIA senha (sessão humana + CSRF; encerra as outras sessões deste admin).
+route("POST", "/api/auth/password", "session", ({ body, principal }) => auth.changePassword(principal, body));
 route("POST", "/api/approvals/:id", "session", ({ params, body, principal }) => {
   if (!owns(principal?.adminId, "approval", params.id)) throw new AuthError(404, "not_found"); // foreign/legacy/unknown look the same
   return resolveApproval(params.id, !!body.approve, principal);
+});
+// Evidência por execução (P0): mesmo portão de posse da aprovação — foreign/legacy/unknown → 404.
+// Só metadados técnicos (estado, código de saída, verificação); nunca conteúdo privado.
+route("GET", "/api/approvals/:id/evidence", "session", ({ params, principal }) => {
+  if (!owns(principal?.adminId, "approval", params.id)) throw new AuthError(404, "not_found");
+  return { approvalId: params.id, evidence: listEvidence(params.id) };
 });
 route("GET", "/api/audit", "audit:read", () => db.prepare("SELECT id, at, kind, detail FROM audit ORDER BY id DESC LIMIT 200").all());
 
@@ -127,11 +142,57 @@ route("GET", "/api/settings", "settings:read", ({ principal }) => publicSettings
 route("PUT", "/api/settings", "settings:write", ({ body, principal }) => updateSettings(body, { adminId: me(principal), allowGlobal: isVerifiedAdmin(principal) }));
 route("POST", "/api/providers/:id/test", "settings:write", ({ params, principal }) => testProvider(params.id, me(principal)));
 
+// Fase H — chat persistente: o painel envia UMA mensagem (+ conversa opcional) e o servidor
+// persiste a troca e reconstrói o contexto a partir do banco. O formato legado `messages`
+// (MCP/scripts) continua valendo, sem persistência, exatamente como antes.
 route("POST", "/api/chat", "chat", async ({ body, principal }) => {
+  const persist = body.conversationId !== undefined || (body.message !== undefined && body.messages === undefined);
+  if (persist) {
+    if (can(principal, "bots:run")) triggerByText("voice", String(body.message || ""), me(principal));
+    // Comando determinístico "/rea <caminho>": enfileira a aprovação direto, sem LLM —
+    // modelos locais pequenos não são confiáveis em tool-calling. Mesma regra de segurança:
+    // aprovação humana, fingerprint e raízes reavaliadas na resolução.
+    const reaCmd = reaSlashCommand(body.message);
+    if (reaCmd) {
+      return chatExchange(me(principal),
+        { conversationId: body.conversationId ?? null, message: body.message, clientMsgId: body.clientMsgId, agentId: body.agentId },
+        async () => {
+          const ctx = { autonomy: "confirm", pending: [], principal, correlation: uid() };
+          const output = reaCmd.path
+            ? await callTool("rea_analyze", { path: reaCmd.path }, ctx)
+            : "Uso: /rea /caminho/absoluto/para/o/app — a raiz do alvo deve estar em data/rea/targets/ (ou nas raízes configuradas).";
+          return { reply: output, reasoning: "", tools: [{ name: "rea_analyze", input: { path: reaCmd.path }, output }], pending: ctx.pending };
+        });
+    }
+    return chatExchange(me(principal),
+      { conversationId: body.conversationId ?? null, message: body.message, clientMsgId: body.clientMsgId, agentId: body.agentId },
+      (args) => runAgent({ ...args, autonomy: "confirm", principal }));
+  }
+  // Formato legado `messages` (MCP/scripts): também aceita "/rea …" de forma determinística.
+  const lastMsg = body.messages?.at(-1)?.content || "";
+  const legacyRea = reaSlashCommand(lastMsg);
+  if (legacyRea) {
+    const ctx = { autonomy: "confirm", pending: [], principal, correlation: uid() };
+    const output = legacyRea.path
+      ? await callTool("rea_analyze", { path: legacyRea.path }, ctx)
+      : "Uso: /rea /caminho/absoluto/para/o/app — a raiz do alvo deve estar em data/rea/targets/ (ou nas raízes configuradas).";
+    return { reply: output, reasoning: "", tools: [{ name: "rea_analyze", input: { path: legacyRea.path }, output }], pending: ctx.pending };
+  }
   const last = body.messages?.at(-1)?.content || "";
   if (can(principal, "bots:run")) triggerByText("voice", last, me(principal));
   return runAgent({ agentId: body.agentId, messages: body.messages || [], autonomy: "confirm", principal });
 });
+
+// ---------- Fase H: histórico de conversas (dono = admin_id; "não existe" e "não é sua" = 404) ----------
+route("GET", "/api/conversations", "chat", ({ query, principal }) =>
+  listConversations(me(principal), { limit: numParam(query.get("limit")), offset: numParam(query.get("offset")) }));
+route("POST", "/api/conversations", "chat", ({ body, principal }) => createConversation(me(principal), body?.title, body?.agentId ?? null));
+route("GET", "/api/conversations/:id", "chat", ({ params, query, principal }) => {
+  const c = getConversation(me(principal), params.id, { limit: numParam(query.get("limit")) });
+  if (!c) notFound();
+  return c;
+});
+route("DELETE", "/api/conversations/:id", "chat", ({ params, principal }) => deleteConversation(me(principal), params.id));
 
 const MEM_OWNED = `SELECT m.id, m.content, m.tags, m.created_at FROM memories m
   JOIN ownership o ON o.resource_type = 'memory' AND o.resource_id = m.id AND o.owner_admin_id = ? ORDER BY m.created_at DESC`;
@@ -176,24 +237,32 @@ for (const [name, store, type] of [["agents", agents, "agent"], ["bots", bots, "
     [...ownedIds(me(principal), type)].map((id) => store.get(id)).filter(Boolean).map((i) => withOwner(i, me(principal))));
   const stamp = (body, existing) =>
     name === "bots" ? { ...body, scopes: sanitizeBotScopes(body.scopes) ?? existing?.scopes ?? DEFAULT_BOT_SCOPES } : body;
+  // Fase G: alterações de AGENTES são auditadas (ator, item e estado resultante — nunca o conteúdo).
+  // Bots mantêm o comportamento anterior (fora do escopo desta fase).
   route("POST", `/api/${name}`, `${name}:write`, ({ body, principal }) => {
     const adminId = me(principal);
     if (!adminId) throw new AuthError(403, "owner_required");
-    return tx(() => {
-      const saved = store.save(stamp({ ...body, id: undefined, ...(name === "bots" ? { owner_admin_id: adminId } : {}) }, null));
-      assignNew(type, saved.id, adminId);
-      return saved;
+    const saved = tx(() => {
+      const s = store.save(stamp({ ...body, id: undefined, ...(name === "bots" ? { owner_admin_id: adminId } : {}) }, null));
+      assignNew(type, s.id, adminId);
+      return s;
     });
+    if (name === "agents") audit("agent.created", { admin: adminId, type: "agent", ids: [saved.id] });
+    return saved;
   });
   route("PUT", `/api/${name}/:id`, `${name}:write`, ({ params, body, principal }) => {
     if (!owns(me(principal), type, params.id)) notFound();
     const existing = store.get(params.id);
     const { owner_admin_id: _ignored, ...rest } = body || {};
-    return withOwner(store.save(stamp({ ...rest, id: params.id, ...(name === "bots" ? { owner_admin_id: existing?.owner_admin_id ?? me(principal) } : {}) }, existing)), me(principal));
+    const out = withOwner(store.save(stamp({ ...rest, id: params.id, ...(name === "bots" ? { owner_admin_id: existing?.owner_admin_id ?? me(principal) } : {}) }, existing)), me(principal));
+    if (name === "agents") audit("agent.updated", { admin: me(principal), type: "agent", ids: [params.id], status: out.active ? "active" : "inactive" });
+    return out;
   });
   route("DELETE", `/api/${name}/:id`, `${name}:write`, ({ params, principal }) => {
     if (!owns(me(principal), type, params.id)) notFound();
-    tx(() => { store.remove(params.id); dropOwnership(type, params.id); }); return { ok: true };
+    tx(() => { store.remove(params.id); dropOwnership(type, params.id); });
+    if (name === "agents") audit("agent.deleted", { admin: me(principal), type: "agent", ids: [params.id] });
+    return { ok: true };
   });
 }
 route("POST", "/api/bots/:id/run", "bots:run", ({ params, principal }) => {
@@ -206,6 +275,13 @@ route("POST", "/api/bots/:id/run", "bots:run", ({ params, principal }) => {
 route("GET", "/api/bots/:id/runs", "bots:read", ({ params, principal }) => {
   if (!owns(me(principal), "bot", params.id)) notFound();
   return listRuns(params.id, me(principal));
+});
+// Cancelamento cooperativo de uma execução em andamento (checado entre passos do loop).
+route("POST", "/api/runs/:id/cancel", "bots:run", ({ params, principal }) => {
+  if (!owns(me(principal), "run", params.id)) notFound();
+  const cancelled = cancelRun(params.id);
+  audit("run.cancel_requested", { run: params.id, cancelled, principal: me(principal), correlation: uid() });
+  return { ok: true, cancelled };
 });
 
 route("POST", "/api/tts", "voice", async ({ body, principal }) => { const a = await tts(body.text, body.lang, me(principal)); return { __raw: a.data, __type: a.type }; });
@@ -388,6 +464,16 @@ if (isMain && !process.env.JARVIS_NO_LISTEN) {
     const principal = { type: "channel", channel, adminId, scopes: ["chat", "web", "memories:read"] }; // no host/comms from an inbound message
     await Promise.all(triggerByText("message", text, adminId));
     const r = await runAgent({ messages: [{ role: "user", content: text }], autonomy: "confirm", principal });
-    await sendMessage(adminId, channel, r.reply + (r.pending.length ? "\n\n(Há uma ação aguardando sua aprovação no painel.)" : ""));
+    // Auto-resposta DESABILITADA por padrão: enviar sem aprovação humana é uma política explícita,
+    // não um padrão. Só envia quando `comms.<canal>.autoReply === true` estiver configurado, e
+    // ainda assim revalida canal+destinatário no momento do envio (impressão digital).
+    const cfg = getSettings(adminId).comms?.[channel];
+    if (cfg?.autoReply !== true) {
+      audit("send_message(auto_reply_skipped)", { channel, reason: "policy_disabled" });
+      return;
+    }
+    const d = describeSend(adminId, channel, r.reply);
+    if (!d.ok) { audit("send_message(auto_reply_skipped)", { channel, reason: "channel_unavailable" }); return; }
+    await sendMessage(adminId, channel, r.reply + (r.pending.length ? "\n\n(Há uma ação aguardando sua aprovação no painel.)" : ""), sendFingerprint({ ...d, text: r.reply + (r.pending.length ? "\n\n(Há uma ação aguardando sua aprovação no painel.)" : "") }));
   }, activeAdmins);
 }

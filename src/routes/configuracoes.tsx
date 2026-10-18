@@ -12,6 +12,7 @@ import { AGENT_INTEGRATIONS, COMMS, PROVIDERS } from "@/lib/catalog";
 import { createClapDetector, thresholdFromSensitivity } from "@/lib/clap";
 import { LANGS, useI18n, type Lang } from "@/lib/i18n";
 import { SecurityPanel } from "@/components/SecurityPanel";
+import { DiagnosticoPanel } from "@/components/DiagnosticoPanel";
 import { useAuthText } from "@/components/AuthGate";
 
 export const Route = createFileRoute("/configuracoes")({
@@ -89,9 +90,12 @@ function SettingsPage() {
           <TabsTrigger value="voice">{t("s_voice")}</TabsTrigger>
           <TabsTrigger value="general">{t("s_general")}</TabsTrigger>
           <TabsTrigger value="security">{a("security")}</TabsTrigger>
+          <TabsTrigger value="diagnostics">{t("s_diagnostics")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="security"><SecurityPanel /></TabsContent>
+
+        <TabsContent value="diagnostics"><DiagnosticoPanel /></TabsContent>
 
         <TabsContent value="providers" className="grid gap-3 md:grid-cols-2">
           {PROVIDERS.map((p) => {

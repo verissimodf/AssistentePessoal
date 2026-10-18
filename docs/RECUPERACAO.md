@@ -33,6 +33,16 @@ node -e "const {DatabaseSync}=require('node:sqlite');const d=new DatabaseSync(pr
   2. Rode `node server/recuperar-acesso.js` — desativa todos os administradores, revoga todas as sessões e tokens, e grava um novo código de primeiro acesso.
   3. Inicie o Jarvis e conclua o primeiro acesso no painel. Memórias, agentes, bots e configurações são preservados.
 
+## Trocar a senha (rotina, com sessão ativa)
+- Com acesso normal ao painel: **Configurações → Segurança → Trocar senha** (senha atual, nova senha e
+  confirmação; mínimo de 12 caracteres). Nenhuma senha passa por URL, armazenamento local ou log.
+- A troca exige sessão válida + CSRF, usa a verificação **scrypt** existente e é **atômica**: a nova
+  senha é gravada e **todas as outras sessões do mesmo administrador são encerradas** na mesma
+  transação (a sessão que trocou continua válida; sessões revogadas não voltam a valer).
+- Auditada como `auth.password_changed` (sem senha ou hash); recusas registram
+  `auth.password_change_denied` com motivo (`weak_password` ou `reauth_failed`).
+- Não existe redefinição por e-mail nem atalho equivalente: sem acesso, o caminho é o break-glass acima.
+
 ## Primeiro acesso
 O código fica em `data/bootstrap-token.txt` (permissão `0600` no Linux; no Windows, valem as permissões da pasta do usuário). Ele vale 15 minutos, funciona uma vez e é trocado a cada reinício enquanto não houver administrador. O código não aparece no terminal nem nos logs.
 
@@ -44,6 +54,48 @@ Cria apenas tabelas novas: `ownership`, `admin_settings`, `global_settings`, `le
 - Atribuição: Configurações → Segurança → "Dados antigos". Só metadados aparecem; a atribuição é explícita, atômica e auditada. As configurações antigas são assumidas inteiras por um único administrador que ainda não tenha configurações pessoais.
 - Rollback: restaure o backup `jarvis-<data>-v1.db` (passos acima) e volte o código para a versão da Fase 1.
 - Atenção: `recuperar-acesso.js` desativa administradores; recursos que eram deles continuam pertencendo a eles e ficam inacessíveis (não são reatribuídos).
+
+## As migrações v7/v8 (Fase H — histórico de conversas)
+A v7 cria apenas tabelas novas: `conversations` e `conversation_messages` (+ índices). A v8 apenas **acrescenta** a coluna `agent_id` em `conversations` (`ALTER TABLE`, aditivo). Nenhuma tabela existente é alterada (contagem e SHA-256 conferidos, como nas demais migrações). A v8 existe porque a v7 já havia sido aplicada em instalações existentes quando a coluna foi introduzida — a v7 permanece exatamente como aplicada e quem já a tem roda só a v8.
+- A conversa pertence ao **próprio administrador** (coluna `conversations.admin_id`), não à tabela `ownership`: ela **nunca** é reivindicada nem transferida — nasce e morre com o dono. Toda consulta é filtrada pelo dono; "não existe" e "não é sua" respondem o mesmo (404).
+- Cada mensagem tem papel `user`/`assistant`, `client_msg_id` (idempotência: reenvio/retry não duplica) e `reply_to` (no máximo uma resposta por mensagem). O contexto enviado ao modelo é **reconstruído do banco** (últimas 40 mensagens daquela conversa), nunca do que o navegador manda.
+- `agent_id` (opcional) fixa o agente/modelo escolhido **para aquela conversa** na criação; não altera as configurações globais nem as outras conversas. Se o agente for excluído depois, a conversa volta ao padrão do administrador.
+- **Excluir uma conversa** (painel: lista → ícone de lixeira → confirmação; API: `DELETE /api/conversations/:id`) remove a conversa e **todas as suas mensagens na mesma transação**, com auditoria sem conteúdo (`conversation.deleted`, só ids e contagem). Memórias, documentos, outras conversas e configurações **não são afetados**.
+- Rollback: restaure o backup `jarvis-<data>-v6.db` (passos acima) e volte o código para a versão anterior à Fase H.
+
+### Exclusão de conversas × backups (retenção)
+Excluir no painel **não** remove a conversa dos **backups já criados** (`data/backups/`). Backups são cópias históricas e ficam como estão até serem apagados manualmente — planeje a retenção (quantos/quais manter) de acordo com a sensibilidade do conteúdo. Se o pedido for de apagamento completo, além de excluir no painel é preciso remover os arquivos de backup relevantes e confirmar que não há cópias fora do Jarvis.
+
+## A migração v9 (Fase II — correlação estruturada)
+A v9 é **aditiva e idempotente**. Ela:
+- **acrescenta** a coluna `correlation_id` em `approval_actions` (`ALTER TABLE`, aditivo);
+- **preenche** (backfill) a coluna a partir de `action.correlation` do JSON; registros sem correlação ficam `NULL`;
+- cria o índice `idx_approval_actions_correlation`;
+- cria dois gatilhos de integridade na tabela `audit`: `trg_audit_no_update` e `trg_audit_no_delete`, que **bloqueiam** `UPDATE`/`DELETE` via SQL (`RAISE(ABORT,'audit_immutable')`).
+
+Nenhuma tabela preservada é alterada (contagem e SHA-256 conferidos, como nas demais migrações).
+- A aplicação grava a coluna **quando ela existe** (capacidade detectada explicitamente no boot via `PRAGMA table_info`) e **mantém** `action.correlation` no JSON durante a transição. A leitura **prefere a coluna** quando preenchida e usa o JSON como **fallback** para registros legados (v8). Se coluna e JSON **divergirem**, o serviço não escolhe em silêncio: registra `audit.correlation_mismatch` (sanitizado) e mantém a coluna como valor seguro.
+- Os gatilhos tornam a trilha **append-only para o SQL do serviço** — não contra quem tem acesso direto ao arquivo do banco (ou usa `PRAGMA writable_schema`). **Não** declarar a auditoria imutável contra administradores do banco.
+- `trg_audit_no_delete` **impede** um `DELETE` normal em `audit`. Uma política de **retenção/expurgo de auditoria** ainda **não** existe e exige decisão explícita (um expurgo futuro precisa de um caminho próprio e deliberado, não um `DELETE` genérico).
+- Rollback: restaure o backup `jarvis-<data>-v8.db` (passos acima) e **volte o código** para a versão anterior à v9.
+
+### Ordem segura de implantação e rollback (código + banco)
+A coluna é aditiva e o código tolera v8 **e** v9, mas o código e o esquema devem andar juntos:
+- **Implantar (subir):** primeiro o **código** (que detecta a capacidade e grava a coluna só se ela existir) e, no mesmo boot, a **migração v9** roda sozinha (backup verificado antes). Nunca editar uma migração já liberada.
+- **Rollback:** **pare** o serviço → restaure o backup `jarvis-<data>-v8.db` → **volte o código** para a versão correspondente → inicie. Um código novo sobre um banco v8 **funciona** (a coluna é detectada como ausente), mas um código que passe a **depender** da coluna quebraria — por isso a regra é sincronizar sempre código↔esquema no rollback.
+- Backups **não** são removidos pela migração nem pelo rollback; a retenção dos arquivos em `data/backups/` é decisão humana (ver a subseção de retenção acima).
+
+## Assumir memórias sem proprietário (operação administrativa explícita)
+Memórias criadas antes da Fase 2 ficam **sem proprietário**: não aparecem na lista, na busca nem podem
+ser editadas/excluídas por nenhum administrador. Elas **não** são reivindicadas, movidas ou apagadas
+automaticamente — a operação é sempre humana, explícita e auditada.
+- Caminho suportado no painel: **Configurações → Segurança → "Dados antigos"** → marcar os itens do tipo
+  **Memórias** → **Assumir selecionados** → confirmação. API equivalente: `POST /api/legacy/claim`
+  (`session`, `confirm: "ASSUMIR"`).
+- A reivindicação é atômica (todos os ids precisam existir, ser únicos e ainda estar sem dono), grava
+  `origin='claimed'` e é auditada (`legacy.claimed`).
+- Enquanto não houver reivindicação, as memórias permanecem **inalteradas e invisíveis** — inclusive na
+  busca semântica (isolamento coberto por `tests/isolation.test.mjs` e `tests/d-rec.test.mjs`).
 
 ## D_REC — Política de recuperação, reivindicação e propriedade (proposta para aprovação)
 
@@ -79,8 +131,9 @@ Fases 1 e 2 e é pré-requisito das fases seguintes. **Status: proposta — agua
 
 ### 4. Auditoria
 - São auditados, entre outros: `auth.setup_first_admin`, `auth.login*`, `auth.admin_created`,
-  `auth.admin_disabled`, `auth.recovery`, `legacy.claimed`, `legacy.approvals_expired`,
-  `legacy.settings_claimed`, `authz.denied`, `authz.tool_denied`, `run_command(requested|approved|denied)`.
+  `auth.admin_disabled`, `auth.recovery`, `auth.password_changed`, `auth.password_change_denied`,
+  `legacy.claimed`, `legacy.approvals_expired`, `legacy.settings_claimed`, `agent.created/updated/deleted`,
+  `authz.denied`, `authz.tool_denied`, `run_command(requested|approved|denied)`.
 - A auditoria é **sanitizada** (`sanitizeAudit`): nunca grava segredos, tokens, senhas ou conteúdo de
   mensagens.
 

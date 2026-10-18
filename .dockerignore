@@ -1,0 +1,21 @@
+# Nunca levar para a imagem: estado local, segredos e artefatos de build.
+node_modules
+**/node_modules
+.output
+data
+.env
+.env.*
+!.env.example
+.wrangler
+.git
+.github
+tests
+docs
+docs_arquive
+brain
+graphify-out
+*.log
+*.tgz
+Dockerfile
+.dockerignore
+docker-compose*.yml

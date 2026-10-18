@@ -222,11 +222,48 @@ Status: implementado e testado automaticamente; **Fase 2 continua aberta** até 
 - Resultados: `node --test` 90/90; vitest 7/7; `vite build` OK. Sem migrações alteradas, sem dependências novas, sem commit/push/banco real.
 - Pendente: CI Linux/Windows, IA real, Telegram real; devolução de propriedade após recuperação de acesso.
 
-## 15. Fase 2 — teste HTTP real de autorização negada (diff v4, 15/10/2026)
+## 16. Fase II — trilha de execução P1 (correlação persistente, 17/10/2026)
 
-Status: implementado e testado automaticamente; **Fase 2 continua aberta** até a revisão do diff v4.
+Status: implementado e testado automaticamente; **Fase II segue aberta** até revisão do diff P1.
+
+- Estratégia de correlação (sem migração): `ctx.correlation` (UUID v4) gravado dentro de `approval_actions.action` (JSON, v6) no momento do pedido; `resolveApproval` relê e republica em `approved/started/done/error/unknown/denied`. Cadeia ordenada por id (append-only), demonstrada por `tests/audit-trail.test.mjs`.
+- Eventos novos: `${kind}(started)`, `${kind}(done)`, `${kind}(unknown)` (timeout/abort e interrupção no boot). Falha confirmada mantém `${kind}(error)`. `rea_analyze(refused)` mantém.
+- Boot: aprovações presas em `running` viram `interrupted` + evento `run_command(unknown) {reason:"interrupted"}` (sem retroativo de sucesso), testado em `tests/audit-interrupted.test.mjs`.
+- Sanitização: segredo no comando nunca entra na trilha (sonda estendida); correlação é UUID validado.
+- Concorrência: 3 resoluções → 200/409/409, cadeia única.
+- Cancelamento: aprovação não resolvida permanece `pending`, sem started/done.
+- Migração v9: **implementada e testada em cópia isolada** (coluna `correlation_id` em `approval_actions`, índice, triggers anti-UPDATE/DELETE em `audit`). **Não aplicada ao banco de produção** nesta fase; ver §18.
+- Limitações: correlação ainda não ligada à conversa (clientMsgId) — a v9 dá a coluna estruturada, mas o vínculo com a mensagem do usuário continua pendente; auto-resposta do Telegram inalterada; expurgo/hash chain não implementados; Telegram/IA/CI reais não validados.
+
+Resultados nesta sessão: `node --test` **330/330**; `vitest` **44/44**; `vite build` não executado; sem migrações alteradas, sem dependências novas, sem commit/push/banco real.
+
+## 17. Fase II — P1.1: semântica de resultados e correlação (17/10/2026)
+
+Status: implementado e testado automaticamente; **Fase II segue aberta** até revisão do diff P1.1.
+
+- `classifyOutcome(kind, output)` (exportada de `tools.js`): classifica o retorno normal do executor por contrato — `confirmed` / `failed` / `denied` (cancelado antes da execução: destino/config mudou) / `unknown`. Não usa mais ausência de exceção como evidência de sucesso.
+- `resolveApproval`: sucesso confirmado → `(done)`; falha confirmada → `(error)`; cancelamento pré-execução → `(denied) {reason:"policy_changed"}` com a mensagem original preservada; retorno ambíguo → `(unknown) {reason:"ambiguous_result"}`; timeout/abort de rede → `(unknown) {reason:"timeout"}`. Nenhum é reexecutado.
+- Correlação: `rea_analyze(refused)` e `send_email(draft_created)` passaram a incluir `...corr(ctx)`.
+- `AUDIT_REASONS`: `unknown_action`, `ambiguous_result`, `policy_changed` adicionados.
+- Regressão corrigida: cancelamento por mudança de destino (fingerprint) voltou a ser `denied` com a mensagem original, não `error`.
+- Testes: `tests/audit-outcomes.test.mjs` (11 casos: contratos reais, denied, unknown, timeout, correlação nos eventos corrigidos, sem efeito externo).
+- Resultados: `node --test` **341/341**; `vitest` **44/44**. Sem migração, sem commit/push, sem banco real, sem auto-resposta do Telegram, sem ampliação de permissões.
+- Limitações: `openhands 200` sem `conversation_id` ainda confirma (contrato atual); `run_command` com saída contendo `[erro]` no stdout próprio pode ser classificado como falha (heurística documentada); correlação ausente em `callTool` direto sem `ctx.correlation` (caminhos de teste/legado).
 
 - Lacuna da revisão do v3: o teste de `authz.denied` chamava `audit()` diretamente.
 - `tests/audit-probe.test.mjs`: novo teste emite um token de serviço real (`POST /api/auth/tokens`, escopo só `memories:read`) e faz `DELETE /api/memories/TOKEN_SECRETO_SONDA?probe=TOKEN_SECRETO_SONDA&TOKEN_SECRETO_SONDA=1` por HTTP. Verifica 403 `forbidden`, exatamente um `authz.denied` com `{ route: "/api/memories/:id", need: "memories:write", principal: "service" }`, e ausência da sonda e do token na tabela `audit` e em `GET /api/audit`.
 - Nenhum código do serviço alterado. Resultados: `node --test` 91/91; vitest 7/7.
 - Pendente: CI Linux/Windows, IA real, Telegram real; devolução de propriedade após recuperação de acesso.
+
+## 18. Fase II — P2/P2.1: migração v9 e integração da correlação (17/10/2026)
+
+Status: **implementado e testado em cópia isolada**; a v9 **não** foi aplicada ao banco de produção. Fase II segue aberta até a aprovação da janela de implantação.
+
+- Migração v9 (`server/migrations.js`): `ALTER TABLE approval_actions ADD COLUMN correlation_id TEXT` + backfill de `action.correlation` (NULL quando ausente) + índice `idx_approval_actions_correlation` + triggers `trg_audit_no_update`/`trg_audit_no_delete` (append-only via SQL). Aditiva, idempotente, transacional e reversível por backup verificado; `approval_actions` não está em PRESERVED. Os triggers só são criados quando a tabela `audit` existe (esquema base do serviço) — em banco sem `audit` não há trilha a proteger.
+- Integração (P2.1): `queueApproval` grava a coluna **quando existe** e mantém `action.correlation` no JSON; `approvalCorrelation` prefere a coluna e usa o JSON como fallback legado; divergência registra `audit.correlation_mismatch` (sanitizado) e mantém a coluna como valor seguro. Capacidade de esquema detectada explicitamente (`detectApprovalCorrelation`, via `PRAGMA`), sem esconder erros SQL genéricos.
+- Boot: aprovações presas em `running` viram `interrupted` e emitem `${kind}(unknown) {reason:"interrupted"}` com a correlação lida da coluna (fallback JSON).
+- `AUDIT_REASONS`: `correlation_mismatch` adicionado.
+- Testes: `tests/migration-v9.test.mjs` (9), `tests/approval-correlation.test.mjs` (9), `tests/approval-correlation-boot.test.mjs` (2) — bancos temporários, sem efeitos externos.
+- Documentação: `docs/RECUPERACAO.md` §v9 (procedimento, ordem segura de implantação/rollback código+banco, retenção).
+- Resultados: `node --test` **361/361** (execução por arquivo; a suíte combinada pode apresentar flakiness pré-existente em `run-limits` sob carga paralela); `vitest` **44/44**. Sem commit/push, sem banco real, sem auto-resposta do Telegram, sem ampliação de permissões.
+- Limitações: os triggers protegem a trilha contra o SQL do serviço, **não** contra acesso direto ao arquivo do banco; `trg_audit_no_delete` impede um `DELETE` normal (política de retenção exige decisão explícita); hash chain não implementado; vínculo com `clientMsgId` pendente; validação em produção pendente.

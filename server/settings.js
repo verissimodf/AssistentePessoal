@@ -37,7 +37,7 @@ export const isSecretField = (k) => /key|token|password|secret/i.test(k);
 // ---------- classification (D5) ----------
 export const PERSONAL_DEFAULTS = {
   general: { agentName: "Jarvis", language: "pt" },
-  providers: { ollama: { enabled: true, baseUrl: "http://localhost:11434/v1", model: "llama3.1" } },
+  providers: { ollama: { enabled: true, baseUrl: "http://ollama-llm:11434/v1", model: "llama3.1" } },
   comms: {},
   voice: { tts: "browser", wake: { clap: true, word: true, hotkey: true, ptt: true }, sensitivity: 6, hotkey: "Ctrl+Shift+J" },
 };
@@ -131,12 +131,45 @@ export function publicSettings(adminId = null) {
 }
 
 /**
+ * Endereçamento: dentro de um container, `127.0.0.1`/IPs privados quase nunca apontam para
+ * o serviço desejado (são o próprio container ou um IP dinâmico reciclável). Recusamos URLs
+ * com host IP privado em providers/integrations para forçar o uso do DNS de serviço.
+ * Fora do container (execução nativa), o loopback é legítimo e nada é recusado.
+ */
+const PRIVATE_IPV4_HOST = /^(?:10\.|127\.|169\.254\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/;
+const isHttpUrl = (v) => typeof v === "string" && /^https?:\/\//i.test(v);
+const insideContainer = () => existsSync("/.dockerenv") || existsSync("/run/.containerenv");
+
+function hostOf(url) {
+  try { return new URL(url).hostname; } catch { return ""; }
+}
+
+function assertNoContainerIpUrls(inc) {
+  if (!insideContainer()) return;
+  const offenders = [];
+  for (const [id, cfg] of Object.entries(inc.providers || {})) {
+    if (isHttpUrl(cfg?.baseUrl) && PRIVATE_IPV4_HOST.test(hostOf(cfg.baseUrl))) offenders.push(`providers.${id}.baseUrl`);
+  }
+  for (const [id, cfg] of Object.entries(inc.integrations || {})) {
+    if (isHttpUrl(cfg?.command) && PRIVATE_IPV4_HOST.test(hostOf(cfg.command))) offenders.push(`integrations.${id}.command`);
+  }
+  // URLs de comunicação (ex.: feed ICS da agenda) também são buscadas pelo serviço.
+  for (const [id, cfg] of Object.entries(inc.comms || {})) {
+    if (isHttpUrl(cfg?.icsUrl) && PRIVATE_IPV4_HOST.test(hostOf(cfg.icsUrl))) offenders.push(`comms.${id}.icsUrl`);
+  }
+  if (offenders.length) {
+    throw new AuthError(400, `private_ip_url_not_allowed: ${offenders.join(", ")} — use o DNS de serviço (ex.: http://servico:porta)`);
+  }
+}
+
+/**
  * Merge incoming settings. Personal parts go to the caller's own record; global parts
  * (host, integrations, voice.localVoiceUrl) require allowGlobal (verified human admin).
  * Unknown keys are ignored. Empty secret fields keep the stored value.
  */
 export function updateSettings(incoming = {}, { adminId = null, allowGlobal = true } = {}) {
   const inc = incoming && typeof incoming === "object" ? incoming : {};
+  assertNoContainerIpUrls(inc);
   const g = {};
   if (inc.host !== undefined) g.host = inc.host;
   if (inc.integrations !== undefined) g.integrations = inc.integrations;

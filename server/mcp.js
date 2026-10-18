@@ -9,8 +9,14 @@ import { createInterface } from "node:readline";
 
 const BASE = process.env.JARVIS_URL || "http://127.0.0.1:7777";
 const TOKEN = process.env.JARVIS_SERVICE_TOKEN || "";
+// Fail loudly instead of degrading silently: without a token every call would 401 and the
+// client would only see opaque errors. A revoked/expired token still fails at call time.
 if (!TOKEN.startsWith("jst_")) {
-  process.stderr.write("[jarvis-mcp] defina JARVIS_SERVICE_TOKEN (crie em Configurações → Segurança).\n");
+  process.stderr.write(
+    "[jarvis-mcp] JARVIS_SERVICE_TOKEN ausente ou inválido. Crie um service token em " +
+      "Configurações → Segurança (escopos mínimos) e defina-o no ambiente deste servidor MCP.\n",
+  );
+  process.exit(1);
 }
 const TOOLS = [
   { name: "jarvis_ask", description: "Ask the local Jarvis assistant (uses its tools and memory).", inputSchema: { type: "object", properties: { prompt: { type: "string" } }, required: ["prompt"] } },
