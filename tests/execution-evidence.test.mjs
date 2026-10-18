@@ -206,7 +206,7 @@ test("API /api/approvals/:id/evidence: dono vê; sem sessão → 401; estrangeir
   assert.equal(foreign.status, 404);
 });
 
-// ---------- Etapa C: migração v10 ----------
+// ---------- Etapa C: migração v10 (esquema atual = 11, com a v11 `session_focus` do P0.2) ----------
 test("migração v10: tabela execution_evidence + índices, integridade ok, sem tocar em v9", () => {
   const t = new DatabaseSync(join(dir, "jarvis.db"), { readOnly: true });
   assert.ok(
@@ -219,7 +219,7 @@ test("migração v10: tabela execution_evidence + índices, integridade ok, sem 
   assert.ok(
     t.prepare("SELECT 1 FROM sqlite_master WHERE name='idx_execution_evidence_correlation'").get(),
   );
-  assert.equal(t.prepare("PRAGMA user_version").get().user_version, 10);
+  assert.equal(t.prepare("PRAGMA user_version").get().user_version, 11);
   assert.equal(t.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   assert.ok(
     t.prepare("SELECT 1 FROM sqlite_master WHERE name='idx_approval_actions_correlation'").get(),

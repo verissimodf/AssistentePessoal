@@ -59,14 +59,22 @@ objetivo de negócio foi alcançado (ver §4).
 O ledger registra dois eixos separados:
 
 - `state` — o que aconteceu **tecnicamente**.
-- `verification` ∈ `verified` | `unverified` | `unknown` — a **pós-condição do objetivo**.
-- `verifiedBy` ∈ `exit_code` | `http_status` | `artifact` | `contract_text` | `exception` | `none`.
+- `verification` ∈ `verified` | `unverified` | `failed` | `unknown` — a **pós-condição do objetivo**.
+- `verifiedBy` — **qual** verificador rodou (nunca um selo sem nomear a verificação).
 
-Hoje **nenhuma** operação declara `verification: "verified"`: o sistema **não inventa** evidência
-que o executor não fornece. Para comandos de shell, `verifiedBy: "exit_code"` e
-`verification: "unverified"` — o código de saída verifica o processo, não o resultado de negócio.
-Verificadores por contrato (status HTTP, existência de artefato, id de operação) podem ser
-adicionados quando a ferramenta fornecer a evidência.
+Semântica (contrato fechado; `EVIDENCE_VERIFICATIONS` em `server/db.js`):
+
+| `verification` | Significado | Quando ocorre |
+|---|---|---|
+| `verified` | a pós-condição foi observada por um verificador **específico** da operação | id emitido só pelo provedor (`provider_message_id` no Telegram, `messages[0].id` no WhatsApp), `provider_conversation_id` do OpenHands, `artifact_integrity` da REA (releitura do artefacto gravado: bytes + sha256 + JSON válido) |
+| `unverified` | a operação concluiu sem pós-condição observável | exit 0 de shell (`exit_code`), HTTP 2xx sem identificador de provedor (`http_status`), contrato textual (`contract_text`) |
+| `failed` | a operação falhou de forma observada | exit ≠ 0, erro do provedor (HTTP ≠ 2xx), exceção de execução |
+| `unknown` | não é possível afirmar nada | `timeout`, `overflow`, e operação **negada/cancelada** (`not_executed`, não houve execução) |
+
+Regras: (1) um HTTP 2xx isolado **nunca** vira `verified` — só o identificador que o provedor
+emite; (2) exit 0 é evidência técnica, não prova de resultado de negócio → `unverified`; (3)
+`verified` exige o verificador nomeado em `verifiedBy`, vindo da observação do executor — nunca de
+auto-relato do agente nem de um código HTTP genérico.
 
 ## 5. Ledger de evidência e correlação
 
@@ -95,8 +103,8 @@ verification · verified_by · input_hash · correlation · audit_id · at
 - O framework de migração faz **backup verificado** (`VACUUM INTO` + `integrity_check` + snapshot
   SHA-256 das tabelas preservadas) antes de aplicar, e roda em uma transação única.
 - **Rollback:** restaurar o backup `jarvis-<data>-v9.db` e voltar o código. Ver `docs/RECUPERACAO.md`.
-- Validado em banco temporário (`tests/execution-evidence.test.mjs`): `user_version=10`,
-  integridade `ok`, índices e v9 presentes.
+- Validado em banco temporário (`tests/execution-evidence.test.mjs`): `user_version=11`
+  (v10 do ledger + v11 `session_focus`), integridade `ok`, índices e v9 presentes.
 
 ## 7. Endpoints e autorização
 
@@ -123,11 +131,15 @@ npm run build                                     # build do painel
 Cobertura nova: exit 0/≠0, timeout, overflow, saída vazia/excessiva, sucesso técnico sem
 pós-condição, desconhecido sem reexecução, correlação ponta a ponta, persistência, migração v10,
 ausência de segredos, isolamento entre administradores, regressão de escopos/aprovações e
-compatibilidade dos consumidores.
+compatibilidade dos consumidores. Verificadores por operação
+(`tests/verifiers.test.mjs`): conjuntos fechados de `state`/`verification`, extração do id de
+provedor (Telegram/WhatsApp/OpenHands), 2xx sem id → `unverified`, HTTP ≠ 2xx → `failed`,
+releitura de artefacto da REA e ausência de segredos no texto de saída.
 
 ## 10. Limitações conhecidas
 
-- `verification` é sempre `unverified`/`unknown` hoje: não há verificador de objetivo por contrato.
+- `verification` nunca é `verified` por auto-relato: sem verificador específico (ex.: comando de
+  shell arbitrário), o resultado é `unverified`/`unknown` conforme a tabela da §4.
 - O estado `error` (spawn) é defensivo; com `shell: true`, "comando inexistente" resulta em
   `failed` (exit ≠ 0 do shell).
 - A evidência cobre execuções **aprovadas**; execuções diretas (autonomia `full`) retornam texto e
