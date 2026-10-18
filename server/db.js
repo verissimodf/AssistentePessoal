@@ -146,7 +146,13 @@ export function insertApprovalAction(approvalId, action, correlation, { database
  *  saída 0 NÃO prova, por si, que o objetivo foi alcançado). Sem a tabela (esquema antigo) a
  *  gravação é ignorada: a evidência nunca derruba a execução. */
 export const EVIDENCE_STATES = new Set(["completed", "failed", "timeout", "error", "overflow", "denied", "cancelled", "unknown"]);
-export const EVIDENCE_VERIFICATIONS = new Set(["verified", "unverified", "unknown"]);
+// Pós-condição do OBJETIVO (semântica P0.2), separada do estado técnico do processo:
+//   verified   — a pós-condição foi comprovada por um verificador adequado;
+//   unverified — a operação ocorreu/aparentou ocorrer, mas a pós-condição NÃO foi comprovada;
+//   failed     — há evidência de que a operação ou a pós-condição falhou;
+//   unknown    — não foi possível determinar o resultado de forma confiável.
+// Extensão COMPATÍVEL: `failed` é um valor novo; linhas antigas mantêm o valor gravado.
+export const EVIDENCE_VERIFICATIONS = new Set(["verified", "unverified", "failed", "unknown"]);
 export function recordEvidence({ id = uid(), approvalId = null, kind, state, exitCode = null, verification = "unknown", verifiedBy = "none", inputHash = null, correlation = null, auditId = null, database = db, hasTable = schema.executionEvidence } = {}) {
   if (!hasTable) return null;
   database.prepare("INSERT INTO execution_evidence (id, approval_id, kind, state, exit_code, verification, verified_by, input_hash, correlation, audit_id, at) VALUES (?,?,?,?,?,?,?,?,?,?,?)")

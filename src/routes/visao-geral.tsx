@@ -46,7 +46,14 @@ const stateKey = (s: string): TKey =>
           ? "st_interrupted"
           : "st_unknown";
 
-type Health = { ok?: boolean; version?: string; setupRequired?: boolean };
+// Metadados de build reais: um campo `unknown`/ausente significa "o build não os injetou" — o
+// painel diz "Não registrado" em vez de derivar uma versão do branch atual (que pode não ser
+// a árvore que a imagem realmente contém).
+type Health = { ok?: boolean; version?: string; commit?: string; buildTime?: string; setupRequired?: boolean };
+
+const UNKNOWN_RE = /^unknown$/i;
+const known = (v?: string | null): string | null =>
+  typeof v === "string" && v.trim() && !UNKNOWN_RE.test(v.trim()) ? v.trim() : null;
 
 function OverviewPage() {
   const { t } = useI18n();
@@ -56,6 +63,8 @@ function OverviewPage() {
   const [diag, setDiag] = useState<{
     versao?: {
       app?: string | null;
+      commit?: string | null;
+      buildTime?: string | null;
       banco?: number | null;
       node?: string | null;
       uptimeSegundos?: number;
@@ -88,8 +97,11 @@ function OverviewPage() {
   }, [online]);
 
   const pending = (approvals ?? []).filter((a) => a.status === "pending" || a.status === "running");
+  // Atenção = falha/interrupção/desconhecido OU pós-condição comprovadamente FALHOU.
+  // `unverified` num shell concluído é o estado normal (não há pós-condição genérica), então
+  // não é alerta — só `failed` (evidência de falha do objetivo) entra aqui.
   const attention = (execs ?? []).filter(
-    (e) => ATTENTION.has(e.state) || e.verification === "unverified",
+    (e) => ATTENTION.has(e.state) || e.verification === "failed",
   );
   const nextAction = pending.length ? `${t("ov_pending")}: ${pending.length}` : "—";
 
@@ -119,7 +131,9 @@ function OverviewPage() {
             <div className="text-muted-foreground">
               {t("ov_release")}:{" "}
               <span className="font-mono text-foreground">
-                {health?.version ?? diag?.versao?.app ?? "—"}
+                {/* Release = manifesto; se o build não injetou, mostra "Não registrado" e nunca
+                    deriva do branch atual (a imagem pode conter outra árvore). */}
+                {known(health?.version) ?? known(diag?.versao?.app) ?? t("ov_not_recorded")}
               </span>
             </div>
             <div className="text-muted-foreground">
@@ -128,8 +142,17 @@ function OverviewPage() {
             </div>
             <div className="text-muted-foreground">
               {t("ov_commit")}:{" "}
-              <span className="font-mono text-foreground">{t("ov_not_recorded")}</span>
+              {/* SHA reais injetados pelo build (`--build-arg GIT_SHA` → label OCI + JSON). */}
+              <span className="font-mono text-foreground">
+                {known(health?.commit) ?? known(diag?.versao?.commit) ?? t("ov_not_recorded")}
+              </span>
             </div>
+            {known(health?.buildTime) && (
+              <div className="text-muted-foreground">
+                {t("ov_build_time")}:{" "}
+                <span className="font-mono text-foreground">{known(health?.buildTime)}</span>
+              </div>
+            )}
           </CardContent>
         </Card>
 

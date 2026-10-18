@@ -1,7 +1,7 @@
 // Tools the agent can call. Each returns a string result for the model.
 import { exec, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { db, now, uid, audit, DATA_DIR, approvalCorrelation, insertApprovalAction, recordEvidence } from "./db.js";
 import { getSettings } from "./settings.js";
@@ -178,14 +178,29 @@ function reaRun(absPath, outPath, { approvalId = null, timeoutMs = 600_000 } = {
       try { if (!timedOut && finalCode === 0 && out.trim()) evidence = JSON.parse(out); } catch { /* stdout cru vai para o .log */ }
       mkdirSync(join(DATA_DIR, "rea"), { recursive: true });
       const rel = outPath.slice(DATA_DIR.length + 1);
-      if (evidence) writeFileSync(outPath, out, { mode: 0o600 });
-      else writeFileSync(`${outPath}.log`, `${out}\n[stderr] ${errOut}`, { mode: 0o600 });
+      // Verificador do artefato: reler o arquivo gravado e comprovar que ele existe, tem conteúdo,
+      // é JSON válido e contém o `evidence_id` do provedor. Só declarar "Evidence" não basta.
+      let artifact = null;
+      if (evidence) {
+        writeFileSync(outPath, out, { mode: 0o600 });
+        try {
+          const back = readFileSync(outPath, "utf8");
+          const parsed = JSON.parse(back);
+          const bytes = Buffer.byteLength(back, "utf8");
+          artifact = {
+            bytes,
+            sha256: createHash("sha256").update(back).digest("hex"),
+            ok: bytes > 0 && bytes === Buffer.byteLength(out, "utf8") && typeof parsed?.evidence_id === "string" && parsed.evidence_id.length > 0,
+          };
+        } catch { artifact = { bytes: 0, sha256: null, ok: false }; }
+      } else writeFileSync(`${outPath}.log`, `${out}\n[stderr] ${errOut}`, { mode: 0o600 });
       appendFileSync(join(DATA_DIR, "rea", "index.jsonl"), JSON.stringify({
         id: approvalId, path: absPath, ok: !!evidence, timed_out: timedOut, exit_code: finalCode,
         bytes: out.length, evidence_id: evidence?.evidence_id ?? null, file: evidence ? rel : `${rel}.log`,
+        artifact_sha256: artifact?.sha256 ?? null, artifact_ok: artifact?.ok ?? null,
         argv, recorded_at: now(),
       }) + "\n");
-      resolve({ evidence, timedOut, code: finalCode, stderr: errOut, bytes: out.length });
+      resolve({ evidence, timedOut, code: finalCode, stderr: errOut, bytes: out.length, artifact });
     };
     child.on("error", (e) => { errOut += String(e?.message || e); finish(-1); });
     child.on("close", (c) => finish(c));
@@ -198,10 +213,10 @@ async function reaAnalyzeApproved(action, adminId, approvalId) {
   const v = reaResolvePath(action?.path, cfg);
   const file = String(action?.file ?? "").replace(/[^A-Za-z0-9.\-]/g, "");
   if (!cfg?.enabled || !reaCommandOk(cfg) || !v.ok || v.abs !== action?.path || !file || reaFingerprint(action.path, action.file) !== action.fingerprint)
-    return "Análise cancelada: a integração, o caminho ou o alvo mudaram desde a aprovação. Nada foi executado.";
+    return { output: "Análise cancelada: a integração, o caminho ou o alvo mudaram desde a aprovação. Nada foi executado." };
   const run = await reaRun(v.abs, join(DATA_DIR, "rea", file), { approvalId });
-  if (run.timedOut) return "A análise não concluiu dentro do tempo limite; a saída parcial está gravada em data/rea/.";
-  if (!run.evidence) return `REA terminou com exit ${run.code ?? "?"} sem Evidence válida; detalhes em data/rea/ (${file}.log).`;
+  if (run.timedOut) return { output: "A análise não concluiu dentro do tempo limite; a saída parcial está gravada em data/rea/." };
+  if (!run.evidence) return { output: `REA terminou com exit ${run.code ?? "?"} sem Evidence válida; detalhes em data/rea/ (${file}.log).` };
   const s = run.evidence.normalized_result?.summary ?? {};
   const st = run.evidence.normalized_result?.statistics ?? {};
   const short = [
@@ -211,7 +226,9 @@ async function reaAnalyzeApproved(action, adminId, approvalId) {
     `IPC: ${s.ipc?.operations ?? 0} operações · ${s.ipc?.main_handlers ?? 0} handlers no processo principal`,
     `Resultado integral (grafos + Evidence bruta): data/rea/${file}`,
   ].join("\n");
-  return `${UNTRUSTED}\n${short}`;
+  // Pós-condição: o artefato foi RELIDO do disco, é JSON válido, tem conteúdo e carrega o
+  // `evidence_id` do provedor — não basta o REA ter declarado "Evidence" na saída.
+  return { output: `${UNTRUSTED}\n${short}`, verify: { verifier: "artifact_integrity", ok: !!run.artifact?.ok } };
 }
 
 // ---------- Integração Gigabrain: memória local compartilhada (MCP stdio) ----------
@@ -372,17 +389,21 @@ const openhandsFingerprint = (base, task) =>
 async function openhandsSend(base, task, expect) {
   const cfg = getSettings().integrations?.openhands || {};
   const current = String(cfg.command || "").replace(/\/$/, "");
-  if (!cfg?.enabled || current !== base) return "Delegação cancelada: a integração mudou desde a aprovação.";
-  if (openhandsFingerprint(base, task) !== expect) return "Delegação cancelada: a tarefa mudou desde a aprovação.";
+  if (!cfg?.enabled || current !== base) return { output: "Delegação cancelada: a integração mudou desde a aprovação." };
+  if (openhandsFingerprint(base, task) !== expect) return { output: "Delegação cancelada: a tarefa mudou desde a aprovação." };
   const r = await fetch(`${base}/api/conversations`, {
     method: "POST",
     headers: { "content-type": "application/json", ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}) },
     body: JSON.stringify({ initial_user_msg: task }),
     signal: AbortSignal.timeout(180000),
   });
-  if (!r.ok) return `OpenHands ${r.status}: ${await r.text()}`;
-  const j = await r.json();
-  return `Tarefa enviada ao OpenHands (conversation_id: ${j.conversation_id || j.id}, status: ${j.conversation_status || j.status || "?"}). Acompanhe em ${base}.`;
+  if (!r.ok) return { output: `OpenHands ${r.status}: ${(await r.text()).slice(0, 500)}` };
+  const j = await r.json().catch(() => null);
+  // Pós-condição: o provedor IDENTIFICOU a conversa criada. Um 2xx sem `conversation_id` não prova
+  // que a conversa existe — nesse caso fica `unverified`/`http_status`, nunca `verified`.
+  const cid = j?.conversation_id || j?.id || null;
+  const output = `Tarefa enviada ao OpenHands (conversation_id: ${cid || "?"}, status: ${j?.conversation_status || j?.status || "?"}). Acompanhe em ${base}.`;
+  return { output, verify: cid ? { verifier: "provider_conversation_id", ok: true } : { verifier: "http_status", ok: false } };
 }
 
 /** Memories always belong to one admin; without an owner nothing is written. */
@@ -647,29 +668,44 @@ const evidenceInputHash = (kind, action, row) => {
 /** Estado técnico + pós-condição a partir do retorno (estruturado ou textual). Código de saída 0 é
  *  evidência TÉCNICA do processo — NÃO prova que o objetivo de negócio foi alcançado
  *  (`verification: "unverified"`). */
-function evidenceFor(kind, result, outcome) {
-  let ev;
-  if (result && typeof result === "object" && "state" in result) {
-    const state = result.state;
-    ev = {
-      state,
-      exitCode: Number.isInteger(result.exitCode) ? result.exitCode : null,
-      verification: state === "completed" ? "unverified" : "unknown",
-      verifiedBy: state === "completed" || state === "failed" ? "exit_code" : "none",
-    };
-  } else {
-    const map = { confirmed: "completed", failed: "failed", denied: "denied", unknown: "unknown" };
-    ev = { state: map[outcome] || "unknown", exitCode: null, verification: "unknown", verifiedBy: "contract_text" };
+/** Pós-condição do OBJETIVO por operação (semântica P0.2).
+ *  `verified` SÓ quando um verificador adequado à operação comprovou a pós-condição:
+ *  nunca por HTTP 2xx, exit 0, mensagem de sucesso ou existência de arquivo isoladamente.
+ *  Sem verificador declarado o resultado é `unverified` (aparentou ocorrer) — jamais `verified`. */
+export function evidenceFor(kind, result, outcome) {
+  const probe = result && typeof result === "object" && result.verify ? result.verify : null;
+  const structured = result && typeof result === "object" && "state" in result ? result : null;
+  const map = { confirmed: "completed", failed: "failed", denied: "denied", unknown: "unknown" };
+  const base = { state: map[outcome] || "unknown", exitCode: null };
+
+  // 1) O executor declarou a pós-condição OBSERVADA (verificador específico por operação).
+  if (probe && !structured) {
+    const verifier = probe.verifier || "contract_text";
+    if (outcome === "confirmed")
+      return probe.ok === true
+        ? { ...base, verification: "verified", verifiedBy: verifier }
+        : { ...base, verification: "unverified", verifiedBy: verifier };
+    if (outcome === "failed") return { ...base, verification: "failed", verifiedBy: verifier };
+    if (outcome === "denied") return { ...base, verification: "unknown", verifiedBy: "not_executed" };
+    return { ...base, verification: "unknown", verifiedBy: verifier };
   }
-  // Verificador de PÓS-CONDIÇÃO determinístico por contrato da operação. `verified` só quando a
-  // evidência do contrato confirma o OBJETIVO (não apenas o processo). `run_command` fica
-  // `unverified` mesmo com exit 0: o código de saída é evidência técnica, não prova do objetivo.
-  if (outcome === "confirmed") {
-    if (kind === "send_message") return { ...ev, verification: "verified", verifiedBy: "http_status" };
-    if (kind === "openhands_task") return { ...ev, verification: "verified", verifiedBy: "http_status" };
-    if (kind === "rea_analyze") return { ...ev, verification: "verified", verifiedBy: "artifact" };
+
+  // 2) Execução estruturada (shell): exit 0 é evidência TÉCNICA, não prova do objetivo.
+  if (structured) {
+    const state = structured.state;
+    const exitCode = Number.isInteger(structured.exitCode) ? structured.exitCode : null;
+    if (state === "completed") return { state, exitCode, verification: "unverified", verifiedBy: "exit_code" };
+    if (state === "failed" || state === "error") return { state, exitCode, verification: "failed", verifiedBy: state === "failed" ? "exit_code" : "exception" };
+    if (state === "denied" || state === "cancelled") return { state, exitCode, verification: "unknown", verifiedBy: "not_executed" };
+    if (state === "timeout" || state === "overflow") return { state, exitCode, verification: "unknown", verifiedBy: state };
+    return { state, exitCode, verification: "unknown", verifiedBy: "none" };
   }
-  return ev;
+
+  // 3) Sem verificador: contrato textual apenas → nunca `verified`.
+  if (outcome === "confirmed") return { ...base, verification: "unverified", verifiedBy: "contract_text" };
+  if (outcome === "failed") return { ...base, verification: "failed", verifiedBy: "contract_text" };
+  if (outcome === "denied") return { ...base, verification: "unknown", verifiedBy: "not_executed" };
+  return { ...base, verification: "unknown", verifiedBy: "contract_text" };
 }
 /** Campos de evidência que também acompanham o evento de auditoria (allowlist em db.js). */
 const evidenceAuditFields = (ev, executionId) => ({

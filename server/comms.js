@@ -38,28 +38,44 @@ export function sendFingerprint({ channel, destination, text }) {
  * Envia de fato. `expect` (opcional) revalida a impressão digital: se o canal, o destinatário
  * ou o texto mudaram desde a aprovação, nada é enviado.
  */
+/** Pós-condição de envio observada no corpo da resposta do provedor.
+ *  Um HTTP 2xx isolado NÃO prova aceitação: exige o IDENTIFICADOR que só o provedor emite
+ *  (`result.message_id` no Telegram / `messages[0].id` no WhatsApp). Sem identificador →
+ *  tentativa sem comprovação (`http_status`, `ok:false`). Nunca devolve token, chat_id ou
+ *  conteúdo da mensagem — só metadados do verificador. */
+const providerAccepted = (id) =>
+  id !== undefined && id !== null && id !== ""
+    ? { verifier: "provider_message_id", ok: true }
+    : { verifier: "http_status", ok: false };
+
 export async function sendMessage(adminId, channel, text, expect) {
   const d = describeSend(adminId, channel, text);
-  if (!d.ok) return d.reason;
-  if (expect && sendFingerprint(d) !== expect) return "Envio cancelado: o canal/destinatário mudou desde a aprovação.";
+  if (!d.ok) return { output: d.reason };
+  if (expect && sendFingerprint(d) !== expect) return { output: "Envio cancelado: o canal/destinatário mudou desde a aprovação." };
   const c = getSettings(adminId).comms[channel];
   audit("send_message", { admin: adminId, channel });
   if (channel === "telegram") {
     const r = await fetch(`https://api.telegram.org/bot${c.botToken}/sendMessage`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chat_id: c.chatId, text }) });
-    return r.ok ? "Enviado no Telegram." : `Telegram ${r.status}: ${await r.text()}`;
+    const raw = await r.text();
+    if (!r.ok) return { output: `Telegram ${r.status}: ${raw.slice(0, 500)}` };
+    let body = null; try { body = JSON.parse(raw); } catch { /* corpo malformado → sem comprovação */ }
+    return { output: "Enviado no Telegram.", verify: providerAccepted(body?.result?.message_id) };
   }
   if (channel === "whatsapp") {
     const r = await fetch(`https://graph.facebook.com/v21.0/${c.phoneNumberId}/messages`, {
       method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${c.token}` },
       body: JSON.stringify({ messaging_product: "whatsapp", to: c.to, type: "text", text: { body: text } }),
     });
-    return r.ok ? "Enviado no WhatsApp." : `WhatsApp ${r.status}: ${await r.text()}`;
+    const raw = await r.text();
+    if (!r.ok) return { output: `WhatsApp ${r.status}: ${raw.slice(0, 500)}` };
+    let body = null; try { body = JSON.parse(raw); } catch { /* corpo malformado → sem comprovação */ }
+    return { output: "Enviado no WhatsApp.", verify: providerAccepted(body?.messages?.[0]?.id) };
   }
   if (channel === "signal") {
     // Não suportado: `signal-cli` exigiria shell livre, fora da allowlist e do fluxo aprovado.
-    return "Canal signal desabilitado.";
+    return { output: "Canal signal desabilitado." };
   }
-  return `Canal desconhecido: ${channel}`;
+  return { output: `Canal desconhecido: ${channel}` };
 }
 
 export async function sendEmail(adminId, account, to, subject, body) {

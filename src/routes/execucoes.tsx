@@ -35,7 +35,13 @@ const stateKey = (s: string): TKey =>
           ? "st_interrupted"
           : "st_unknown";
 const verifKey = (v: string): TKey =>
-  v === "verified" ? "vf_verified" : v === "unverified" ? "vf_unverified" : "vf_unknown";
+  v === "verified"
+    ? "vf_verified"
+    : v === "unverified"
+      ? "vf_unverified"
+      : v === "failed"
+        ? "vf_failed"
+        : "vf_unknown";
 const stateClass = (s: string) =>
   s === "completed"
     ? "border-chart-3 text-chart-3"

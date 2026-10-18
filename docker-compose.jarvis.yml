@@ -16,6 +16,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Identidade da ÁRVORE construída — injetada no `server/build-info.json` e no label OCI.
+        # O commit vem SÓ daqui: o processo em runtime não tem git e nunca infere do branch.
+        # `GIT_SHA` sem valor vira "unknown" (Dockerfile tem default), e o painel diz
+        # "Não registrado" — preferível a reportar um commit que a imagem não contém.
+        GIT_SHA: ${GIT_SHA:-unknown}
+        # Versão por omissão = `package.json` do repositório (fonte versionada do código);
+        # sem `APP_VERSION` no ambiente o compose passa "sem-build" e o script cai no manifesto.
+        APP_VERSION: ${APP_VERSION:-sem-build}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
     image: assistente-pessoal:1.2.2-gigabrain1
     container_name: assistente-pessoal
     restart: unless-stopped
