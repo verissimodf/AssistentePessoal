@@ -29,6 +29,7 @@ import {
   settingsProvenance,
 } from "./settings.js";
 import { getSessionFocus, updateSessionFocus } from "./session-focus.js";
+import { createHeartbeat, heartbeatEnabled } from "./heartbeat.js";
 import {
   owns,
   ownerOf,
@@ -177,8 +178,7 @@ async function readJson(req) {
 
 // ---------- routing ----------
 // access: "public" | "session" (human admin only) | <scope string>
-const routes = [];
-const route = (method, pattern, access, fn) =>
+const routes = [];const route = (method, pattern, access, fn) =>
   routes.push({
     method,
     pattern,
@@ -275,6 +275,34 @@ route("GET", "/api/executions", "session", ({ principal }) => ({
   executions: listExecutions(me(principal)),
 }));
 
+// Fase 2 — Heartbeat: leitura e resolução estritamente owner-scoped. Aprovar uma intenção
+// não executa ferramentas nem cria autorização para uma operação concreta.
+const heartbeatFor = (opts = {}) => opts.heartbeat || createHeartbeat({
+  db, audit, uid,
+  enabled: heartbeatEnabled({ envValue: process.env.JARVIS_P2_AUTONOMIA, settings: getSettings(null) }),
+});
+route("GET", "/api/heartbeat/status", "session", ({ principal }) => {
+  const service = heartbeatFor();
+  const owner = me(principal);
+  const pending = db.prepare("SELECT COUNT(*) AS n FROM autonomy_intentions WHERE admin_id = ? AND status = 'pending'").get(owner).n;
+  const recent = db.prepare("SELECT kind, status, created_at FROM autonomy_intentions WHERE admin_id = ? ORDER BY created_at DESC LIMIT 1").get(owner) || null;
+  return { enabled: service.enabled, running: service.running, schemaVersion: 12, pending, recent };
+});
+route("GET", "/api/heartbeat/alerts", "session", ({ principal, query }) => {
+  const service = heartbeatFor();
+  const limit = numParam(query.get("limit")) ?? 20;
+  const offset = numParam(query.get("offset")) ?? 0;
+  const status = query.get("status") || undefined;
+  return { alerts: service.listIntents(me(principal), { limit, offset, status }) };
+});
+route("POST", "/api/heartbeat/alerts/:id", "session", ({ principal, params, body }) => {
+  if (!body || !["approve", "reject"].includes(body.action) || Object.keys(body).some((k) => k !== "action"))
+    throw new AuthError(400, "heartbeat_action_invalid");
+  const result = heartbeatFor().resolveIntent(me(principal), params.id, body.action);
+  if (!result) throw new AuthError(404, "not_found");
+  return result;
+});
+
 // P0.2 — Foco da sessão: objetivo/resumo/decisões EDITÁVEIS e persistidos por dono (migração
 // v11). Sempre pelo admin da sessão — sem leitura cruzada e sem conteúdo na auditoria. Pendências
 // e "próximo passo" NÃO entram aqui: o painel deriva-os de aprovações/execuções reais.
@@ -357,8 +385,7 @@ route("POST", "/api/chat", "chat", async ({ body, principal }) => {
   // Formato legado `messages` (MCP/scripts): também aceita "/rea …" de forma determinística.
   const lastMsg = body.messages?.at(-1)?.content || "";
   const legacyRea = reaSlashCommand(lastMsg);
-  if (legacyRea) {
-    const ctx = { autonomy: "confirm", pending: [], principal, correlation: uid() };
+  if (legacyRea) {    const ctx = { autonomy: "confirm", pending: [], principal, correlation: uid() };
     const output = legacyRea.path
       ? await callTool("rea_analyze", { path: legacyRea.path }, ctx)
       : "Uso: /rea /caminho/absoluto/para/o/app — a raiz do alvo deve estar em data/rea/targets/ (ou nas raízes configuradas).";
@@ -537,8 +564,7 @@ for (const [name, store, type] of [
     tx(() => {
       store.remove(params.id);
       dropOwnership(type, params.id);
-    });
-    if (name === "agents")
+    });    if (name === "agents")
       audit("agent.deleted", { admin: me(principal), type: "agent", ids: [params.id] });
     return { ok: true };
   });
@@ -717,8 +743,7 @@ route("POST", "/api/mail/drafts/:id/send", "session", async ({ params, body, pri
   } catch (e) {
     // Ambiguous provider result → `unknown`: the message MAY have gone out, so never invite a resend.
     getDraftStore().settle(
-      params.id,
-      principal.adminId,
+      params.id,      principal.adminId,
       e?.outcome === "unknown" ? "unknown" : "failed",
     );
     throw e;
