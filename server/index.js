@@ -178,7 +178,8 @@ async function readJson(req) {
 
 // ---------- routing ----------
 // access: "public" | "session" (human admin only) | <scope string>
-const routes = [];const route = (method, pattern, access, fn) =>
+const routes = [];
+const route = (method, pattern, access, fn) =>
   routes.push({
     method,
     pattern,
@@ -385,7 +386,8 @@ route("POST", "/api/chat", "chat", async ({ body, principal }) => {
   // Formato legado `messages` (MCP/scripts): também aceita "/rea …" de forma determinística.
   const lastMsg = body.messages?.at(-1)?.content || "";
   const legacyRea = reaSlashCommand(lastMsg);
-  if (legacyRea) {    const ctx = { autonomy: "confirm", pending: [], principal, correlation: uid() };
+  if (legacyRea) {
+    const ctx = { autonomy: "confirm", pending: [], principal, correlation: uid() };
     const output = legacyRea.path
       ? await callTool("rea_analyze", { path: legacyRea.path }, ctx)
       : "Uso: /rea /caminho/absoluto/para/o/app — a raiz do alvo deve estar em data/rea/targets/ (ou nas raízes configuradas).";
@@ -564,7 +566,8 @@ for (const [name, store, type] of [
     tx(() => {
       store.remove(params.id);
       dropOwnership(type, params.id);
-    });    if (name === "agents")
+    });
+    if (name === "agents")
       audit("agent.deleted", { admin: me(principal), type: "agent", ids: [params.id] });
     return { ok: true };
   });
@@ -743,7 +746,8 @@ route("POST", "/api/mail/drafts/:id/send", "session", async ({ params, body, pri
   } catch (e) {
     // Ambiguous provider result → `unknown`: the message MAY have gone out, so never invite a resend.
     getDraftStore().settle(
-      params.id,      principal.adminId,
+      params.id,
+      principal.adminId,
       e?.outcome === "unknown" ? "unknown" : "failed",
     );
     throw e;
