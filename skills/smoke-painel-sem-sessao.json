@@ -1,0 +1,23 @@
+{
+  "id": "smoke-painel-sem-sessao",
+  "version": "0.1.0",
+  "description": "Smoke de leitura do painel SEM sessão: verifica que o painel responde 200 e que rotas autenticadas devolvem 401. Não escreve nada, não envia nada, não tem permissões nem rede externa.",
+  "inputs": [
+    { "name": "base_url", "type": "string", "required": true, "description": "URL base do painel de teste, fornecida pela tarefa." }
+  ],
+  "outputs": [
+    { "name": "evidencia", "type": "json", "description": "Evidência redigida por etapa: timestamp, URL, resultado." }
+  ],
+  "dependencies": [],
+  "permissions": [],
+  "allowedNetworkDestinations": [],
+  "tools": [],
+  "mcps": [],
+  "execLimits": { "timeoutMs": 60000, "maxCalls": 10, "maxOutputBytes": 262144 },
+  "tests": [
+    { "name": "rotas-anonimas-401", "path": "tests/http-auth.test.mjs" }
+  ],
+  "successCriteria": "GET / responde 200 e GET /api/auth/me devolve 401 sem sessão; evidência com todas as etapas em estado passed ou blocked documentado.",
+  "risk": "low",
+  "reviewState": "draft"
+}

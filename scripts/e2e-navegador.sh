@@ -31,16 +31,20 @@ PORT=$PANEL node .output/server/index.mjs >"$TMP/panel.log" 2>&1 &
 PANEL_PID=$!
 for i in $(seq 1 40); do curl -fsS "http://127.0.0.1:$PANEL/" >/dev/null 2>&1 && break; sleep 0.5; done
 
-google-chrome --headless=new --no-sandbox --disable-gpu --remote-debugging-port=9222 \
+# Porta CDP própria e dinâmica: nunca 9222 fixo (colidiria com o Chrome/CDP de OUTROS projetos).
+CDP_PORT=$(node -e 'const s=require("net").createServer();s.listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})')
+export E2E_CDP="http://127.0.0.1:$CDP_PORT"
+google-chrome --headless=new --no-sandbox --disable-gpu --remote-debugging-port=$CDP_PORT \
   --user-data-dir="$TMP/chrome" --no-first-run --disable-dev-shm-usage about:blank >"$TMP/chrome.log" 2>&1 &
 CHROME_PID=$!
-for i in $(seq 1 40); do curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1 && break; sleep 0.5; done
+for i in $(seq 1 40); do curl -fsS "$E2E_CDP/json/version" >/dev/null 2>&1 && break; sleep 0.5; done
 
 node "$REPO/scripts/e2e-navegador.mjs"; RC=$?
 
+# Encerramento gracioso: mata APENAS os PIDs que este script criou (nunca pkill -f/killall —
+# um padrão amplo mataria o Chrome de outros projetos na mesma máquina).
 kill $CHROME_PID $PANEL_PID $API_PID 2>/dev/null
 wait $CHROME_PID $PANEL_PID $API_PID 2>/dev/null
-pkill -f "remote-debugging-port=[9]222" 2>/dev/null
 echo "--- API log (erros, se houver) ---"
 grep -iE "erro|error" "$TMP/api.log" | grep -v "ExperimentalWarning" | head -5
 echo "E2E rc=$RC"
