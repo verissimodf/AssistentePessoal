@@ -158,6 +158,19 @@ export function recordEvidence({ id = uid(), approvalId = null, kind, state, exi
 export const listEvidence = (approvalId) =>
   db.prepare("SELECT id, approval_id AS approvalId, kind, state, exit_code AS exitCode, verification, verified_by AS verifiedBy, input_hash AS inputHash, correlation, audit_id AS auditId, at FROM execution_evidence WHERE approval_id = ? ORDER BY at DESC, rowid DESC").all(approvalId);
 
+/** Aprovações do administrador (owner-scoped). Sem output (pode conter conteúdo); só metadados. */
+export const listApprovals = (adminId, limit = 100) =>
+  db.prepare(`SELECT a.id, a.command, a.status, a.created_at AS createdAt
+    FROM approvals a JOIN ownership o ON o.resource_type = 'approval' AND o.resource_id = a.id
+    WHERE o.owner_admin_id = ? ORDER BY a.created_at DESC, a.rowid DESC LIMIT ?`).all(adminId, limit);
+
+/** Ledger de evidências do administrador (owner-scoped via a aprovação). Só metadados técnicos. */
+export const listExecutions = (adminId, limit = 100) =>
+  !schema.executionEvidence ? [] : db.prepare(`SELECT e.id, e.approval_id AS approvalId, e.kind, e.state, e.exit_code AS exitCode,
+    e.verification, e.verified_by AS verifiedBy, e.correlation, e.audit_id AS auditId, e.at
+    FROM execution_evidence e JOIN ownership o ON o.resource_type = 'approval' AND o.resource_id = e.approval_id
+    WHERE o.owner_admin_id = ? ORDER BY e.at DESC, e.rowid DESC LIMIT ?`).all(adminId, limit);
+
 // An approval left in "running" means the process stopped mid-execution. It is never re-run
 // (at-most-once); it is marked "interrupted" so it cannot look pending. The external effect
 // may or may not have happened: the audit records outcome "unknown" — never a retroactive

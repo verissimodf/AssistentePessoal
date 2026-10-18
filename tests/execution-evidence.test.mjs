@@ -14,7 +14,8 @@ process.env.JARVIS_NO_LISTEN = "1";
 
 const { auth, db, listEvidence } = await import("../server/db.js");
 const { createApp } = await import("../server/index.js");
-const { runShell, classifyOutcome, callTool, resolveApproval, resultText } = await import("../server/tools.js");
+const { runShell, classifyOutcome, callTool, resolveApproval, resultText } =
+  await import("../server/tools.js");
 
 const PW = "senha-muito-forte-1";
 const ORIGIN = "http://localhost:8080";
@@ -26,7 +27,11 @@ const A = {};
 const req = (path, { method = "GET", body, s } = {}) =>
   fetch(base + path, {
     method,
-    headers: { origin: ORIGIN, ...(body !== undefined ? { "content-type": "application/json" } : {}), ...(s ? { cookie: s.cookie, "x-jarvis-csrf": s.csrf } : {}) },
+    headers: {
+      origin: ORIGIN,
+      ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(s ? { cookie: s.cookie, "x-jarvis-csrf": s.csrf } : {}),
+    },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 const hostOn = (on, allowlist = "echo,false,true") =>
@@ -38,9 +43,16 @@ before(async () => {
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${server.address().port}`;
   auth.setupFirstAdmin({ token: auth.ensureBootstrap().token, username: "ana", password: PW });
-  const r = await req("/api/auth/login", { method: "POST", body: { username: "ana", password: PW } });
+  const r = await req("/api/auth/login", {
+    method: "POST",
+    body: { username: "ana", password: PW },
+  });
   const j = await r.json();
-  Object.assign(A, { cookie: r.headers.get("set-cookie").split(";")[0], csrf: j.csrf, id: j.admin.id });
+  Object.assign(A, {
+    cookie: r.headers.get("set-cookie").split(";")[0],
+    csrf: j.csrf,
+    id: j.admin.id,
+  });
   A.principal = auth.validateSession(A.cookie.split("=")[1]);
 });
 after(() => server.close());
@@ -124,7 +136,10 @@ test("falha confirmada: state failed e approval error; done NÃO é usado", asyn
   const e = listEvidence(id)[0];
   assert.equal(e.state, "failed");
   assert.equal(e.exitCode, 1);
-  const kinds = db.prepare("SELECT kind FROM audit WHERE detail LIKE ?").all(`%${id}%`).map((r) => r.kind);
+  const kinds = db
+    .prepare("SELECT kind FROM audit WHERE detail LIKE ?")
+    .all(`%${id}%`)
+    .map((r) => r.kind);
   assert.ok(kinds.includes("run_command(error)"));
   assert.ok(!kinds.includes("run_command(done)"), "nunca 'done' sem evidência compatível");
 });
@@ -133,10 +148,18 @@ test("resultado desconhecido (timeout de rede): state unknown, sem reexecução,
   const realFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input?.url;
-    if (url && url.includes("/api/conversations")) throw Object.assign(new Error("aborted"), { name: "TimeoutError" });
+    if (url && url.includes("/api/conversations"))
+      throw Object.assign(new Error("aborted"), { name: "TimeoutError" });
     return realFetch(input, init);
   };
-  await req("/api/settings", { method: "PUT", body: { host: { enabled: true }, integrations: { openhands: { enabled: true, command: "http://127.0.0.1:9" } } }, s: A });
+  await req("/api/settings", {
+    method: "PUT",
+    body: {
+      host: { enabled: true },
+      integrations: { openhands: { enabled: true, command: "http://127.0.0.1:9" } },
+    },
+    s: A,
+  });
   const c = { autonomy: "confirm", pending: [], principal: A.principal, correlation: CORR };
   await callTool("openhands_task", { task: "t" }, c);
   const id = c.pending[0].id;
@@ -155,7 +178,8 @@ test("privacidade: segredo no comando NÃO aparece na evidência nem na auditori
   await callTool("run_command", { command: `echo ${SECRET}` }, c);
   const id = c.pending[0].id;
   await resolveApproval(id, true, A.principal);
-  const blob = JSON.stringify(evidenceRows()) + JSON.stringify(db.prepare("SELECT detail FROM audit").all());
+  const blob =
+    JSON.stringify(evidenceRows()) + JSON.stringify(db.prepare("SELECT detail FROM audit").all());
   assert.equal(blob.includes(SECRET), false, "nenhum segredo na evidência/auditoria");
   assert.equal(JSON.stringify(evidenceRows()).includes("echo"), false, "nem o comando em claro");
 });
@@ -172,21 +196,35 @@ test("API /api/approvals/:id/evidence: dono vê; sem sessão → 401; estrangeir
   const body = await ok.json();
   assert.equal(body.evidence.length, 1);
   assert.equal(body.evidence[0].state, "completed");
-  const noSess = await fetch(`${base}/api/approvals/${id}/evidence`, { headers: { origin: ORIGIN } });
+  const noSess = await fetch(`${base}/api/approvals/${id}/evidence`, {
+    headers: { origin: ORIGIN },
+  });
   assert.equal(noSess.status, 401);
-  const foreign = await req("/api/approvals/00000000-0000-4000-8000-000000000000/evidence", { s: A });
+  const foreign = await req("/api/approvals/00000000-0000-4000-8000-000000000000/evidence", {
+    s: A,
+  });
   assert.equal(foreign.status, 404);
 });
 
 // ---------- Etapa C: migração v10 ----------
 test("migração v10: tabela execution_evidence + índices, integridade ok, sem tocar em v9", () => {
   const t = new DatabaseSync(join(dir, "jarvis.db"), { readOnly: true });
-  assert.ok(t.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='execution_evidence'").get(), "tabela existe");
-  assert.ok(t.prepare("SELECT 1 FROM sqlite_master WHERE name='idx_execution_evidence_approval'").get());
-  assert.ok(t.prepare("SELECT 1 FROM sqlite_master WHERE name='idx_execution_evidence_correlation'").get());
+  assert.ok(
+    t.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='execution_evidence'").get(),
+    "tabela existe",
+  );
+  assert.ok(
+    t.prepare("SELECT 1 FROM sqlite_master WHERE name='idx_execution_evidence_approval'").get(),
+  );
+  assert.ok(
+    t.prepare("SELECT 1 FROM sqlite_master WHERE name='idx_execution_evidence_correlation'").get(),
+  );
   assert.equal(t.prepare("PRAGMA user_version").get().user_version, 10);
   assert.equal(t.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
-  assert.ok(t.prepare("SELECT 1 FROM sqlite_master WHERE name='idx_approval_actions_correlation'").get(), "v9 intacta");
+  assert.ok(
+    t.prepare("SELECT 1 FROM sqlite_master WHERE name='idx_approval_actions_correlation'").get(),
+    "v9 intacta",
+  );
   t.close();
 });
 
@@ -195,4 +233,60 @@ test("persistência: a evidência sobrevive à releitura do banco (recuperação
   const t = new DatabaseSync(join(dir, "jarvis.db"), { readOnly: true });
   assert.equal(t.prepare("SELECT COUNT(*) n FROM execution_evidence").get().n, before);
   t.close();
+});
+
+// ---------- P0.1: listagens do painel (owner-scoped) + pós-condição ----------
+test("GET /api/approvals e /api/executions: dono vê; sem sessão 401; outro admin vê vazio", async () => {
+  await hostOn(true, "echo");
+  const c = { autonomy: "confirm", pending: [], principal: A.principal, correlation: CORR };
+  await callTool("run_command", { command: "echo lista" }, c);
+  const id = c.pending[0].id;
+  await resolveApproval(id, true, A.principal);
+
+  const ap = await (await req("/api/approvals", { s: A })).json();
+  assert.ok(
+    ap.approvals.some((a) => a.id === id),
+    "aprovação listada para o dono",
+  );
+  assert.ok(
+    ap.approvals.every((a) => !("output" in a)),
+    "sem output/conteúdo privado",
+  );
+
+  const ex = await (await req("/api/executions", { s: A })).json();
+  const row = ex.executions.find((e) => e.approvalId === id);
+  assert.ok(row, "execução listada");
+  assert.equal(row.state, "completed");
+  assert.equal(row.exitCode, 0);
+  assert.equal(row.verification, "unverified", "exit 0 não é prova do objetivo");
+  assert.equal(row.verifiedBy, "exit_code");
+  assert.equal(row.correlation, CORR);
+
+  assert.equal((await fetch(`${base}/api/approvals`, { headers: { origin: ORIGIN } })).status, 401);
+  assert.equal(
+    (await fetch(`${base}/api/executions`, { headers: { origin: ORIGIN } })).status,
+    401,
+  );
+
+  // Isolamento: segundo administrador não enxerga aprovações nem execuções do primeiro.
+  auth.createAdmin(A.principal, {
+    username: "bia",
+    password: "senha-muito-forte-2",
+    currentPassword: PW,
+  });
+  const lr = await req("/api/auth/login", {
+    method: "POST",
+    body: { username: "bia", password: "senha-muito-forte-2" },
+  });
+  const B = { cookie: lr.headers.get("set-cookie").split(";")[0], csrf: (await lr.json()).csrf };
+  assert.equal(
+    (await (await req("/api/approvals", { s: B })).json()).approvals.length,
+    0,
+    "outro admin não vê aprovações",
+  );
+  assert.equal(
+    (await (await req("/api/executions", { s: B })).json()).executions.length,
+    0,
+    "outro admin não vê execuções",
+  );
 });

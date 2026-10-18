@@ -648,17 +648,28 @@ const evidenceInputHash = (kind, action, row) => {
  *  evidência TÉCNICA do processo — NÃO prova que o objetivo de negócio foi alcançado
  *  (`verification: "unverified"`). */
 function evidenceFor(kind, result, outcome) {
+  let ev;
   if (result && typeof result === "object" && "state" in result) {
     const state = result.state;
-    return {
+    ev = {
       state,
       exitCode: Number.isInteger(result.exitCode) ? result.exitCode : null,
       verification: state === "completed" ? "unverified" : "unknown",
       verifiedBy: state === "completed" || state === "failed" ? "exit_code" : "none",
     };
+  } else {
+    const map = { confirmed: "completed", failed: "failed", denied: "denied", unknown: "unknown" };
+    ev = { state: map[outcome] || "unknown", exitCode: null, verification: "unknown", verifiedBy: "contract_text" };
   }
-  const map = { confirmed: "completed", failed: "failed", denied: "denied", unknown: "unknown" };
-  return { state: map[outcome] || "unknown", exitCode: null, verification: "unknown", verifiedBy: "contract_text" };
+  // Verificador de PÓS-CONDIÇÃO determinístico por contrato da operação. `verified` só quando a
+  // evidência do contrato confirma o OBJETIVO (não apenas o processo). `run_command` fica
+  // `unverified` mesmo com exit 0: o código de saída é evidência técnica, não prova do objetivo.
+  if (outcome === "confirmed") {
+    if (kind === "send_message") return { ...ev, verification: "verified", verifiedBy: "http_status" };
+    if (kind === "openhands_task") return { ...ev, verification: "verified", verifiedBy: "http_status" };
+    if (kind === "rea_analyze") return { ...ev, verification: "verified", verifiedBy: "artifact" };
+  }
+  return ev;
 }
 /** Campos de evidência que também acompanham o evento de auditoria (allowlist em db.js). */
 const evidenceAuditFields = (ev, executionId) => ({

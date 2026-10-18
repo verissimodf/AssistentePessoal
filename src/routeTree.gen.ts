@@ -14,8 +14,10 @@ import { Route as AgentesRouteImport } from './routes/agentes'
 import { Route as BotsRouteImport } from './routes/bots'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as DocumentosRouteImport } from './routes/documentos'
+import { Route as ExecucoesRouteImport } from './routes/execucoes'
 import { Route as MemoriaRouteImport } from './routes/memoria'
 import { Route as RascunhosRouteImport } from './routes/rascunhos'
+import { Route as VisaoGeralRouteImport } from './routes/visao-geral'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -42,6 +44,11 @@ const DocumentosRoute = DocumentosRouteImport.update({
   path: '/documentos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ExecucoesRoute = ExecucoesRouteImport.update({
+  id: '/execucoes',
+  path: '/execucoes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MemoriaRoute = MemoriaRouteImport.update({
   id: '/memoria',
   path: '/memoria',
@@ -52,6 +59,11 @@ const RascunhosRoute = RascunhosRouteImport.update({
   path: '/rascunhos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const VisaoGeralRoute = VisaoGeralRouteImport.update({
+  id: '/visao-geral',
+  path: '/visao-geral',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -59,8 +71,10 @@ export interface FileRoutesByFullPath {
   '/bots': typeof BotsRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/documentos': typeof DocumentosRoute
+  '/execucoes': typeof ExecucoesRoute
   '/memoria': typeof MemoriaRoute
   '/rascunhos': typeof RascunhosRoute
+  '/visao-geral': typeof VisaoGeralRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -68,8 +82,10 @@ export interface FileRoutesByTo {
   '/bots': typeof BotsRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/documentos': typeof DocumentosRoute
+  '/execucoes': typeof ExecucoesRoute
   '/memoria': typeof MemoriaRoute
   '/rascunhos': typeof RascunhosRoute
+  '/visao-geral': typeof VisaoGeralRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -78,8 +94,10 @@ export interface FileRoutesById {
   '/bots': typeof BotsRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/documentos': typeof DocumentosRoute
+  '/execucoes': typeof ExecucoesRoute
   '/memoria': typeof MemoriaRoute
   '/rascunhos': typeof RascunhosRoute
+  '/visao-geral': typeof VisaoGeralRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -89,8 +107,10 @@ export interface FileRouteTypes {
     | '/bots'
     | '/configuracoes'
     | '/documentos'
+    | '/execucoes'
     | '/memoria'
     | '/rascunhos'
+    | '/visao-geral'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -98,8 +118,10 @@ export interface FileRouteTypes {
     | '/bots'
     | '/configuracoes'
     | '/documentos'
+    | '/execucoes'
     | '/memoria'
     | '/rascunhos'
+    | '/visao-geral'
   id:
     | '__root__'
     | '/'
@@ -107,8 +129,10 @@ export interface FileRouteTypes {
     | '/bots'
     | '/configuracoes'
     | '/documentos'
+    | '/execucoes'
     | '/memoria'
     | '/rascunhos'
+    | '/visao-geral'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -117,8 +141,10 @@ export interface RootRouteChildren {
   BotsRoute: typeof BotsRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   DocumentosRoute: typeof DocumentosRoute
+  ExecucoesRoute: typeof ExecucoesRoute
   MemoriaRoute: typeof MemoriaRoute
   RascunhosRoute: typeof RascunhosRoute
+  VisaoGeralRoute: typeof VisaoGeralRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -158,6 +184,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocumentosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/execucoes': {
+      id: '/execucoes'
+      path: '/execucoes'
+      fullPath: '/execucoes'
+      preLoaderRoute: typeof ExecucoesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/memoria': {
       id: '/memoria'
       path: '/memoria'
@@ -172,6 +205,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RascunhosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/visao-geral': {
+      id: '/visao-geral'
+      path: '/visao-geral'
+      fullPath: '/visao-geral'
+      preLoaderRoute: typeof VisaoGeralRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -181,8 +221,10 @@ const rootRouteChildren: RootRouteChildren = {
   BotsRoute: BotsRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
   DocumentosRoute: DocumentosRoute,
+  ExecucoesRoute: ExecucoesRoute,
   MemoriaRoute: MemoriaRoute,
   RascunhosRoute: RascunhosRoute,
+  VisaoGeralRoute: VisaoGeralRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
