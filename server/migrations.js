@@ -177,8 +177,7 @@ CREATE TABLE IF NOT EXISTS purge_jobs (
   status TEXT NOT NULL CHECK (status IN ('isolated','done','error')),
   correlation_id TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
+  updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS purge_items (
   job_id TEXT NOT NULL REFERENCES purge_jobs(id),
   resource_id TEXT NOT NULL,
@@ -329,6 +328,50 @@ CREATE TABLE IF NOT EXISTS session_focus (
         primaryKey: ["admin_id"],
       },
     ],
+  },,
+
+  {
+    version: 12,
+    name: "heartbeat: owner-scoped intentions and operational survival state",
+    sql: `
+CREATE TABLE autonomy_intentions (
+  id TEXT PRIMARY KEY,
+  admin_id TEXT NOT NULL REFERENCES admins(id),
+  kind TEXT NOT NULL CHECK (kind IN ('approval_pending','execution_unverified','service_unavailable')),
+  payload TEXT NOT NULL CHECK (length(CAST(payload AS BLOB)) <= 2048),
+  status TEXT NOT NULL CHECK (status IN ('pending','approved','rejected','queued','running','done','failed','cancelled')),
+  correlation_id TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  resolved_at TEXT,
+  resolution_code TEXT CHECK (resolution_code IS NULL OR resolution_code IN ('owner_approved','owner_rejected','policy_denied','reconciled_after_restart','detector_error'))
+);
+CREATE INDEX idx_autonomy_intentions_owner_status_created ON autonomy_intentions(admin_id, status, created_at);
+CREATE INDEX idx_autonomy_intentions_owner_kind_created ON autonomy_intentions(admin_id, kind, created_at);
+CREATE TABLE survival_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  app_version TEXT NOT NULL DEFAULT 'unknown',
+  schema_version INTEGER NOT NULL DEFAULT 12,
+  started_at TEXT,
+  last_tick_at TEXT,
+  last_error_code TEXT CHECK (last_error_code IS NULL OR last_error_code IN ('tick_failed','db_unavailable','detector_failed')),
+  updated_at TEXT NOT NULL
+);
+`,
+    expect: [
+      {
+        table: "autonomy_intentions",
+        type: "table",
+        columns: ["id","admin_id","kind","payload","status","correlation_id","created_at","updated_at","resolved_at","resolution_code"],
+        primaryKey: ["id"],
+      },
+      {
+        table: "survival_state",
+        type: "table",
+        columns: ["id","app_version","schema_version","started_at","last_tick_at","last_error_code","updated_at"],
+        primaryKey: ["id"],
+      },
+    ],
   },
 ];
 
@@ -357,8 +400,7 @@ CREATE TABLE IF NOT EXISTS global_settings (
   data TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS legacy_settings (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  data TEXT NOT NULL,
+  id INTEGER PRIMARY KEY CHECK (id = 1),  data TEXT NOT NULL,
   claimed_by TEXT REFERENCES admins(id),
   claimed_at TEXT
 );
@@ -437,8 +479,7 @@ export function backupAndVerify(db, dataDir, label) {
  * Apply pending migrations. Returns { from, to, backup }. Throws (and leaves the database
  * untouched) if the backup cannot be verified or any migration step fails.
  * opts.failAfterSql is a test hook that simulates a crash mid-migration.
- */
-// Asserção de esquema por migração (P0.3.1). `CREATE TABLE IF NOT EXISTS` NÃO falha quando já
+ */// Asserção de esquema por migração (P0.3.1). `CREATE TABLE IF NOT EXISTS` NÃO falha quando já
 // existe QUALQUER objeto com o mesmo nome — uma VIEW homónima (ou uma tabela com estrutura
 // divergente) é ignorada em silêncio e a migração "conclui" sem criar a tabela de facto (observado
 // em ensaio real a 2026-10-18). Cada migração pode declarar `expect`; depois do seu SQL e antes do
