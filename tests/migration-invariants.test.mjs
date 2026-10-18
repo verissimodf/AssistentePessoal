@@ -47,7 +47,7 @@ test("existe exatamente UMA migração v11 e é a session_focus", () => {
   assert.deepEqual(v12[0].expect.map((x) => x.table).sort(), ["autonomy_intentions", "survival_state"]);
   const forbiddenPreV12 = ["autonomy_intentions", "survival_state", "simulador_indices"];
   for (const table of forbiddenPreV12) {
-    const wrong = MIGRATIONS.filter((m) => m.version < 12 && new RegExp(`CREATE TABLE (IF NOT EXISTS )?${table}\\\\b`).test(typeof m.sql === "function" ? String(m.sql) : m.sql));
+    const wrong = MIGRATIONS.filter((m) => m.version < 12 && new RegExp(`CREATE TABLE (IF NOT EXISTS )?${table}\\b`).test(typeof m.sql === "function" ? String(m.sql) : m.sql));
     assert.equal(wrong.length, 0, `${table} não pode aparecer antes da v12`);
   }
 });
