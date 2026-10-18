@@ -177,7 +177,8 @@ CREATE TABLE IF NOT EXISTS purge_jobs (
   status TEXT NOT NULL CHECK (status IN ('isolated','done','error')),
   correlation_id TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL);
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS purge_items (
   job_id TEXT NOT NULL REFERENCES purge_jobs(id),
   resource_id TEXT NOT NULL,
@@ -359,18 +360,8 @@ CREATE TABLE survival_state (
 );
 `,
     expect: [
-      {
-        table: "autonomy_intentions",
-        type: "table",
-        columns: ["id","admin_id","kind","payload","status","correlation_id","created_at","updated_at","resolved_at","resolution_code"],
-        primaryKey: ["id"],
-      },
-      {
-        table: "survival_state",
-        type: "table",
-        columns: ["id","app_version","schema_version","started_at","last_tick_at","last_error_code","updated_at"],
-        primaryKey: ["id"],
-      },
+      { table: "autonomy_intentions", type: "table", columns: ["id","admin_id","kind","payload","status","correlation_id","created_at","updated_at","resolved_at","resolution_code"], primaryKey: ["id"] },
+      { table: "survival_state", type: "table", columns: ["id","app_version","schema_version","started_at","last_tick_at","last_error_code","updated_at"], primaryKey: ["id"] },
     ],
   },
 ];
@@ -400,7 +391,8 @@ CREATE TABLE IF NOT EXISTS global_settings (
   data TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS legacy_settings (
-  id INTEGER PRIMARY KEY CHECK (id = 1),  data TEXT NOT NULL,
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  data TEXT NOT NULL,
   claimed_by TEXT REFERENCES admins(id),
   claimed_at TEXT
 );
@@ -479,7 +471,8 @@ export function backupAndVerify(db, dataDir, label) {
  * Apply pending migrations. Returns { from, to, backup }. Throws (and leaves the database
  * untouched) if the backup cannot be verified or any migration step fails.
  * opts.failAfterSql is a test hook that simulates a crash mid-migration.
- */// Asserção de esquema por migração (P0.3.1). `CREATE TABLE IF NOT EXISTS` NÃO falha quando já
+ */
+// Asserção de esquema por migração (P0.3.1). `CREATE TABLE IF NOT EXISTS` NÃO falha quando já
 // existe QUALQUER objeto com o mesmo nome — uma VIEW homónima (ou uma tabela com estrutura
 // divergente) é ignorada em silêncio e a migração "conclui" sem criar a tabela de facto (observado
 // em ensaio real a 2026-10-18). Cada migração pode declarar `expect`; depois do seu SQL e antes do
