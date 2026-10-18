@@ -51,8 +51,13 @@ before(async () => {
 });
 after(() => server.close());
 
+// REA opera com semântica de caminhos POSIX (raízes absolutas, `..`, metacaracteres). No Windows
+// os testes de caminho/fluxo são pulados com motivo — plataforma, não enfraquecimento de assertion.
+const UNIX = process.platform !== "win32";
+const T = (name, fn) => test(name, { skip: UNIX ? false : "REA usa semântica de caminhos POSIX (Linux)" }, fn);
+
 // ---------- validadores puros ----------
-test("reaResolvePath: absolute, charset and traversal", () => {
+T("reaResolvePath: absolute, charset and traversal", () => {
   const roots = parseReaRoots({});
   assert.equal(reaResolvePath("main.js", {}).ok, false, "não absoluto");
   assert.equal(reaResolvePath(`${roots[0]}/../etc/passwd`, {}).ok, false, "traversal");
@@ -62,18 +67,18 @@ test("reaResolvePath: absolute, charset and traversal", () => {
   assert.equal(reaResolvePath(`${roots[0]}/demo-app`, { roots: "/outra/raiz" }).ok, false, "raiz configurável");
 });
 
-test("reaResolvePath: demo target resolves (bootstrap layout)", () => {
+T("reaResolvePath: demo target resolves (bootstrap layout)", () => {
   const v = reaResolvePath(TARGET, {});
   assert.equal(v.ok, true);
 });
 
 // ---------- fluxo completo pelo HTTP + aprovação ----------
-test("rea_analyze: integração desabilitada → recusa sem aprovação", async () => {
+T("rea_analyze: integração desabilitada → recusa sem aprovação", async () => {
   const out = await callTool("rea_analyze", { path: TARGET }, { autonomy: "confirm", pending: [], principal: A.principal });
   assert.match(out, /não está habilitada/i);
 });
 
-test("rea_analyze: pede aprovação, roda após aprovação e grava Evidence + índice", async () => {
+T("rea_analyze: pede aprovação, roda após aprovação e grava Evidence + índice", async () => {
   const on = await (await putSettings({ integrations: { rea: { enabled: true } } })).json();
   assert.ok(on.integrations?.rea?.enabled === true, "integração habilitada no painel");
   const ctx = { autonomy: "confirm", pending: [], principal: A.principal };
@@ -120,7 +125,7 @@ function matchEvidence(text) {
   assert.equal(summary.ipc?.operations, 1, "IPC do demo detectado");
 }
 
-test("approval negada não executa nada", async () => {
+T("approval negada não executa nada", async () => {
   const ctx = { autonomy: "confirm", pending: [], principal: A.principal };
   await callTool("rea_analyze", { path: TARGET }, ctx);
   const approval = ctx.pending[0];
@@ -130,7 +135,7 @@ test("approval negada não executa nada", async () => {
   assert.equal(after, before, "índice inalterado quando negado");
 });
 
-test("mudança de raiz entre pedido e aprovação → cancelada", async () => {
+T("mudança de raiz entre pedido e aprovação → cancelada", async () => {
   const ctx = { autonomy: "confirm", pending: [], principal: A.principal };
   await callTool("rea_analyze", { path: TARGET }, ctx);
   const approval = ctx.pending[0];
@@ -143,7 +148,7 @@ test("mudança de raiz entre pedido e aprovação → cancelada", async () => {
   await putSettings({ integrations: { rea: { enabled: true, command: REA_TEMPLATE, roots: "" } } });
 });
 
-test("comando alterado no painel é recusado na execução", async () => {
+T("comando alterado no painel é recusado na execução", async () => {
   await putSettings({ integrations: { rea: { enabled: true, command: REA_TEMPLATE } } });
   const ctx = { autonomy: "confirm", pending: [], principal: A.principal };
   const out = await callTool("rea_analyze", { path: TARGET }, ctx);
@@ -156,7 +161,7 @@ test("comando alterado no painel é recusado na execução", async () => {
 });
 
 // ---------- comando determinístico /rea no chat (sem LLM) ----------
-test("/rea no chat: enfileira aprovação sem provedor e executa após aprovação", async () => {
+T("/rea no chat: enfileira aprovação sem provedor e executa após aprovação", async () => {
   await putSettings({ integrations: { rea: { enabled: true } } });
   const r = await req("/api/chat", { method: "POST", body: { message: `/rea ${TARGET}`, clientMsgId: "9d2b7a1e-8f42-4a5a-9d9e-2222aaaabbbb" }, s: A });
   assert.ok(r.ok, `status ${r.status}`);
@@ -173,14 +178,14 @@ test("/rea no chat: enfileira aprovação sem provedor e executa após aprovaç�
   assert.equal(after, before + 1, "execução registrada no índice");
 });
 
-test("/rea: caminho fora das raízes → recusa determinística, sem aprovação", async () => {
+T("/rea: caminho fora das raízes → recusa determinística, sem aprovação", async () => {
   const r = await req("/api/chat", { method: "POST", body: { message: "/rea /opt/sem-permissao/app", clientMsgId: "aa3b7a1e-8f42-4a5a-9d9e-3333bbbbcccc" }, s: A });
   const j = await r.json();
   assert.match(j.reply, /fora das raízes/i);
   assert.equal((j.pending || []).length, 0, "nada pendente quando recusado");
 });
 
-test("/rea sem caminho → mesma troca de uso", async () => {
+T("/rea sem caminho → mesma troca de uso", async () => {
   const r = await req("/api/chat", { method: "POST", body: { message: "/rea", clientMsgId: "bb4b7a1e-8f42-4a5a-9d9e-4444ccccdddd" }, s: A });
   const j = await r.json();
   assert.match(j.reply, /Uso:/i);

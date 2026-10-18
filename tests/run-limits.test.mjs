@@ -108,7 +108,8 @@ test("rota de cancelamento: 404 para run de outro dono", async () => {
   assert.equal(r.status, 401, "sem sessão válida não passa da autenticação");
 });
 
-test("runShell: timeout mata o grupo de processos e não deixa órfãos", async () => {
+test("runShell: timeout mata o grupo de processos e não deixa órfãos", async (t) => {
+  if (process.platform === "win32") return t.skip("kill de grupo de processos é POSIX");
   const t0 = Date.now();
   const out = await runShell("sh -c 'sleep 30 & sleep 30'", 500);
   const dt = Date.now() - t0;

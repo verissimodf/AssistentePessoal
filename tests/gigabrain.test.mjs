@@ -65,7 +65,8 @@ before(async () => {
 after(() => server.close());
 
 // ---------- validadores puros ----------
-test("gbResolveConfig: padrão dentro de DATA_DIR; override inválido é recusado", () => {
+test("gbResolveConfig: padrão dentro de DATA_DIR; override inválido é recusado", (t) => {
+  if (process.platform === "win32") return t.skip("caminhos POSIX (Linux)");
   const d = gbResolveConfig({});
   assert.equal(d.ok, true);
   assert.equal(d.path, join(dir, "gigabrain", "config.json"), "config padrão é o do volume persistente");
