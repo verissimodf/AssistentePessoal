@@ -278,10 +278,12 @@ route("GET", "/api/executions", "session", ({ principal }) => ({
 
 // Fase 2 — Heartbeat: leitura e resolução estritamente owner-scoped. Aprovar uma intenção
 // não executa ferramentas nem cria autorização para uma operação concreta.
-const heartbeatFor = (opts = {}) => opts.heartbeat || createHeartbeat({
-  db, audit, uid,
-  enabled: heartbeatEnabled({ envValue: process.env.JARVIS_P2_AUTONOMIA, settings: getSettings(null) }),
-});
+let runtimeHeartbeat = null;
+const heartbeatFor = () => {
+  if (runtimeHeartbeat) return runtimeHeartbeat;
+  // Safe fallback for isolated route-table use: no timer and no implicit detector.
+  return createHeartbeat({ db, audit, uid, enabled: false });
+};
 route("GET", "/api/heartbeat/status", "session", ({ principal }) => {
   const service = heartbeatFor();
   const owner = me(principal);
@@ -764,6 +766,12 @@ function authenticate(req) {
 export function createApp(opts = {}) {
   setMailTransport(opts.mailTransport); // default: the mock placeholder transport
   setDraftStore(opts.draftStore);
+  runtimeHeartbeat = opts.heartbeat || createHeartbeat({
+    db, audit, uid,
+    enabled: heartbeatEnabled({ envValue: process.env.JARVIS_P2_AUTONOMIA, settings: getSettings(null) }),
+  });
+  // The passive detector is not yet wired, so do not start a timer. The service remains inert
+  // until a reviewed detector is supplied in a later implementation step.
   return createServer(async (req, res) => {
     const origin = req.headers.origin;
     if (!trusted(origin)) return send(res, 403, { error: "origin_not_allowed" }, undefined);
@@ -898,6 +906,3 @@ if (isMain && !process.env.JARVIS_NO_LISTEN) {
           r.reply +
           (r.pending.length ? "\n\n(Há uma ação aguardando sua aprovação no painel.)" : ""),
       }),
-    );
-  }, activeAdmins);
-}
