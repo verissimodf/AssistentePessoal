@@ -113,9 +113,9 @@ test("preservação: migração que apaga linhas preservadas é recusada e desfe
   assert.throws(
     () =>
       migrate(db, dir, {
-        migrations: [...MIGRATIONS, { version: 12, name: "falsa: apaga kv", sql: `DELETE FROM kv WHERE key='invariante';` }],
+        migrations: [...MIGRATIONS, { version: 13, name: "falsa: apaga kv", sql: `DELETE FROM kv WHERE key='invariante';` }],
       }),
-    /Migração 12 .*alterou dados preservados/,
+    /Migração 13 .*alterou dados preservados/,
     "a verificação de contagem/conteúdo recusa a migração destrutiva",
   );
   assert.equal(snap(), before, "conteúdo e versão intactos após recusa + rollback");
@@ -139,10 +139,10 @@ test("rollback: migração v12 inválida desfaz-se por completo e preserva o con
       migrate(db, dir, {
         migrations: [
           ...MIGRATIONS,
-          { version: 12, name: "falsa: SQL inválido no meio", sql: `CREATE TABLE tmp_x (a); SELECT isto_nao_existe();` },
+          { version: 13, name: "falsa: SQL inválido no meio", sql: `CREATE TABLE tmp_x (a); SELECT isto_nao_existe();` },
         ],
       }),
-    /Migração 12/,
+    /Migração 13/,
   );
   assert.equal(snap(), before, "esquema e conteúdo preservados idênticos após rollback");
   assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name='tmp_x'").get().n, 0, "sem objetos parciais");
