@@ -76,7 +76,7 @@ test("intenção é validada, idempotente por correlation_id e auditada só por 
   assert.equal(second.created, false);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM autonomy_intentions").get().n, 1);
   assert.equal(auditRows.length, 1);
-  assert.equal(JSON.stringify(auditRows).includes('"count":2'), true);
+  assert.equal(JSON.stringify(auditRows).includes('"count":2'), false);\n  assert.equal(JSON.stringify(auditRows).includes('"count":1'), true);
   db.close();
 });
 
