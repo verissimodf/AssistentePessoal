@@ -305,3 +305,24 @@ export async function loadDiagnostics(): Promise<DiagnosticInventory | null> {
   if (await ping()) return api<DiagnosticInventory>("/api/diagnostics");
   return null;
 }
+
+// ---------- P0.1: aprovações, execuções (ledger) e auditoria (fonte de verdade = servidor) ----------
+export type ApprovalRow = { id: string; command: string; status: string; createdAt: string };
+export type ExecutionRow = { id: string; approvalId: string | null; kind: string; state: string; exitCode: number | null; verification: string; verifiedBy: string; correlation: string | null; auditId: number | null; at: string };
+export type AuditRow = { id: number; at: string; kind: string; detail: string };
+
+/** Aprovações do administrador. `null` = indisponível (offline) — nunca dados de demonstração. */
+export async function listApprovals(): Promise<ApprovalRow[] | null> {
+  if (await ping()) return (await api<{ approvals: ApprovalRow[] }>("/api/approvals")).approvals;
+  return null;
+}
+/** Ledger de execuções (evidências) do administrador. `null` = indisponível (offline). */
+export async function listExecutions(): Promise<ExecutionRow[] | null> {
+  if (await ping()) return (await api<{ executions: ExecutionRow[] }>("/api/executions")).executions;
+  return null;
+}
+/** Histórico de auditoria (escopo `audit:read`). `null` = indisponível ou sem permissão. */
+export async function loadAudit(): Promise<AuditRow[] | null> {
+  if (!(await ping())) return null;
+  try { return await api<AuditRow[]>("/api/audit"); } catch { return null; }
+}

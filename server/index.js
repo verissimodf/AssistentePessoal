@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
-import { db, agents, bots, auth, audit, uid, listEvidence } from "./db.js";
+import { db, agents, bots, auth, audit, uid, listEvidence, listApprovals, listExecutions } from "./db.js";
 import { AuthError, can, isVerifiedAdmin, sanitizeBotScopes, DEFAULT_BOT_SCOPES } from "./auth.js";
 import { getSettings, publicSettings, updateSettings, legacySettingsInventory, claimLegacySettings } from "./settings.js";
 import { owns, ownerOf, ownedIds, assignNew, dropOwnership, tx, legacyInventory, claimLegacy, ClaimError, inactiveAdminInventory, transferResources, purgeResources, resumePurge, cancelPurge, listPurgeJobs } from "./ownership.js";
@@ -132,6 +132,9 @@ route("GET", "/api/approvals/:id/evidence", "session", ({ params, principal }) =
   if (!owns(principal?.adminId, "approval", params.id)) throw new AuthError(404, "not_found");
   return { approvalId: params.id, evidence: listEvidence(params.id) };
 });
+// Painel (P0.1): listagens owner-scoped — só metadados (nunca output/conteúdo). Sem sessão → 401.
+route("GET", "/api/approvals", "session", ({ principal }) => ({ approvals: listApprovals(me(principal)) }));
+route("GET", "/api/executions", "session", ({ principal }) => ({ executions: listExecutions(me(principal)) }));
 route("GET", "/api/audit", "audit:read", () => db.prepare("SELECT id, at, kind, detail FROM audit ORDER BY id DESC LIMIT 200").all());
 
 // ---------- Phase 2: every resource is scoped to principal.adminId (no owner → invisible) ----------
