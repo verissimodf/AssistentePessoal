@@ -29,6 +29,7 @@ import {
   settingsProvenance,
 } from "./settings.js";
 import { getSessionFocus, updateSessionFocus } from "./session-focus.js";
+import { createHeartbeat, heartbeatEnabled } from "./heartbeat.js";
 import {
   owns,
   ownerOf,
@@ -274,6 +275,36 @@ route("GET", "/api/approvals", "session", ({ principal }) => ({
 route("GET", "/api/executions", "session", ({ principal }) => ({
   executions: listExecutions(me(principal)),
 }));
+
+// Fase 2 — Heartbeat: leitura e resolução estritamente owner-scoped. Aprovar uma intenção
+// não executa ferramentas nem cria autorização para uma operação concreta.
+let runtimeHeartbeat = null;
+const heartbeatFor = () => {
+  if (runtimeHeartbeat) return runtimeHeartbeat;
+  // Safe fallback for isolated route-table use: no timer and no implicit detector.
+  return createHeartbeat({ db, audit, uid, enabled: false });
+};
+route("GET", "/api/heartbeat/status", "session", ({ principal }) => {
+  const service = heartbeatFor();
+  const owner = me(principal);
+  const pending = db.prepare("SELECT COUNT(*) AS n FROM autonomy_intentions WHERE admin_id = ? AND status = 'pending'").get(owner).n;
+  const recent = db.prepare("SELECT kind, status, created_at FROM autonomy_intentions WHERE admin_id = ? ORDER BY created_at DESC LIMIT 1").get(owner) || null;
+  return { enabled: service.enabled, running: service.running, schemaVersion: 12, pending, recent };
+});
+route("GET", "/api/heartbeat/alerts", "session", ({ principal, query }) => {
+  const service = heartbeatFor();
+  const limit = numParam(query.get("limit")) ?? 20;
+  const offset = numParam(query.get("offset")) ?? 0;
+  const status = query.get("status") || undefined;
+  return { alerts: service.listIntents(me(principal), { limit, offset, status }) };
+});
+route("POST", "/api/heartbeat/alerts/:id", "session", ({ principal, params, body }) => {
+  if (!body || !["approve", "reject"].includes(body.action) || Object.keys(body).some((k) => k !== "action"))
+    throw new AuthError(400, "heartbeat_action_invalid");
+  const result = heartbeatFor().resolveIntent(me(principal), params.id, body.action);
+  if (!result) throw new AuthError(404, "not_found");
+  return result;
+});
 
 // P0.2 — Foco da sessão: objetivo/resumo/decisões EDITÁVEIS e persistidos por dono (migração
 // v11). Sempre pelo admin da sessão — sem leitura cruzada e sem conteúdo na auditoria. Pendências
@@ -735,6 +766,12 @@ function authenticate(req) {
 export function createApp(opts = {}) {
   setMailTransport(opts.mailTransport); // default: the mock placeholder transport
   setDraftStore(opts.draftStore);
+  runtimeHeartbeat = opts.heartbeat || createHeartbeat({
+    db, audit, uid,
+    enabled: heartbeatEnabled({ envValue: process.env.JARVIS_P2_AUTONOMIA, settings: getSettings(null) }),
+  });
+  // The passive detector is not yet wired, so do not start a timer. The service remains inert
+  // until a reviewed detector is supplied in a later implementation step.
   return createServer(async (req, res) => {
     const origin = req.headers.origin;
     if (!trusted(origin)) return send(res, 403, { error: "origin_not_allowed" }, undefined);
@@ -869,6 +906,3 @@ if (isMain && !process.env.JARVIS_NO_LISTEN) {
           r.reply +
           (r.pending.length ? "\n\n(Há uma ação aguardando sua aprovação no painel.)" : ""),
       }),
-    );
-  }, activeAdmins);
-}

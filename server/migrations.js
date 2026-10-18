@@ -330,6 +330,40 @@ CREATE TABLE IF NOT EXISTS session_focus (
       },
     ],
   },
+
+  {
+    version: 12,
+    name: "heartbeat: owner-scoped intentions and operational survival state",
+    sql: `
+CREATE TABLE autonomy_intentions (
+  id TEXT PRIMARY KEY,
+  admin_id TEXT NOT NULL REFERENCES admins(id),
+  kind TEXT NOT NULL CHECK (kind IN ('approval_pending','execution_unverified','service_unavailable')),
+  payload TEXT NOT NULL CHECK (length(CAST(payload AS BLOB)) <= 2048),
+  status TEXT NOT NULL CHECK (status IN ('pending','approved','rejected','queued','running','done','failed','cancelled')),
+  correlation_id TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  resolved_at TEXT,
+  resolution_code TEXT CHECK (resolution_code IS NULL OR resolution_code IN ('owner_approved','owner_rejected','policy_denied','reconciled_after_restart','detector_error'))
+);
+CREATE INDEX idx_autonomy_intentions_owner_status_created ON autonomy_intentions(admin_id, status, created_at);
+CREATE INDEX idx_autonomy_intentions_owner_kind_created ON autonomy_intentions(admin_id, kind, created_at);
+CREATE TABLE survival_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  app_version TEXT NOT NULL DEFAULT 'unknown',
+  schema_version INTEGER NOT NULL DEFAULT 12,
+  started_at TEXT,
+  last_tick_at TEXT,
+  last_error_code TEXT CHECK (last_error_code IS NULL OR last_error_code IN ('tick_failed','db_unavailable','detector_failed')),
+  updated_at TEXT NOT NULL
+);
+`,
+    expect: [
+      { table: "autonomy_intentions", type: "table", columns: ["id","admin_id","kind","payload","status","correlation_id","created_at","updated_at","resolved_at","resolution_code"], primaryKey: ["id"] },
+      { table: "survival_state", type: "table", columns: ["id","app_version","schema_version","started_at","last_tick_at","last_error_code","updated_at"], primaryKey: ["id"] },
+    ],
+  },
 ];
 
 const tableExists = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);

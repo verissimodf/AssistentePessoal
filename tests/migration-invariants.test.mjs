@@ -9,9 +9,9 @@ import { join } from "node:path";
 // Fase 1 (P0.3.1-FINAL → Fase B) — guardiões de reconciliação de schema.
 //
 // Contexto: o RFC antigo (docs/RFC_PR2_AUTONOMIA_E_SIMULADOR.md, era PR #2 quando targetVersion
-// era 10) propunha "v11 = autonomy_intentions / survival_state". O v11 REAL enviado é
+// era 10) propunha "v12 = autonomy_intentions / survival_state". O v12 REAL enviado é
 // `session_focus` (P0.2). Implementar o RFC tal como escrito ignoraria a migração em silêncio
-// (`pending = m.version > from` → um segundo "v11" nunca correria). Próxima versão correta: v12,
+// (`pending = m.version > from` → um segundo "v12" nunca correria). Próxima versão correta: v12,
 // e só depois do desenho da Fase G ser aprovado. Estes testes garantem que qualquer tentativa de
 // renumeração/colisão ou alteração retroativa das regras falha o CI.
 
@@ -36,23 +36,26 @@ test("migrações: versões estritamente crescentes, únicas e contíguas a part
   }
 });
 
-test("existe exatamente UMA migração v11 e é a session_focus (o v11 do RFC antigo está proibido)", () => {
+test("existe exatamente UMA migração v11 e é a session_focus", () => {
   const v11 = MIGRATIONS.filter((m) => m.version === 11);
-  assert.equal(v11.length, 1, "exactamente uma migração v11 — nunca uma segunda");
+  assert.equal(v11.length, 1, "exactamente uma migração v11");
   assert.match(v11[0].name, /session_focus/, "o v11 real é o session_focus (P0.2)");
-  assert.ok(v11[0].expect?.length, "a v11 mantém a asserção de esquema (expect) do P0.3.1");
-  // Tabelas propostas no RFC como "v11" só podem existir como v12+ (e após desenho aprovado).
-  const rfcTables = ["autonomy_intentions", "survival_state", "simulador_indices"];
-  for (const t of rfcTables) {
-    const wrong = MIGRATIONS.filter((m) => m.version <= 11 && new RegExp(`CREATE TABLE (IF NOT EXISTS )?${t}\\b`).test(m.sql));
-    assert.equal(wrong.length, 0, `${t} não pode aparecer antes da v12 (RFC antigo renumerado)`);
+  assert.ok(v11[0].expect?.length, "a v11 mantém a asserção de esquema");
+  const v12 = MIGRATIONS.filter((m) => m.version === 12);
+  assert.equal(v12.length, 1, "exactamente uma migração v12");
+  assert.match(v12[0].name, /heartbeat/);
+  assert.deepEqual(v12[0].expect.map((x) => x.table).sort(), ["autonomy_intentions", "survival_state"]);
+  const forbiddenPreV12 = ["autonomy_intentions", "survival_state", "simulador_indices"];
+  for (const table of forbiddenPreV12) {
+    const wrong = MIGRATIONS.filter((m) => m.version < 12 && new RegExp(`CREATE TABLE (IF NOT EXISTS )?${table}\\b`).test(typeof m.sql === "function" ? String(m.sql) : m.sql));
+    assert.equal(wrong.length, 0, `${table} não pode aparecer antes da v12`);
   }
 });
 
-test("targetVersion é 11 — qualquer mudança de schema exige atualizar este guardião de propósito", () => {
+test("targetVersion é 12 — qualquer mudança de schema exige atualizar este guardião de propósito", () => {
   // Se alguém acrescentar v12, este teste FALHA e obriga a rever: testes de migração,
   // rollback, preservação, execution-evidence (user_version) e o runbook de recuperação.
-  assert.equal(targetVersion(), 11);
+  assert.equal(targetVersion(), 12);
   assert.equal(MIGRATIONS.at(-1).version, targetVersion());
 });
 
@@ -110,9 +113,9 @@ test("preservação: migração que apaga linhas preservadas é recusada e desfe
   assert.throws(
     () =>
       migrate(db, dir, {
-        migrations: [...MIGRATIONS, { version: 12, name: "falsa: apaga kv", sql: `DELETE FROM kv WHERE key='invariante';` }],
+        migrations: [...MIGRATIONS, { version: 13, name: "falsa: apaga kv", sql: `DELETE FROM kv WHERE key='invariante';` }],
       }),
-    /Migração 12 .*alterou dados preservados/,
+    /Migração 13 .*alterou dados preservados/,
     "a verificação de contagem/conteúdo recusa a migração destrutiva",
   );
   assert.equal(snap(), before, "conteúdo e versão intactos após recusa + rollback");
@@ -136,10 +139,10 @@ test("rollback: migração v12 inválida desfaz-se por completo e preserva o con
       migrate(db, dir, {
         migrations: [
           ...MIGRATIONS,
-          { version: 12, name: "falsa: SQL inválido no meio", sql: `CREATE TABLE tmp_x (a); SELECT isto_nao_existe();` },
+          { version: 13, name: "falsa: SQL inválido no meio", sql: `CREATE TABLE tmp_x (a); SELECT isto_nao_existe();` },
         ],
       }),
-    /Migração 12/,
+    /Migração 13/,
   );
   assert.equal(snap(), before, "esquema e conteúdo preservados idênticos após rollback");
   assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name='tmp_x'").get().n, 0, "sem objetos parciais");
