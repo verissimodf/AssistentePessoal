@@ -11,6 +11,7 @@ import { resolve } from "node:path";
 import { db, agents, bots, auth, audit, uid, listEvidence, listApprovals, listExecutions } from "./db.js";
 import { AuthError, can, isVerifiedAdmin, sanitizeBotScopes, DEFAULT_BOT_SCOPES } from "./auth.js";
 import { getSettings, publicSettings, updateSettings, legacySettingsInventory, claimLegacySettings } from "./settings.js";
+import { getSessionFocus, updateSessionFocus } from "./session-focus.js";
 import { owns, ownerOf, ownedIds, assignNew, dropOwnership, tx, legacyInventory, claimLegacy, ClaimError, inactiveAdminInventory, transferResources, purgeResources, resumePurge, cancelPurge, listPurgeJobs } from "./ownership.js";
 import { runAgent, testProvider, cancelRun } from "./llm.js";
 import { collectDiagnostics } from "./diagnostics.js";
@@ -153,6 +154,12 @@ route("GET", "/api/approvals/:id/evidence", "session", ({ params, principal }) =
 // Painel (P0.1): listagens owner-scoped — só metadados (nunca output/conteúdo). Sem sessão → 401.
 route("GET", "/api/approvals", "session", ({ principal }) => ({ approvals: listApprovals(me(principal)) }));
 route("GET", "/api/executions", "session", ({ principal }) => ({ executions: listExecutions(me(principal)) }));
+
+// P0.2 — Foco da sessão: objetivo/resumo/decisões EDITÁVEIS e persistidos por dono (migração
+// v11). Sempre pelo admin da sessão — sem leitura cruzada e sem conteúdo na auditoria. Pendências
+// e "próximo passo" NÃO entram aqui: o painel deriva-os de aprovações/execuções reais.
+route("GET", "/api/session-focus", "session", ({ principal }) => getSessionFocus(me(principal)));
+route("PUT", "/api/session-focus", "session", ({ body, principal }) => updateSessionFocus(me(principal), body));
 route("GET", "/api/audit", "audit:read", () => db.prepare("SELECT id, at, kind, detail FROM audit ORDER BY id DESC LIMIT 200").all());
 
 // ---------- Phase 2: every resource is scoped to principal.adminId (no owner → invisible) ----------

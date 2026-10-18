@@ -321,6 +321,24 @@ export async function listExecutions(): Promise<ExecutionRow[] | null> {
   if (await ping()) return (await api<{ executions: ExecutionRow[] }>("/api/executions")).executions;
   return null;
 }
+
+// ---------- P0.2: foco da sessão (objetivo/resumo/decisões) — explícito, por dono ----------
+// Pendências e "próximo passo" NÃO vêm daqui: o painel deriva-os de aprovações/execuções reais.
+export type SessionFocus = { objective: string; summary: string; decisions: string[]; updatedAt: string | null };
+
+/** Foco do administrador autenticado. `null` = indisponível (offline) — nunca um objetivo de demonstração. */
+export async function loadSessionFocus(): Promise<SessionFocus | null> {
+  if (await ping()) return api<SessionFocus>("/api/session-focus");
+  return null;
+}
+/** Grava o foco do próprio administrador (PUT com CSRF). Lança em erro HTTP (400/403). */
+export async function saveSessionFocus(focus: {
+  objective: string;
+  summary: string;
+  decisions: string[];
+}): Promise<SessionFocus> {
+  return api<SessionFocus>("/api/session-focus", { method: "PUT", body: JSON.stringify(focus) });
+}
 /** Histórico de auditoria (escopo `audit:read`). `null` = indisponível ou sem permissão. */
 export async function loadAudit(): Promise<AuditRow[] | null> {
   if (!(await ping())) return null;

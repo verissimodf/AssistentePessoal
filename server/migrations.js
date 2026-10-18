@@ -303,6 +303,24 @@ CREATE INDEX IF NOT EXISTS idx_execution_evidence_approval ON execution_evidence
 CREATE INDEX IF NOT EXISTS idx_execution_evidence_correlation ON execution_evidence(correlation);
 `,
   },
+  {
+    version: 11,
+    name: "session_focus: objetivo/resumo/decisões da sessão por administrador (P0.2)",
+    // Tabela NOVA (não está em PRESERVED). Foco da sessão EDITÁVEL pelo próprio administrador,
+    // sempre por DONO (`admin_id` = PK): nunca global e nunca atribuído a um registro legado.
+    // Guarda apenas texto de trabalho do painel (objetivo, resumo, decisões em JSON) — nenhum
+    // segredo, credencial, caminho ou cookie. O "próximo passo"/pendência NÃO é persistido aqui:
+    // continua derivado de aprovações e execuções reais, para o painel nunca inventar estado.
+    sql: `
+CREATE TABLE IF NOT EXISTS session_focus (
+  admin_id TEXT PRIMARY KEY REFERENCES admins(id),
+  objective TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '',
+  decisions TEXT NOT NULL DEFAULT '[]',
+  updated_at TEXT
+);
+`,
+  },
 ];
 
 const tableExists = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);

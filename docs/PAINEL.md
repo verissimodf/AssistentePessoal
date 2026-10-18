@@ -70,5 +70,19 @@ branch que está no disco. A cadeia é: `--build-arg GIT_SHA=...` → `scripts/w
 
 - Não há verificação de objetivo para comandos de shell arbitrários (só evidência técnica).
 - Sem retenção/expurgo do ledger de evidências.
-- O "resumo da sessão" (objetivo/next action) não tem campo persistido no backend; a Visão geral
-  mostra pendências e atividade reais em vez de inventar um objetivo.
+
+## Foco da sessão (objetivo/resumo/decisões)
+
+A Visão geral tem um cartão **"Objetivo da sessão"** com objetivo, resumo e decisões que o
+próprio administrador edita e guarda (`PUT /api/session-focus`, rota `session` + CSRF). A tabela
+`session_focus` (migração **v11**) é **por dono** (`admin_id` = PK): sem leitura cruzada e sem
+atribuição automática de registros legados. Sem backend o cartão mostra **"Indisponível
+(offline)"** — nunca um objetivo de demonstração.
+
+- **Explícito × derivado:** objetivo/resumo/decisões são texto editável guardado; pendências e
+  "próximo passo" **não** são editáveis — derivam de aprovações/execuções reais e aparecem com o
+  rótulo *"derivado de aprovações/execuções reais"*.
+- **Privacidade:** a auditoria registra `session_focus.updated` com o dono e a contagem de
+  decisões, **nunca** o texto; limites (500/4000/20×400 bytes) são rejeitados com 400, sem
+  truncamento silencioso. Testes: `tests/session-focus.test.mjs` (8) e
+  `src/test/overview-session-focus.test.tsx` (3).
