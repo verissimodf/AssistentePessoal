@@ -2,6 +2,30 @@
 
 Tudo é configurado no painel (**Configurações**) e salvo cifrado em `data/jarvis.db`.
 
+## Proveniência dos valores
+
+A aba **Proveniência** mostra, para cada caminho efetivo de configuração, de onde o valor vem
+(`GET /api/settings/provenance`, `settings:read`):
+
+- **padrão** — valor de fábrica (`PERSONAL_DEFAULTS`/`GLOBAL_DEFAULTS`), nada gravado;
+- **pessoal** — gravado no registro pessoal **deste** administrador (`admin_settings`);
+- **global** — política da instalação (`host`, `integrations`, `voice.localVoiceUrl`), que um
+  administrador sem `allowGlobal` não altera.
+
+Regras de exposição (servidor nunca devolve valores):
+
+- segredos (`apiKey`, `token`, ...) aparecem **apenas** como marca `secret` — nem mascarados;
+- variáveis de ambiente sensíveis (`JARVIS_MASTER_KEY`, `JARVIS_SERVICE_TOKEN`, `JARVIS_DATA_DIR`,
+  `JARVIS_URL`) aparecem só como **definida/não definida**, com "valor não exibido";
+- as demais variáveis permitidas na allowlist (`NODE_ENV`, `JARVIS_HOST`, `JARVIS_PORT`,
+  `JARVIS_COOKIE_SECURE`, `JARVIS_ALLOWED_ORIGINS`, `JARVIS_MAX_UPLOAD`, `JARVIS_MAX_DOCUMENT`,
+  `JARVIS_MAIL_TRANSPORT`, `JARVIS_NO_LISTEN`) aparecem com o valor.
+
+Limite honesto: o inventário cobre o **formato efetivo do servidor**. Campos que o painel completa
+com o catálogo local quando o registro não os guarda (ex.: outros campos de um provedor parcial)
+não têm caminho efetivo e por isso não são listados — a origem deles é o catálogo do painel, não um
+valor gravado.
+
 ## Provedores de IA
 | Provedor | URL base padrão | Chave |
 |---|---|---|

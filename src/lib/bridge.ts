@@ -339,6 +339,30 @@ export async function saveSessionFocus(focus: {
 }): Promise<SessionFocus> {
   return api<SessionFocus>("/api/session-focus", { method: "PUT", body: JSON.stringify(focus) });
 }
+
+// ---------- P0.2: proveniência das configurações (origem de cada valor, nunca o valor) ----------
+export type ProvenanceRow = {
+  path: string;
+  origin: "default" | "personal" | "global";
+  class: string;
+  secret: boolean;
+};
+export type Provenance = {
+  keys: ProvenanceRow[];
+  env: {
+    reported: { name: string; set: boolean; value: string | null }[];
+    presenceOnly: { name: string; set: boolean }[];
+  };
+};
+/** Inventário de proveniência. `null` = indisponível (offline) — nunca um inventário de demonstração. */
+export async function loadProvenance(): Promise<Provenance | null> {
+  try {
+    if (await ping()) return await api<Provenance>("/api/settings/provenance");
+  } catch {
+    /* offline ou sessão expirada */
+  }
+  return null;
+}
 /** Histórico de auditoria (escopo `audit:read`). `null` = indisponível ou sem permissão. */
 export async function loadAudit(): Promise<AuditRow[] | null> {
   if (!(await ping())) return null;
