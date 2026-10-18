@@ -36,28 +36,27 @@ test("migrações: versões estritamente crescentes, únicas e contíguas a part
   }
 });
 
-test("existe exatamente UMA migração v12 e é a session_focus (o v12 do RFC antigo está proibido)", () => {
-  const v12 = MIGRATIONS.filter((m) => m.version === 11);
-  assert.equal(v12.length, 1, "exactamente uma migração v12 — nunca uma segunda");
-  assert.match(v12[0].name, /session_focus/, "o v12 real é o session_focus (P0.2)");
-  assert.ok(v12[0].expect?.length, "a v12 mantém a asserção de esquema (expect) do P0.3.1");
-  // Tabelas propostas no RFC como "v12" só podem existir como v12+ (e após desenho aprovado).
-  const rfcTables = ["simulador_indices"];
-  for (const t of rfcTables) {
-    const wrong = MIGRATIONS.filter((m) => m.version <= 11 && new RegExp(`CREATE TABLE (IF NOT EXISTS )?${t}\\b`).test(m.sql));
-    assert.equal(wrong.length, 0, `${t} não pode aparecer antes da v12 (RFC antigo renumerado)`);
+test("existe exatamente UMA migração v11 e é a session_focus", () => {
+  const v11 = MIGRATIONS.filter((m) => m.version === 11);
+  assert.equal(v11.length, 1, "exactamente uma migração v11");
+  assert.match(v11[0].name, /session_focus/, "o v11 real é o session_focus (P0.2)");
+  assert.ok(v11[0].expect?.length, "a v11 mantém a asserção de esquema");
+  const v12 = MIGRATIONS.filter((m) => m.version === 12);
+  assert.equal(v12.length, 1, "exactamente uma migração v12");
+  assert.match(v12[0].name, /heartbeat/);
+  assert.deepEqual(v12[0].expect.map((x) => x.table).sort(), ["autonomy_intentions", "survival_state"]);
+  const forbiddenPreV12 = ["autonomy_intentions", "survival_state", "simulador_indices"];
+  for (const table of forbiddenPreV12) {
+    const wrong = MIGRATIONS.filter((m) => m.version < 12 && new RegExp(`CREATE TABLE (IF NOT EXISTS )?${table}\\\\b`).test(typeof m.sql === "function" ? String(m.sql) : m.sql));
+    assert.equal(wrong.length, 0, `${table} não pode aparecer antes da v12`);
   }
 });
 
-test("targetVersion é 11 — qualquer mudança de schema exige atualizar este guardião de propósito", () => {
+test("targetVersion é 12 — qualquer mudança de schema exige atualizar este guardião de propósito", () => {
   // Se alguém acrescentar v12, este teste FALHA e obriga a rever: testes de migração,
   // rollback, preservação, execution-evidence (user_version) e o runbook de recuperação.
   assert.equal(targetVersion(), 12);
   assert.equal(MIGRATIONS.at(-1).version, targetVersion());
-  const v12 = MIGRATIONS.filter((m) => m.version === 12);
-  assert.equal(v12.length, 1, "exatamente uma migração v12");
-  assert.match(v12[0].name, /heartbeat/);
-  assert.deepEqual(v12[0].expect.map((x) => x.table).sort(), ["autonomy_intentions", "survival_state"]);
 });
 
 test("PRESERVED é exatamente o conjunto protegido (adições/remoções exigem justificativa própria)", () => {
