@@ -262,6 +262,23 @@ test("integração: timeout de etapa respeitado, saída dentro do prazo e zero p
   } finally { server.close(); }
 });
 
+test("CLI: cenário inválido ⇒ rc 3 com evidência de validação (guarda o wiring do CLI em qualquer SO)", { timeout: 60000 }, async () => {
+  // Este teste apanha o modo de falha "CLI não corre nada e sai 0" (ex.: bug de caminho no
+  // Windows que fez `invokedDirectly` ser falso) — não precisa de Chrome.
+  const dir = mkdtempSync(join(tmpdir(), "jarvis-worker-cli-"));
+  const scenarioPath = join(dir, "mau.json");
+  const evidencePath = join(dir, "ev.json");
+  writeFileSync(scenarioPath, JSON.stringify({ name: "invalido" }));
+  const rc = await new Promise((res) => {
+    const p = spawn(process.execPath, [WORKER, "--scenario", scenarioPath, "--evidence", evidencePath], { stdio: "ignore" });
+    p.on("exit", res);
+  });
+  assert.equal(rc, 3, "cenário inválido ⇒ 3 (e não 0: o CLI tem de correr mesmo)");
+  const ev = JSON.parse(readFileSync(evidencePath, "utf8"));
+  assert.match(ev.summary.validationError, /allowedOrigins|obrigatório/);
+  assert.deepEqual(ev.steps, []);
+});
+
 test("arranque inexistente: rc=2 com evidência de startupFailure e sem perfil remanescente", { timeout: 60000 }, async () => {
   const antes = profilesLeft().length;
   const { rc, evidence } = await runWorker({
