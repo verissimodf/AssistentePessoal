@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   WORKER_ID, UNTRUSTED_MARKER, ScenarioError,
   validateScenario, isDestinationAllowed, redactUrl, parseAllowedOrigin,
@@ -15,9 +16,27 @@ import {
 // Unidades (rápidas, sem Chrome) + integração com Chrome real (perfil descartável, ~25-35s cada:
 // a primeira navegação HTTP por instância do Chrome custa ~25s neste ambiente e é absorvida pelo
 // warm-up do worker — medido e documentado no próprio worker).
+//
+// Os testes de INTEGRAÇÃO só correm onde há um Chrome executável (o worker usa a mesma
+// resolução: BROWSER_WORKER_CHROME, depois nomes no PATH). Num runner sem Chrome ficam
+// explicitamente `skip` (nunca falso sucesso) — a cobertura real é feita onde o Chrome existe.
 
-const WORKER = resolve(new URL("../scripts/browser-worker.mjs", import.meta.url).pathname);
-const CHROME = process.env.BROWSER_WORKER_CHROME || "google-chrome";
+// fileURLToPath (nunca `.pathname`): no Windows o pathname dá `/D:/...` e o processo não arranca.
+const WORKER = fileURLToPath(new URL("../scripts/browser-worker.mjs", import.meta.url));
+const CHROME_CANDIDATES = [
+  process.env.BROWSER_WORKER_CHROME,
+  "google-chrome", "chromium", "chromium-browser", "chrome", "chrome.exe",
+].filter(Boolean);
+const CHROME = (() => {
+  for (const c of CHROME_CANDIDATES) {
+    try {
+      const r = spawnSync(c, ["--version"], { timeout: 15000, stdio: "ignore" });
+      if (!r.error) return c;
+    } catch { /* tenta o próximo */ }
+  }
+  return null;
+})();
+const SEM_CHROME = "Chrome executável indisponível neste ambiente — teste de integração real não corre (não simulado)";
 const ORIGIN = "http://127.0.0.1:7912";
 const limits = (over = {}) => ({
   totalTimeoutMs: 120000, stepTimeoutMs: 20000, maxNavigations: 3, maxActions: 10, ...over,
@@ -113,11 +132,14 @@ test("validateScenario: ações, seletores, secrets e navegações sob controle"
 });
 
 test("assertSafePath: evidência/cenário nunca em data/, .db ou master.key", () => {
-  assert.equal(assertSafePath("/tmp/opencode/x.json", "ev"), "/tmp/opencode/x.json");
+  const ok = join(tmpdir(), "opencode", "x.json");
+  assert.equal(assertSafePath(ok, "ev"), resolve(ok));
   assert.throws(() => assertSafePath("relativo/x.json", "ev"), /absoluto/);
-  assert.throws(() => assertSafePath("/opt/laytech-ai/AssistentePessoal/data/x.json", "ev"), /data\//);
-  assert.throws(() => assertSafePath("/opt/laytech-ai/AssistentePessoal/data/jarvis.db", "ev"), /data\//);
-  assert.throws(() => assertSafePath("/opt/laytech-ai/AssistentePessoal/data/master.key", "ev"), /master.key/);
+  // Caminhos montados com `join` (funcionam em Windows e POSIX).
+  const dentroDeData = (...p) => join(tmpdir(), "projeto", "data", ...p);
+  assert.throws(() => assertSafePath(dentroDeData("x.json"), "ev"), /data\//);
+  assert.throws(() => assertSafePath(dentroDeData("jarvis.db"), "ev"), /data\//);
+  assert.throws(() => assertSafePath(dentroDeData("master.key"), "ev"), /master.key/);
 });
 
 // ---------------------------------------------------------------- integração (Chrome real)
@@ -165,7 +187,7 @@ function runWorker(scenarioObj, { chrome = CHROME, env = {} } = {}) {
   });
 }
 
-test("integração: injeção vira dado marcado; metadados bloqueados na rede e na navegação; congela o resto", { timeout: 180000 }, async () => {
+test("integração: injeção vira dado marcado; metadados bloqueados na rede e na navegação; congela o resto", { timeout: 180000, skip: CHROME ? false : SEM_CHROME }, async () => {
   const { server, origin } = await startFixture();
   try {
     const { rc, evidence } = await runWorker({
@@ -195,7 +217,7 @@ test("integração: injeção vira dado marcado; metadados bloqueados na rede e 
   } finally { server.close(); }
 });
 
-test("integração: credencial ausente bloqueia a etapa e nenhum valor é registado", { timeout: 180000 }, async () => {
+test("integração: credencial ausente bloqueia a etapa e nenhum valor é registado", { timeout: 180000, skip: CHROME ? false : SEM_CHROME }, async () => {
   const { server, origin } = await startFixture();
   try {
     const { rc, evidence } = await runWorker({
@@ -218,7 +240,7 @@ test("integração: credencial ausente bloqueia a etapa e nenhum valor é regist
   } finally { server.close(); }
 });
 
-test("integração: timeout de etapa respeitado, saída dentro do prazo e zero perfis remanescentes", { timeout: 180000 }, async () => {
+test("integração: timeout de etapa respeitado, saída dentro do prazo e zero perfis remanescentes", { timeout: 180000, skip: CHROME ? false : SEM_CHROME }, async () => {
   const { server, origin } = await startFixture();
   const antes = profilesLeft().length;
   try {

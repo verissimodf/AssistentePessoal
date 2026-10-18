@@ -220,7 +220,9 @@ export function validateScenario(raw) {
 export function assertSafePath(p, label) {
   if (typeof p !== "string" || !isAbsolute(p)) throw new ScenarioError(`${label} tem de ser caminho absoluto`);
   const norm = resolve(p);
-  const parts = norm.split("/");
+  // Separadores de ambos os SOs: no Windows `resolve` devolve `\` e a proteção de data/ tem de
+  // funcionar lá também (não basta dividir por "/").
+  const parts = norm.split(/[\\/]+/);
   if (parts.includes("data")) throw new ScenarioError(`${label} não pode estar dentro de data/ (banco/segredos): ${norm}`);
   if (parts.some((x) => x === "master.key")) throw new ScenarioError(`${label} não pode referenciar master.key`);
   if (norm.endsWith(".db")) throw new ScenarioError(`${label} não pode terminar em .db`);
