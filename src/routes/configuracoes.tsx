@@ -13,6 +13,7 @@ import { createClapDetector, thresholdFromSensitivity } from "@/lib/clap";
 import { LANGS, useI18n, type Lang } from "@/lib/i18n";
 import { SecurityPanel } from "@/components/SecurityPanel";
 import { DiagnosticoPanel } from "@/components/DiagnosticoPanel";
+import { ProvenancePanel } from "@/components/ProvenancePanel";
 import { useAuthText } from "@/components/AuthGate";
 
 export const Route = createFileRoute("/configuracoes")({
@@ -91,11 +92,15 @@ function SettingsPage() {
           <TabsTrigger value="general">{t("s_general")}</TabsTrigger>
           <TabsTrigger value="security">{a("security")}</TabsTrigger>
           <TabsTrigger value="diagnostics">{t("s_diagnostics")}</TabsTrigger>
+          <TabsTrigger value="provenance">{t("s_provenance")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="security"><SecurityPanel /></TabsContent>
 
         <TabsContent value="diagnostics"><DiagnosticoPanel /></TabsContent>
+
+        {/* P0.2 — proveniência efetiva: origem de cada valor, sem expor segredos. */}
+        <TabsContent value="provenance"><ProvenancePanel /></TabsContent>
 
         <TabsContent value="providers" className="grid gap-3 md:grid-cols-2">
           {PROVIDERS.map((p) => {

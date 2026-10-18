@@ -30,6 +30,9 @@ distinta (lista vazia → "Nenhum registro").
   técnico**, **código de saída**, **verificação da pós-condição** e **método**, correlação e
   `audit_id`. Estados distintos: concluído / falha / negado / interrompido / desconhecido;
   verificação: verificado / não verificado / indeterminado.
+- **Configurações → Proveniência** (`/configuracoes`): de onde vem cada valor efetivo
+  (padrão/pessoal/global) e as variáveis de ambiente — sem valores nem segredos; ver
+  `docs/CONFIGURACAO.md` §"Proveniência dos valores".
 
 ## Pós-condição (Fase 4)
 

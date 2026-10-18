@@ -12,8 +12,10 @@ import { AuthError } from "./auth.js";
 
 const keyFile = join(DATA_DIR, "master.key");
 function masterKey() {
-  if (process.env.JARVIS_MASTER_KEY) return createHash("sha256").update(process.env.JARVIS_MASTER_KEY).digest();
-  if (!existsSync(keyFile)) writeFileSync(keyFile, randomBytes(32).toString("hex"), { mode: 0o600 });
+  if (process.env.JARVIS_MASTER_KEY)
+    return createHash("sha256").update(process.env.JARVIS_MASTER_KEY).digest();
+  if (!existsSync(keyFile))
+    writeFileSync(keyFile, randomBytes(32).toString("hex"), { mode: 0o600 });
   return Buffer.from(readFileSync(keyFile, "utf8").trim(), "hex");
 }
 const KEY = masterKey();
@@ -37,9 +39,16 @@ export const isSecretField = (k) => /key|token|password|secret/i.test(k);
 // ---------- classification (D5) ----------
 export const PERSONAL_DEFAULTS = {
   general: { agentName: "Jarvis", language: "pt" },
-  providers: { ollama: { enabled: true, baseUrl: "http://ollama-llm:11434/v1", model: "llama3.1" } },
+  providers: {
+    ollama: { enabled: true, baseUrl: "http://ollama-llm:11434/v1", model: "llama3.1" },
+  },
   comms: {},
-  voice: { tts: "browser", wake: { clap: true, word: true, hotkey: true, ptt: true }, sensitivity: 6, hotkey: "Ctrl+Shift+J" },
+  voice: {
+    tts: "browser",
+    wake: { clap: true, word: true, hotkey: true, ptt: true },
+    sensitivity: 6,
+    hotkey: "Ctrl+Shift+J",
+  },
 };
 export const GLOBAL_DEFAULTS = {
   host: { enabled: false, allowlist: "ls, dir, git status, code ., start, xdg-open" },
@@ -54,7 +63,8 @@ export function classifyKey(path) {
   if (top === "host" || top === "integrations") return "global";
   if (top === "voice") return sub === "localVoiceUrl" ? "global" : "personal";
   if (top === "providers" || top === "comms") return "personal";
-  if (top === "general") return sub === undefined || PERSONAL_GENERAL.includes(sub) ? "personal" : "unclassified";
+  if (top === "general")
+    return sub === undefined || PERSONAL_GENERAL.includes(sub) ? "personal" : "unclassified";
   return "unclassified";
 }
 
@@ -62,33 +72,51 @@ export function classifyKey(path) {
 export function personalPart(s = {}) {
   const out = {};
   if (s.general && typeof s.general === "object") {
-    const g = Object.fromEntries(Object.entries(s.general).filter(([k]) => PERSONAL_GENERAL.includes(k)));
+    const g = Object.fromEntries(
+      Object.entries(s.general).filter(([k]) => PERSONAL_GENERAL.includes(k)),
+    );
     if (Object.keys(g).length) out.general = g;
   }
-  if (s.voice && typeof s.voice === "object") { const { localVoiceUrl: _drop, ...v } = s.voice; if (Object.keys(v).length) out.voice = v; }
+  if (s.voice && typeof s.voice === "object") {
+    const { localVoiceUrl: _drop, ...v } = s.voice;
+    if (Object.keys(v).length) out.voice = v;
+  }
   for (const k of ["providers", "comms"]) if (s[k] && typeof s[k] === "object") out[k] = s[k];
   return out;
 }
 
 // ---------- raw storage ----------
-const readJson = (sql, ...a) => { const r = db.prepare(sql).get(...a); return r ? JSON.parse(r.data) : null; };
-const rawPersonal = (adminId) => (adminId ? readJson("SELECT data FROM admin_settings WHERE admin_id = ?", adminId) : null);
+const readJson = (sql, ...a) => {
+  const r = db.prepare(sql).get(...a);
+  return r ? JSON.parse(r.data) : null;
+};
+const rawPersonal = (adminId) =>
+  adminId ? readJson("SELECT data FROM admin_settings WHERE admin_id = ?", adminId) : null;
 function rawGlobal() {
   const g = readJson("SELECT data FROM global_settings WHERE id = 1") || {};
-  const clean = Object.fromEntries(Object.entries(g).filter(([, v]) => v !== null && v !== undefined));
+  const clean = Object.fromEntries(
+    Object.entries(g).filter(([, v]) => v !== null && v !== undefined),
+  );
   return { ...GLOBAL_DEFAULTS, ...clean, host: { ...GLOBAL_DEFAULTS.host, ...(clean.host || {}) } };
 }
 
 const walkDecrypt = (o) => {
   if (!o || typeof o !== "object" || Array.isArray(o)) return o;
-  return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, isSecretField(k) && typeof v === "string" ? decrypt(v) : walkDecrypt(v)]));
+  return Object.fromEntries(
+    Object.entries(o).map(([k, v]) => [
+      k,
+      isSecretField(k) && typeof v === "string" ? decrypt(v) : walkDecrypt(v),
+    ]),
+  );
 };
 const walkMask = (o) => {
   if (!o || typeof o !== "object" || Array.isArray(o)) return o;
   const out = {};
   for (const [k, v] of Object.entries(o)) {
-    if (isSecretField(k) && typeof v === "string") { if (v) out.hasKey = true; out[k] = ""; }
-    else out[k] = walkMask(v);
+    if (isSecretField(k) && typeof v === "string") {
+      if (v) out.hasKey = true;
+      out[k] = "";
+    } else out[k] = walkMask(v);
   }
   return out;
 };
@@ -97,8 +125,9 @@ const merge = (cur, inc) => {
   const out = { ...(cur && typeof cur === "object" ? cur : {}) };
   for (const [k, v] of Object.entries(inc)) {
     if (k === "hasKey") continue;
-    if (isSecretField(k) && typeof v === "string") { if (v) out[k] = encrypt(v); }
-    else out[k] = merge(cur?.[k], v);
+    if (isSecretField(k) && typeof v === "string") {
+      if (v) out[k] = encrypt(v);
+    } else out[k] = merge(cur?.[k], v);
   }
   return out;
 };
@@ -141,24 +170,34 @@ const isHttpUrl = (v) => typeof v === "string" && /^https?:\/\//i.test(v);
 const insideContainer = () => existsSync("/.dockerenv") || existsSync("/run/.containerenv");
 
 function hostOf(url) {
-  try { return new URL(url).hostname; } catch { return ""; }
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "";
+  }
 }
 
 function assertNoContainerIpUrls(inc) {
   if (!insideContainer()) return;
   const offenders = [];
   for (const [id, cfg] of Object.entries(inc.providers || {})) {
-    if (isHttpUrl(cfg?.baseUrl) && PRIVATE_IPV4_HOST.test(hostOf(cfg.baseUrl))) offenders.push(`providers.${id}.baseUrl`);
+    if (isHttpUrl(cfg?.baseUrl) && PRIVATE_IPV4_HOST.test(hostOf(cfg.baseUrl)))
+      offenders.push(`providers.${id}.baseUrl`);
   }
   for (const [id, cfg] of Object.entries(inc.integrations || {})) {
-    if (isHttpUrl(cfg?.command) && PRIVATE_IPV4_HOST.test(hostOf(cfg.command))) offenders.push(`integrations.${id}.command`);
+    if (isHttpUrl(cfg?.command) && PRIVATE_IPV4_HOST.test(hostOf(cfg.command)))
+      offenders.push(`integrations.${id}.command`);
   }
   // URLs de comunicação (ex.: feed ICS da agenda) também são buscadas pelo serviço.
   for (const [id, cfg] of Object.entries(inc.comms || {})) {
-    if (isHttpUrl(cfg?.icsUrl) && PRIVATE_IPV4_HOST.test(hostOf(cfg.icsUrl))) offenders.push(`comms.${id}.icsUrl`);
+    if (isHttpUrl(cfg?.icsUrl) && PRIVATE_IPV4_HOST.test(hostOf(cfg.icsUrl)))
+      offenders.push(`comms.${id}.icsUrl`);
   }
   if (offenders.length) {
-    throw new AuthError(400, `private_ip_url_not_allowed: ${offenders.join(", ")} — use o DNS de serviço (ex.: http://servico:porta)`);
+    throw new AuthError(
+      400,
+      `private_ip_url_not_allowed: ${offenders.join(", ")} — use o DNS de serviço (ex.: http://servico:porta)`,
+    );
   }
 }
 
@@ -178,23 +217,124 @@ export function updateSettings(incoming = {}, { adminId = null, allowGlobal = tr
     if (!allowGlobal) throw new AuthError(403, "global_settings_admin_only");
     const cur = readJson("SELECT data FROM global_settings WHERE id = 1") || {};
     const next = merge(cur, g);
-    if (next.host) next.host = { enabled: !!next.host.enabled, allowlist: String(next.host.allowlist ?? GLOBAL_DEFAULTS.host.allowlist) };
-    db.prepare("INSERT INTO global_settings (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data").run(JSON.stringify(next));
+    if (next.host)
+      next.host = {
+        enabled: !!next.host.enabled,
+        allowlist: String(next.host.allowlist ?? GLOBAL_DEFAULTS.host.allowlist),
+      };
+    db.prepare(
+      "INSERT INTO global_settings (id, data) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+    ).run(JSON.stringify(next));
   }
   const p = personalPart(inc);
   if (adminId && Object.keys(p).length) {
     const next = merge(rawPersonal(adminId) || {}, p);
-    db.prepare("INSERT INTO admin_settings (admin_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(admin_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at")
-      .run(adminId, JSON.stringify(next), now());
+    db.prepare(
+      "INSERT INTO admin_settings (admin_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(admin_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
+    ).run(adminId, JSON.stringify(next), now());
   }
   return publicSettings(adminId);
+}
+
+// ---------- P0.2: proveniência efetiva (origem de cada valor, nunca o valor em si) ----------
+// O painel precisa distinguir "este valor é meu/pessoal", "é a política global da instalação" e
+// "é o padrão de fábrica" — sem expor segredos. Segredos entram apenas como `secret: true`; o
+// valor NUNCA sai daqui (nem desencriptado, nem mascarado).
+
+/** Variáveis de ambiente cujo VALOR é seguro mostrar (config operacional não sensível). */
+export const ENV_REPORTED = [
+  "NODE_ENV",
+  "JARVIS_HOST",
+  "JARVIS_PORT",
+  "JARVIS_COOKIE_SECURE",
+  "JARVIS_ALLOWED_ORIGINS",
+  "JARVIS_MAX_UPLOAD",
+  "JARVIS_MAX_DOCUMENT",
+  "JARVIS_MAIL_TRANSPORT",
+  "JARVIS_NO_LISTEN",
+];
+/** Variáveis que podem conter segredo/caminho: só "definida/não definida", nunca o valor. */
+export const ENV_PRESENCE_ONLY = [
+  "JARVIS_MASTER_KEY",
+  "JARVIS_SERVICE_TOKEN",
+  "JARVIS_DATA_DIR",
+  "JARVIS_URL",
+];
+
+const envRaw = (name) => {
+  const v = process.env[name];
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+};
+
+export function envProvenance() {
+  return {
+    reported: ENV_REPORTED.map((name) => ({
+      name,
+      set: envRaw(name) !== null,
+      value: envRaw(name),
+    })),
+    presenceOnly: ENV_PRESENCE_ONLY.map((name) => ({ name, set: envRaw(name) !== null })),
+  };
+}
+
+const hasPath = (obj, parts) => {
+  let cur = obj;
+  for (const p of parts) {
+    if (!cur || typeof cur !== "object" || !Object.hasOwn(cur, p)) return false;
+    cur = cur[p];
+  }
+  return true;
+};
+
+// O registro global guarda `host.*`, `integrations.*` e `localVoiceUrl` (não `voice.localVoiceUrl`).
+const globalParts = (parts) => {
+  const [top, sub] = parts;
+  if (top === "voice") return sub === "localVoiceUrl" ? ["localVoiceUrl"] : null;
+  if (top === "host" || top === "integrations") return parts;
+  return null;
+};
+
+/**
+ * Proveniência de CADA caminho efetivo para um administrador:
+ *   `default`  → valor de fábrica (nada gravado);
+ *   `personal` → gravado no registro pessoal DESTE administrador;
+ *   `global`   → gravado na política global da instalação (host/integrações/voz local).
+ * Devolve caminho, classe, origem e se é segredo — nunca valores.
+ */
+export function settingsProvenance(adminId = null) {
+  const personal = rawPersonal(adminId) || {};
+  const globalRecord = readJson("SELECT data FROM global_settings WHERE id = 1") || {};
+  const effective = publicSettings(adminId);
+  const keys = [];
+  const walk = (obj, prefix = "") => {
+    for (const [k, v] of Object.entries(obj || {})) {
+      const path = prefix ? `${prefix}.${k}` : k;
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        walk(v, path);
+        continue;
+      }
+      const parts = path.split(".");
+      const gParts = globalParts(parts);
+      const origin = gParts
+        ? hasPath(globalRecord, gParts)
+          ? "global"
+          : "default"
+        : hasPath(personal, parts)
+          ? "personal"
+          : "default";
+      keys.push({ path, origin, class: classifyKey(path), secret: isSecretField(k) });
+    }
+  };
+  walk(effective);
+  return { keys, env: envProvenance() };
 }
 
 // ---------- legacy settings (pre-Phase-2 single record) ----------
 function keyPaths(o, prefix = "", depth = 0, out = []) {
   for (const [k, v] of Object.entries(o || {})) {
     const path = prefix ? `${prefix}.${k}` : k;
-    if (v && typeof v === "object" && !Array.isArray(v) && depth < 2) keyPaths(v, path, depth + 1, out);
+    if (v && typeof v === "object" && !Array.isArray(v) && depth < 2)
+      keyPaths(v, path, depth + 1, out);
     else out.push({ key: path, class: classifyKey(path), secret: isSecretField(k) });
   }
   return out;
@@ -202,9 +342,16 @@ function keyPaths(o, prefix = "", depth = 0, out = []) {
 
 /** Inventory of the legacy record: key names, classification and status — never values. */
 export function legacySettingsInventory() {
-  const r = db.prepare("SELECT data, claimed_by, claimed_at FROM legacy_settings WHERE id = 1").get();
+  const r = db
+    .prepare("SELECT data, claimed_by, claimed_at FROM legacy_settings WHERE id = 1")
+    .get();
   if (!r) return { present: false };
-  return { present: true, claimed: !!r.claimed_by, claimedAt: r.claimed_at, keys: keyPaths(JSON.parse(r.data)) };
+  return {
+    present: true,
+    claimed: !!r.claimed_by,
+    claimedAt: r.claimed_at,
+    keys: keyPaths(JSON.parse(r.data)),
+  };
 }
 
 /**
@@ -222,11 +369,22 @@ export function claimLegacySettings(adminId, confirm) {
     if (r.claimed_by) throw new AuthError(409, "already_claimed");
     if (rawPersonal(adminId)) throw new AuthError(409, "personal_settings_not_empty");
     const at = now();
-    db.prepare("UPDATE legacy_settings SET claimed_by = ?, claimed_at = ? WHERE id = 1 AND claimed_by IS NULL").run(adminId, at);
-    db.prepare("INSERT INTO admin_settings (admin_id, data, updated_at) VALUES (?, ?, ?)").run(adminId, JSON.stringify(personalPart(JSON.parse(r.data))), at);
-    db.prepare("INSERT INTO legacy_claims (resource_type, resource_id, admin_id, at) VALUES ('settings', 'legacy_settings', ?, ?)").run(adminId, at);
+    db.prepare(
+      "UPDATE legacy_settings SET claimed_by = ?, claimed_at = ? WHERE id = 1 AND claimed_by IS NULL",
+    ).run(adminId, at);
+    db.prepare("INSERT INTO admin_settings (admin_id, data, updated_at) VALUES (?, ?, ?)").run(
+      adminId,
+      JSON.stringify(personalPart(JSON.parse(r.data))),
+      at,
+    );
+    db.prepare(
+      "INSERT INTO legacy_claims (resource_type, resource_id, admin_id, at) VALUES ('settings', 'legacy_settings', ?, ?)",
+    ).run(adminId, at);
     audit("legacy.settings_claimed", { admin: adminId });
     db.exec("COMMIT");
-  } catch (e) { db.exec("ROLLBACK"); throw e; }
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
   return { ok: true };
 }
