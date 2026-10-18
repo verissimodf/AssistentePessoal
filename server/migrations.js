@@ -329,7 +329,7 @@ CREATE TABLE IF NOT EXISTS session_focus (
         primaryKey: ["admin_id"],
       },
     ],
-  },,
+  },
 
   {
     version: 12,
