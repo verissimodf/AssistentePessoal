@@ -134,6 +134,13 @@ export async function readCalendar(adminId, days = 7) {
  * sender are never trusted for identity. Only the configured chatId is accepted.
  */
 export function startTelegramPolling(onMessage, listAdmins) {
+  if (typeof onMessage !== "function") {
+    throw new TypeError("startTelegramPolling exige onMessage como função");
+  }
+  if (typeof listAdmins !== "function") {
+    throw new TypeError("startTelegramPolling exige listAdmins como função");
+  }
+
   const offsets = new Map();
   const tick = async () => {
     for (const adminId of listAdmins()) {
