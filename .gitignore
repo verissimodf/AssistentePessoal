@@ -39,3 +39,9 @@ scripts/voz/.venv/
 
 # Grafo de conhecimento gerado (graphify) — artefato, não fonte
 graphify-out/
+
+# Metadados de build (P0.2): artefatos gerados, nunca fonte. O `build-info.json` é gravado pelo
+# build da imagem e lido pelo serviço; o `.app-version` é extraído do package.json durante o build.
+# Commit e versão entram por `--build-arg`, nunca por arquivo versionado.
+server/build-info.json
+.app-version

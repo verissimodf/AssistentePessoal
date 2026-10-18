@@ -24,8 +24,13 @@ import { startTelegramPolling, sendMessage, describeSend, sendFingerprint } from
 import { getMailService, setMailTransport } from "./mail-service.js";
 import { redactAccount, ACCOUNT_TYPES } from "./mail.js";
 import { getDraftStore, setDraftStore } from "./mail-drafts.js";
+import { APP_VERSION, GIT_COMMIT, BUILD_TIME, BUILD_MODE } from "./build-info.js";
 
-const VERSION = "1.2.0";
+// Identidade da ÁRVORE construída (injetada no build por `scripts/write-build-info.mjs`).
+// `APP_VERSION` é o manifesto do repositório; o commit vem SÓ do `--build-arg GIT_SHA` e pode
+// ser `unknown` — nunca é inferido do branch atual, que não corresponde necessariamente à imagem.
+const VERSION = APP_VERSION;
+const BUILD_COMMIT = GIT_COMMIT;
 const COOKIE = "jarvis_sid";
 const SECURE_COOKIE = process.env.JARVIS_COOKIE_SECURE === "1";
 const MAX_BODY = 1_000_000;
@@ -97,11 +102,24 @@ const route = (method, pattern, access, fn) =>
 export const routeTable = () => routes.map(({ method, pattern, access }) => ({ method, pattern, access }));
 
 // Public (explicit, minimal). Health reveals only operational status.
-route("GET", "/api/health", "public", () => ({ ok: true, version: VERSION, setupRequired: auth.setupRequired() }));
+route(
+  "GET",
+  "/api/health",
+  "public",
+  () => ({
+    ok: true,
+    version: VERSION,
+    // Metadados públicos de build: "unknown" quando o build não os injetou. Nada sensível.
+    commit: BUILD_COMMIT,
+    buildTime: BUILD_TIME,
+    mode: BUILD_MODE,
+    setupRequired: auth.setupRequired(),
+  }),
+);
 
 // Fase I — Diagnóstico Operacional (etapas 1–3): inventário tipado, somente leitura, restrito à
 // sessão administrativa verificada. Sem sondas externas, sem segredos e sem qualquer mutação.
-route("GET", "/api/diagnostics", "session", ({ principal }) => collectDiagnostics({ adminId: principal.adminId, version: VERSION }));
+route("GET", "/api/diagnostics", "session", ({ principal }) => collectDiagnostics({ adminId: principal.adminId, version: VERSION, commit: BUILD_COMMIT, buildTime: BUILD_TIME }));
 route("POST", "/api/auth/setup", "public", ({ body }) => auth.setupFirstAdmin(body));
 route("POST", "/api/auth/login", "public", ({ body, req, res }) => {
   const r = auth.login({ username: body.username, password: body.password, ip: req.socket.remoteAddress, userAgent: req.headers["user-agent"], previousSid: readCookie(req) });

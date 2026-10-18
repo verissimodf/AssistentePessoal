@@ -40,7 +40,11 @@ let session; // { cookie, csrf }
 test("health is public and minimal", async () => {
   const r = await req("/api/health");
   assert.equal(r.status, 200);
-  assert.deepEqual(Object.keys(await r.json()).sort(), ["ok", "setupRequired", "version"]);
+  const body = await r.json();
+  // Contrato explícito: nenhum campo fora destes (nada de segredo, dono, config ou dado de sessão).
+  assert.deepEqual(Object.keys(body).sort(), ["buildTime", "commit", "mode", "ok", "setupRequired", "version"]);
+  // Identidade de build injetada pelo build, nunca adivinhada em runtime.
+  for (const k of ["version", "commit", "buildTime", "mode"]) assert.equal(typeof body[k], "string", k);
 });
 
 test("every non-public route rejects anonymous callers with 401", async () => {

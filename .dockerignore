@@ -19,3 +19,7 @@ graphify-out
 Dockerfile
 .dockerignore
 docker-compose*.yml
+# NOTA (P0.2 — metadados de build): `server/build-info.json` e `.app-version` NÃO estão nesta
+# lista de propósito. Ambos são gerados DURANTE o build (pelo `scripts/write-build-info.mjs` e
+# pela extração do package.json), então excluí-los daqui não teria efeito — e o serviço precisa
+# ler `server/build-info.json` na imagem. Ambos estão no `.gitignore` para não virarem fonte.

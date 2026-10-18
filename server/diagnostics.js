@@ -414,7 +414,7 @@ export function buildInventory(ctx) {
     ],
     [],
     "alta",
-    { versaoReportada: ctx.version || null, node: ctx.nodeVersion || null, uptimeSegundos: Math.round(ctx.uptimeSeconds || 0) },
+    { versaoReportada: ctx.version || null, commit: ctx.commit || null, buildTime: ctx.buildTime || null, node: ctx.nodeVersion || null, uptimeSegundos: Math.round(ctx.uptimeSeconds || 0) },
   ));
 
   if (ctx.bancoOk) {
@@ -793,6 +793,9 @@ export function buildInventory(ctx) {
     generatedAt: agora,
     versao: {
       app: ctx.version || null,
+      // Árvore construída: só o que o build injetou; sem adivinhar do branch atual.
+      commit: ctx.commit || null,
+      buildTime: ctx.buildTime || null,
       banco: ctx.schemaVersion ?? null,
       node: ctx.nodeVersion || null,
       uptimeSegundos: Math.round(ctx.uptimeSeconds || 0),
@@ -814,7 +817,7 @@ export function buildInventory(ctx) {
 // Coleta (somente leitura; sem rede; sem segredos) + montagem
 // ---------------------------------------------------------------------------
 
-export function collectDiagnostics({ adminId, version = null } = {}) {
+export function collectDiagnostics({ adminId, version = null, commit = null, buildTime = null } = {}) {
   const agora = new Date();
   const agoraIso = agora.toISOString();
 
@@ -894,6 +897,9 @@ export function collectDiagnostics({ adminId, version = null } = {}) {
   return buildInventory({
     now: agora,
     version,
+    // Metadados da árvore construída (injetados no build). `null`/`unknown` quando ausentes.
+    commit,
+    buildTime,
     schemaVersion,
     nodeVersion: process.version,
     uptimeSeconds: process.uptime(),

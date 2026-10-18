@@ -9,6 +9,9 @@ WORKDIR /app
 
 # Painel: instalação reprodutível a partir do lockfile versionado.
 COPY package.json package-lock.json ./
+# Versão declarada no manifesto do repositório (fonte versionada); o commit continua a vir só do
+# `--build-arg GIT_SHA` para nunca ser inferido do branch. Fica em `.app-version` para o ARG abaixo.
+RUN node -e 'process.stdout.write(require("./package.json").version)' > .app-version
 RUN npm ci --no-audit --no-fund
 
 # API: dependências de produção do backend.
@@ -17,6 +20,25 @@ RUN cd server && npm ci --no-audit --no-fund
 
 # Fontes + build de produção do painel (preset Nitro node-server).
 COPY . .
+# Metadados de build identificam a ÁRVORE EXATA usada aqui, gravados em `server/build-info.json`.
+# O commit NUNCA é inferido em runtime do branch atual (o processo roda sem git): se `--build-arg`
+# não for passado, fica `unknown` e o painel diz "Não registrado" em vez de adivinhar.
+# Versão por omissão = manifesto do repositório; um `--build-arg APP_VERSION` substitui.
+# `APP_VERSION` precisa de um default literal: sem ele o valor chega VAZIO e o parser não expande
+# `$VAR` dentro de valores de `LABEL`.
+ARG APP_VERSION=sem-build
+ARG GIT_SHA=unknown
+ARG BUILD_TIME=unknown
+# O `RUN` recebe os ARGs por expansão de SHELL (`$VAR`), não por sintaxe `${...}` — o parser não
+# expande `ARG` em valores de `RUN`/`ENV`/`LABEL`. Versão vazia/marcador → o script cai no
+# manifesto do repositório (`.app-version`, extraído do package.json no build).
+RUN APP_VERSION="$APP_VERSION" GIT_SHA="$GIT_SHA" BUILD_TIME="$BUILD_TIME" \
+      node scripts/write-build-info.mjs
+# `LABEL` não executa shell, então o marcador "sem-build" (usado apenas para forçar a expansão
+# da sintaxe `$VAR`) NÃO é descartado aqui e aparece como o label literal "sem-build". Ele nunca
+# é exibido: a versão do painel vem sempre do `server/build-info.json` (manifesto do repositório,
+# normalizado pelo `RUN` acima) — o label é só o marcador de auditoria da imagem.
+LABEL org.opencontainers.image.revision="$GIT_SHA" org.opencontainers.image.version="$APP_VERSION"
 RUN NITRO_PRESET=node-server npm run build
 
 # ---------- runtime ----------
