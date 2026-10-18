@@ -26,7 +26,13 @@ services:
         # sem `APP_VERSION` no ambiente o compose passa "sem-build" e o script cai no manifesto.
         APP_VERSION: ${APP_VERSION:-sem-build}
         BUILD_TIME: ${BUILD_TIME:-unknown}
-    image: assistente-pessoal:1.2.2-gigabrain1
+        # `RELEASE_BUILD=1` ativa a validação ESTRITA dos metadados no build (falha sem SHA
+        # completo/versão/instante). Releases usam `RELEASE_BUILD=1`; builds de teste não.
+        RELEASE_BUILD: ${RELEASE_BUILD:-}
+    # Tag dirigida pela release (P0.3.1): um deploy exporta `IMAGE_TAG` (ex.: 1.0.0) para a nova
+    # imagem NÃO sobrescrever a tag da versão em produção — que fica disponível como rollback.
+    # Por omissão mantém a tag atual para não partir fluxos que correm `compose up --build` sem env.
+    image: assistente-pessoal:${IMAGE_TAG:-1.2.2-gigabrain1}
     container_name: assistente-pessoal
     restart: unless-stopped
     # Não-root vem da própria imagem (`USER 1000:1000`), não duplicado aqui.

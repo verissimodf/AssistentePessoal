@@ -219,3 +219,60 @@ test("sem APP_VERSION o script cai no `.app-version` (manifesto do repositório)
   }
   rmSync(dataDir, { recursive: true, force: true });
 });
+
+// P0.3.1 — validação estrita de release: um release SEM identidade verificável tem de falhar o
+// build (nunca produzir uma imagem com "unknown" que só se descobre em produção).
+test("RELEASE_BUILD=1 recusa metadados incompletos (falha de build, nunca 'unknown')", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const dataDir = mkdtempSync(join(tmpdir(), "jarvis-buildinfo-strict-"));
+  let stderr = "";
+  assert.throws(() => {
+    try {
+      execFileSync(process.execPath, [join(process.cwd(), "scripts", "write-build-info.mjs")], {
+        env: {
+          ...process.env,
+          JARVIS_DATA_DIR: dataDir,
+          RELEASE_BUILD: "1",
+          GIT_SHA: "main",
+          BUILD_TIME: "agora",
+          APP_VERSION: "1.0.0",
+        },
+        encoding: "utf8",
+      });
+    } catch (e) {
+      stderr = String(e.stderr || "");
+      throw e;
+    }
+  });
+  assert.match(stderr, /RELEASE_BUILD com metadados inválidos/);
+  assert.match(stderr, /GIT_SHA inválido/);
+  rmSync(dataDir, { recursive: true, force: true });
+});
+
+test("RELEASE_BUILD=1 com SHA completo, versão e RFC3339 aprova e grava o JSON", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const dataDir = mkdtempSync(join(tmpdir(), "jarvis-buildinfo-strict-ok-"));
+  const sha = "1972e00b4e2d2a88516df7e29fd2227260bfa5d6";
+  const when = "2026-10-18T17:40:00Z";
+  const out = execFileSync(
+    process.execPath,
+    [join(process.cwd(), "scripts", "write-build-info.mjs")],
+    {
+      env: {
+        ...process.env,
+        JARVIS_DATA_DIR: dataDir,
+        RELEASE_BUILD: "1",
+        GIT_SHA: sha,
+        BUILD_TIME: when,
+        APP_VERSION: "1.0.0",
+      },
+      encoding: "utf8",
+    },
+  );
+  assert.match(out, /commit=1972e00b/, "o script confirma o SHA aceite");
+  const raw = JSON.parse(readFileSync(join(dataDir, "server", "build-info.json"), "utf8"));
+  assert.equal(raw.commit, sha);
+  assert.equal(raw.appVersion, "1.0.0");
+  assert.equal(raw.buildTime, when);
+  rmSync(dataDir, { recursive: true, force: true });
+});

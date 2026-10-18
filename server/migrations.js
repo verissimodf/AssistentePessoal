@@ -320,6 +320,15 @@ CREATE TABLE IF NOT EXISTS session_focus (
   updated_at TEXT
 );
 `,
+    // Asserção de esquema (P0.3.1): valida tipo, colunas e PK DEPOIS do SQL e ANTES do COMMIT.
+    expect: [
+      {
+        table: "session_focus",
+        type: "table",
+        columns: ["admin_id", "objective", "summary", "decisions", "updated_at"],
+        primaryKey: ["admin_id"],
+      },
+    ],
   },
 ];
 
@@ -429,6 +438,34 @@ export function backupAndVerify(db, dataDir, label) {
  * untouched) if the backup cannot be verified or any migration step fails.
  * opts.failAfterSql is a test hook that simulates a crash mid-migration.
  */
+// Asserção de esquema por migração (P0.3.1). `CREATE TABLE IF NOT EXISTS` NÃO falha quando já
+// existe QUALQUER objeto com o mesmo nome — uma VIEW homónima (ou uma tabela com estrutura
+// divergente) é ignorada em silêncio e a migração "conclui" sem criar a tabela de facto (observado
+// em ensaio real a 2026-10-18). Cada migração pode declarar `expect`; depois do seu SQL e antes do
+// COMMIT validamos tipo, colunas e PK, e qualquer divergência aborta com rollback — nunca uma
+// migração bem-sucedida sem os objetos que prometeu.
+function assertObjects(db, expect) {
+  for (const e of expect) {
+    const found = db.prepare("SELECT type FROM sqlite_master WHERE name = ?").get(e.table);
+    if (!found) throw new Error(`asserção de esquema: objeto ausente — ${e.table}`);
+    if (e.type && found.type !== e.type)
+      throw new Error(`asserção de esquema: ${e.table} é ${found.type}, esperado ${e.type}`);
+    const cols = db.prepare(`PRAGMA table_info("${e.table}")`).all();
+    const names = cols.map((c) => c.name);
+    const missing = (e.columns || []).filter((c) => !names.includes(c));
+    if (missing.length)
+      throw new Error(`asserção de esquema: ${e.table} sem colunas ${missing.join(", ")} (tem: ${names.join(", ")})`);
+    if (e.primaryKey) {
+      const pk = cols
+        .filter((c) => c.pk > 0)
+        .sort((a, b) => a.pk - b.pk)
+        .map((c) => c.name);
+      if (JSON.stringify(pk) !== JSON.stringify(e.primaryKey))
+        throw new Error(`asserção de esquema: PK de ${e.table} é [${pk.join(", ")}], esperado [${e.primaryKey.join(", ")}]`);
+    }
+  }
+}
+
 export function migrate(db, dataDir, opts = {}) {
   const from = currentVersion(db);
   const list = opts.migrations || MIGRATIONS; // test hook
@@ -441,6 +478,7 @@ export function migrate(db, dataDir, opts = {}) {
     db.exec("BEGIN IMMEDIATE");
     try {
       db.exec(typeof m.sql === "function" ? m.sql(db) : m.sql);
+      if (m.expect) assertObjects(db, m.expect); // objetos prometidos existem mesmo (antes do COMMIT)
       if (opts.failAfterSql === m.version) throw new Error("falha simulada");
       const after = snapshot(db);
       if (before !== after) throw new Error(`migração ${m.version} alterou dados preservados`);

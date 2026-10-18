@@ -29,20 +29,33 @@ COPY . .
 ARG APP_VERSION=sem-build
 ARG GIT_SHA=unknown
 ARG BUILD_TIME=unknown
+# `RELEASE_BUILD=1` liga a validação ESTRITA dos metadados no script abaixo: um release sem
+# identidade verificável (SHA completo, versão canônica, instante RFC3339) TEM DE FALHAR o build —
+# nunca produzir uma imagem com "unknown". Builds de desenvolvimento continuam tolerantes.
+ARG RELEASE_BUILD=
 # O `RUN` recebe os ARGs por expansão de SHELL (`$VAR`), não por sintaxe `${...}` — o parser não
 # expande `ARG` em valores de `RUN`/`ENV`/`LABEL`. Versão vazia/marcador → o script cai no
 # manifesto do repositório (`.app-version`, extraído do package.json no build).
 RUN APP_VERSION="$APP_VERSION" GIT_SHA="$GIT_SHA" BUILD_TIME="$BUILD_TIME" \
-      node scripts/write-build-info.mjs
+      RELEASE_BUILD="$RELEASE_BUILD" node scripts/write-build-info.mjs
 # `LABEL` não executa shell, então o marcador "sem-build" (usado apenas para forçar a expansão
 # da sintaxe `$VAR`) NÃO é descartado aqui e aparece como o label literal "sem-build". Ele nunca
 # é exibido: a versão do painel vem sempre do `server/build-info.json` (manifesto do repositório,
 # normalizado pelo `RUN` acima) — o label é só o marcador de auditoria da imagem.
-LABEL org.opencontainers.image.revision="$GIT_SHA" org.opencontainers.image.version="$APP_VERSION"
+LABEL org.opencontainers.image.revision="$GIT_SHA" \
+      org.opencontainers.image.version="$APP_VERSION" \
+      org.opencontainers.image.created="$BUILD_TIME"
 RUN NITRO_PRESET=node-server npm run build
 
 # ---------- runtime ----------
 FROM node:22.22-bookworm-slim AS runtime
+# Metadados de build na imagem FINAL (P0.3): o escopo de um `ARG` não atravessa um `FROM`, por
+# isso os ARGs são re-declarados aqui e o ficheiro gerado no estágio de build é copiado. Sem
+# estas linhas a imagem final reportaria `unknown` ("Não registrado") e não teria o label OCI —
+# foi exatamente isso que se observou num build sem elas.
+ARG APP_VERSION=sem-build
+ARG GIT_SHA=unknown
+ARG BUILD_TIME=unknown
 ENV NODE_ENV=production
 # HOME gravável pelo uid 1000 e estável: os agentes CLI recusam criar helpers sob /tmp.
 ENV HOME=/home/node
@@ -69,6 +82,11 @@ RUN npm install -g --no-audit --no-fund \
 COPY --from=build /app/server/node_modules ./server/node_modules
 # Código da API.
 COPY server/ ./server/
+# Identidade da árvore construída (gerada no estágio de build; `server/` do contexto não a traz).
+COPY --from=build /app/server/build-info.json ./server/build-info.json
+LABEL org.opencontainers.image.revision="$GIT_SHA" \
+      org.opencontainers.image.version="$APP_VERSION" \
+      org.opencontainers.image.created="$BUILD_TIME"
 # Painel já construído.
 COPY --from=build /app/.output ./.output
 # Entrada do container + ponte de voz.

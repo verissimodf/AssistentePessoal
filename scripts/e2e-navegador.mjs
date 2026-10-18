@@ -178,14 +178,29 @@ record(
 );
 
 // ---------- 5. Versão/commit honestos numa execução sem build metadata ----------
+// Com `E2E_EXPECT_VERSION`/`E2E_EXPECT_COMMIT` (ex.: correr contra a imagem candidata, que tem
+// build-info) verifica-se que os metadados REAIS aparecem; sem eles, que o painel diz
+// "Não registrado" em vez de inventar.
+const expectVersion = process.env.E2E_EXPECT_VERSION || "";
+const expectCommit = process.env.E2E_EXPECT_COMMIT || "";
 const healthText = (await text()) || "";
-record(
-  "build: sem metadados o painel mostra 'Não registrado' (não inventa)",
-  healthText.includes("Não registrado") ? "pass" : "fail",
-  healthText.includes("Não registrado")
-    ? "versão/commit exibidos como 'Não registrado'"
-    : "não apareceu 'Não registrado'",
-);
+if (expectVersion || expectCommit) {
+  const temVersao = !expectVersion || healthText.includes(expectVersion);
+  const temSha = !expectCommit || healthText.includes(expectCommit.slice(0, 7));
+  record(
+    "build: versão e SHA reais do build exibidos (sem inventar)",
+    temVersao && temSha ? "pass" : "fail",
+    `versão esperada=${expectVersion || "-"} sha esperado=${(expectCommit || "-").slice(0, 12)} visíveis=${temVersao}/${temSha}`,
+  );
+} else {
+  record(
+    "build: sem metadados o painel mostra 'Não registrado' (não inventa)",
+    healthText.includes("Não registrado") ? "pass" : "fail",
+    healthText.includes("Não registrado")
+      ? "versão/commit exibidos como 'Não registrado'"
+      : "não apareceu 'Não registrado'",
+  );
+}
 
 // ---------- 6. Execuções e evidências (estado vazio real) ----------
 await evalJs(
