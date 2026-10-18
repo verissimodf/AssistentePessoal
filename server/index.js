@@ -907,5 +907,5 @@ if (isMain && !process.env.JARVIS_NO_LISTEN) {
           (r.pending.length ? "\n\n(Há uma ação aguardando sua aprovação no painel.)" : ""),
       }),
     );
-  });
+  }, activeAdmins);
 }
