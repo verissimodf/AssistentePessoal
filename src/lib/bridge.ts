@@ -415,3 +415,25 @@ export async function inspectSkill(file: File): Promise<SkillVerdict> {
   fd.append("file", file, file.name);
   return api<SkillVerdict>("/api/skills/inspect", { method: "POST", body: fd });
 }
+
+/** Resumo de um veredito no histórico — projeção mínima devolvida pela API (nunca o objeto completo). */
+export type SkillVerdictSummary = {
+  hash: string;
+  finishedAt: string;
+  decision: "passed" | "failed" | "incomplete" | "blocked";
+  scannerVersion?: string;
+  issueCount?: number;
+};
+
+/**
+ * Histórico de vereditos de Skills (só leitura; nada é instalado/ativado).
+ * `null` = serviço indisponível — NUNCA dados de demonstração. Erros HTTP são propagados.
+ */
+export async function listSkillVerdicts(): Promise<{
+  verdicts: SkillVerdictSummary[];
+  truncated: boolean;
+  skipped: number;
+} | null> {
+  if (await ping()) return api("/api/skills/verdicts");
+  return null;
+}

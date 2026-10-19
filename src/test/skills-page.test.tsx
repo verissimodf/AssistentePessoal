@@ -10,8 +10,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // mockRejectedValueOnce para rejeições — determinístico em jsdom. (O teste de rota /skills
 // vive em app-routing.test.tsx, onde o routeTree inteiro já é o contexto padrão.)
 const inspectSkill = vi.fn();
+const listSkillVerdicts = vi.fn();
 vi.mock("@/lib/bridge", () => ({
   inspectSkill: (...a: unknown[]) => inspectSkill(...a),
+  listSkillVerdicts: (...a: unknown[]) => listSkillVerdicts(...a),
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 
@@ -41,7 +43,16 @@ async function escolharEInspeccionar() {
   fireEvent.click(botao);
 }
 
-beforeEach(() => inspectSkill.mockReset());
+// Histórico padrão para os testes (formato real devolvido por GET /api/skills/verdicts).
+const historico = (verdicts: unknown[] = [], extra: Record<string, unknown> = {}) => ({ verdicts, truncated: false, skipped: 0, ...extra });
+const item = (hash = "b".repeat(64), over: Record<string, unknown> = {}) => ({
+  hash, finishedAt: "2026-10-19T03:00:00.000Z", decision: "passed", scannerVersion: "2.13.0", issueCount: 0, ...over,
+});
+
+beforeEach(() => {
+  inspectSkill.mockReset();
+  listSkillVerdicts.mockResolvedValue(historico());
+});
 
 describe("Página Skills (inspeção segura)", () => {
   it("estado vazio inicial: instruções, aviso permanente e NENHUMA operação de instalação/ativação", () => {
@@ -88,8 +99,10 @@ describe("Página Skills (inspeção segura)", () => {
     await waitFor(() => expect(screen.getByTestId("sk-verdict")).toBeInTheDocument());
     expect(screen.queryByTestId("sk-hash")).toBeNull();
     expect(screen.queryByTestId("sk-scanner")).toBeNull();
-    // Sem provedor de histórico fake: nada sugere lista de inspeções anteriores.
-    expect(screen.queryByTestId("sk-history")).toBeNull();
+    // O histórico agora existe (fatia posterior), mas só exibe o que a API devolveu —
+    // e o mock desta inspeção não adiciona nada a ele: sem inventar registros.
+    await waitFor(() => expect(screen.getByTestId("sk-history")).toBeInTheDocument());
+    expect(screen.queryByTestId("sk-hist-item")).toBeNull();
   });
 
   it.each([
@@ -125,5 +138,65 @@ describe("Página Skills (inspeção segura)", () => {
     await escolharEInspeccionar();
     await waitFor(() => expect(screen.getByTestId("sk-verdict")).toBeInTheDocument());
     expect(screen.queryByText(/conteudo inerte/)).toBeNull();
+  });
+
+  it("histórico: carregamento e depois lista preenchida com apenas os campos permitidos", async () => {
+    let resolve!: (v: unknown) => void;
+    listSkillVerdicts.mockReturnValue(new Promise((r) => (resolve = r)));
+    render(<SkillsPage />);
+    expect(screen.getByTestId("sk-hist-loading")).toBeInTheDocument();
+    resolve(historico([item(), item("c".repeat(64), { decision: "failed", finishedAt: "2026-10-19T01:00:00.000Z", issueCount: 3 })], { skipped: 2 }));
+    await waitFor(() => expect(screen.getAllByTestId("sk-hist-item")).toHaveLength(2));
+    expect(screen.getByText("b".repeat(64))).toBeInTheDocument(); // hash completo, monospace
+    expect(screen.getByTestId("sk-hist-skipped")).toHaveTextContent("2 registro(s) inválido(s) ignorado(s)");
+    // resposta não contém nada além da projeção: sem "reason", sem caminhos
+    expect(screen.queryByText(/motivo/)).toBeNull();
+  });
+
+  it("histórico vazio é real (sem simulação)", async () => {
+    listSkillVerdicts.mockResolvedValue(historico([]));
+    render(<SkillsPage />);
+    await waitFor(() => expect(screen.getByTestId("sk-hist-empty")).toBeInTheDocument());
+  });
+
+  it("histórico indisponível (offline) é dito explicitamente — nunca demo", async () => {
+    listSkillVerdicts.mockResolvedValue(null);
+    render(<SkillsPage />);
+    await waitFor(() => expect(screen.getByTestId("sk-hist-unavailable")).toBeInTheDocument());
+    expect(screen.getByTestId("sk-hist-unavailable")).toHaveTextContent(/nada é simulado/i);
+  });
+
+  it("erro HTTP no histórico é exibido explicitamente", async () => {
+    listSkillVerdicts.mockRejectedValue(new Error("500: verdicts_unreadable"));
+    render(<SkillsPage />);
+    await waitFor(() => expect(screen.getByTestId("sk-hist-error")).toBeInTheDocument());
+    expect(screen.getByTestId("sk-hist-error")).toHaveTextContent(/não foi possível carregar/i);
+  });
+
+  it("histórico: campos opcionais ausentes não são inventados", async () => {
+    listSkillVerdicts.mockResolvedValue(historico([item("d".repeat(64), { scannerVersion: undefined, issueCount: undefined })]));
+    render(<SkillsPage />);
+    await waitFor(() => expect(screen.getByTestId("sk-hist-item")).toBeInTheDocument());
+    const texto = screen.getByTestId("sk-hist-item").textContent;
+    expect(texto).not.toContain("2.13.0");
+    expect(texto).not.toContain(/achados/i);
+  });
+
+  it("histórico truncado é sinalizado", async () => {
+    listSkillVerdicts.mockResolvedValue(historico([item()], { truncated: true }));
+    render(<SkillsPage />);
+    await waitFor(() => expect(screen.getByTestId("sk-hist-truncated")).toBeInTheDocument());
+  });
+
+  it("histórico é atualizado após uma inspeção concluída", async () => {
+    listSkillVerdicts
+      .mockResolvedValueOnce(historico()) // carga inicial: vazio
+      .mockResolvedValueOnce(historico([item("e".repeat(64))])); // após a inspeção
+    inspectSkill.mockResolvedValue(verdict("passed"));
+    render(<SkillsPage />);
+    await waitFor(() => expect(screen.getByTestId("sk-hist-empty")).toBeInTheDocument());
+    await escolharEInspeccionar();
+    await waitFor(() => expect(screen.getByTestId("sk-verdict")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("e".repeat(64))).toBeInTheDocument(), );
   });
 });

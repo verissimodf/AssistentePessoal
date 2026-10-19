@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { ShieldCheck, Upload } from "lucide-react";
+import { useEffect, useState } from "react";
+import { History, RefreshCw, ShieldCheck, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { inspectSkill, type SkillVerdict } from "@/lib/bridge";
+import { inspectSkill, listSkillVerdicts, type SkillVerdict, type SkillVerdictSummary } from "@/lib/bridge";
 import { useI18n, type TKey } from "@/lib/i18n";
 
 export const Route = createFileRoute("/skills")({
@@ -65,6 +65,21 @@ export function SkillsPage() {
   const [busy, setBusy] = useState(false);
   const [verdict, setVerdict] = useState<SkillVerdict | null>(null);
   const [errorKeyState, setErrorKeyState] = useState<TKey | null>(null);
+  // Histórico: "loading" | "unavailable" | "error" | dados reais (nunca demo/localStorage).
+  const [history, setHistory] = useState<
+    { state: "loading" | "unavailable" | "error"; data?: null } | { state: "ok"; data: { verdicts: SkillVerdictSummary[]; truncated: boolean; skipped: number } }
+  >({ state: "loading" });
+
+  const loadHistory = async () => {
+    setHistory({ state: "loading" });
+    try {
+      const data = await listSkillVerdicts();
+      setHistory(data ? { state: "ok", data } : { state: "unavailable" });
+    } catch {
+      setHistory({ state: "error" });
+    }
+  };
+  useEffect(() => { loadHistory(); }, []);
 
   const pick = (f: File | undefined) => {
     setFile(f ?? null);
@@ -85,6 +100,7 @@ export function SkillsPage() {
       const v = await inspectSkill(file);
       setVerdict(v);
       toast.success(t("sk_done"));
+      loadHistory(); // o veredito recém-persistido entra no histórico
     } catch (e) {
       // Falha explícita (offline, 401, 400, 413, rede) — nunca falso sucesso nem fallback demo.
       setVerdict(null);
@@ -170,6 +186,63 @@ export function SkillsPage() {
           </div>
         </div>
       )}
+
+      {/* Histórico: apenas vereditos já persistidos pelo gate (projeção mínima da API).
+          Sem fallback demo — indisponível offline é dito explicitamente. */}
+      <div className="mt-10 max-w-2xl" data-testid="sk-history">
+        <div className="flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <History className="h-4 w-4" />
+            {t("sk_hist_title")}
+          </h2>
+          <Button variant="outline" size="sm" onClick={loadHistory} disabled={history.state === "loading"}>
+            <RefreshCw className={`h-3 w-3 ${history.state === "loading" ? "animate-spin" : ""}`} />
+            {t("refresh")}
+          </Button>
+        </div>
+
+        {history.state === "loading" && (
+          <p className="mt-3 text-sm text-muted-foreground" data-testid="sk-hist-loading">{t("loading")}</p>
+        )}
+        {history.state === "unavailable" && (
+          <p className="mt-3 text-sm text-muted-foreground" data-testid="sk-hist-unavailable">{t("sk_hist_unavailable")}</p>
+        )}
+        {history.state === "error" && (
+          <p className="mt-3 text-sm text-destructive" role="alert" data-testid="sk-hist-error">{t("sk_hist_error")}</p>
+        )}
+        {history.state === "ok" && history.data.verdicts.length === 0 && (
+          <p className="mt-3 text-sm text-muted-foreground" data-testid="sk-hist-empty">{t("sk_hist_empty")}</p>
+        )}
+        {history.state === "ok" && history.data.verdicts.length > 0 && (
+          <>
+            <ul className="mt-3 space-y-2">
+              {history.data.verdicts.map((v) => (
+                <li key={v.hash} className="rounded-md border border-border px-3 py-2 text-sm" data-testid="sk-hist-item">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className={decisionClass(v.decision)}>{t(decisionKey(v.decision))}</Badge>
+                    <span className="text-xs text-muted-foreground">{v.finishedAt}</span>
+                    {typeof v.issueCount === "number" && (
+                      <span className="text-xs text-muted-foreground">· {t("sk_findings")}: {v.issueCount}</span>
+                    )}
+                    {v.scannerVersion && (
+                      <span className="text-xs text-muted-foreground">· {v.scannerVersion}</span>
+                    )}
+                  </div>
+                  <div className="mt-1 font-mono text-xs text-muted-foreground break-all">{v.hash}</div>
+                </li>
+              ))}
+            </ul>
+            {history.data.truncated && (
+              <p className="mt-2 text-xs text-muted-foreground" data-testid="sk-hist-truncated">{t("sk_hist_truncated")}</p>
+            )}
+            {history.data.skipped > 0 && (
+              <p className="mt-1 text-xs text-muted-foreground" data-testid="sk-hist-skipped">
+                {t("sk_hist_skipped").replace("{n}", String(history.data.skipped))}
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
