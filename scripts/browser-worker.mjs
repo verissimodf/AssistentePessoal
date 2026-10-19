@@ -279,6 +279,32 @@ function makeCdp(wsUrl, { defaultTimeoutMs } = {}) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Remove o perfil descartável com verificação e nova tentativa.
+ *
+ * Porquê: `shutdownChrome` mata apenas o PID principal do Chrome, e os processos
+ * filhos dele (StorageService, renderers, GPU) podem sobreviver ao pai por um
+ * instante e escrever no perfil (ex.: `Default/Network Persistent State`) em
+ * plena remoção. `fs.rm` sem `maxRetries` falha ao primeiro ENOTEMPTY — e um
+ * perfil remanescente é exatamente a falha intermitente observada no CI Ubuntu
+ * (teste de timeout: `1 !== 0`). Aqui: rm com retries embutidos + loop que
+ * verifica a ausência e repete, até ~4s; devolve false se não conseguiu, para
+ * a evidência registar (nunca engolir em silêncio).
+ */
+async function removeProfileDir(profileDir) {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    if (attempt > 0) await sleep(350);
+    await rm(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+    try {
+      await access(profileDir);
+      // ainda existe (recriado por um filho atrasado ou rm parcial) — nova tentativa
+    } catch {
+      return true; // gone
+    }
+  }
+  return false;
+}
+
 async function launchChrome(chromeBin, startupMs = 20000) {
   const profileDir = await mkdtemp(join(tmpdir(), "jarvis-bw-profile-"));
   const args = [
@@ -292,7 +318,7 @@ async function launchChrome(chromeBin, startupMs = 20000) {
   // Em qualquer falha de arranque: não deixar perfil temporário nem processo órfão para trás.
   const fail = async (msg) => {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-    await rm(profileDir, { recursive: true, force: true }).catch(() => {});
+    await removeProfileDir(profileDir);
     return new Error(msg);
   };
   const wsUrl = await new Promise((res, rej) => {
@@ -318,14 +344,19 @@ async function launchChrome(chromeBin, startupMs = 20000) {
 }
 
 async function shutdownChrome(child, profileDir) {
-  if (!child) return;
+  if (!child) return true;
   if (child.exitCode === null && child.signalCode === null) {
     child.kill("SIGTERM");
     const done = once(child, "exit").catch(() => {});
     await Promise.race([done, sleep(3000)]);
-    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      // Nun remover com o principal ainda vivo: espera a saída (forçada) antes do rm.
+      await Promise.race([once(child, "exit").catch(() => {}), sleep(2000)]);
+    }
   }
-  await rm(profileDir, { recursive: true, force: true }).catch(() => {});
+  // O resultado é observável: false ⇒ a evidência registra profileCleanupFailed.
+  return removeProfileDir(profileDir);
 }
 
 // ---------------------------------------------------------------- execução do cenário
@@ -348,7 +379,7 @@ async function runScenario(scenario, { chromeBin, evidencePath }) {
     const def = secrets.find((s) => s.id === id);
     return def ? process.env[def.env] : undefined;
   };
-  let chrome = null, cdp = null, profileDir = null, stderrRef = () => "";
+  let chrome = null, cdp = null, profileDir = null, stderrRef = () => "", profileCleanup = null;
   const network = { allowed: 0, blocked: [], truncated: false };
   const stepResults = [];
   const shotsDir = dirname(evidencePath) + "/shots";
@@ -543,7 +574,7 @@ async function runScenario(scenario, { chromeBin, evidencePath }) {
   } finally {
     clearTimeout(totalTimer);
     cdp?.close();
-    await shutdownChrome(chrome, profileDir);
+    profileCleanup = await shutdownChrome(chrome, profileDir);
   }
 
   // Aborto no meio (relógio duro): marca o restante not_run e regista a causa.
@@ -560,6 +591,9 @@ async function runScenario(scenario, { chromeBin, evidencePath }) {
     not_run: stepResults.filter((s) => s.status === "not_run").length,
     navigations, networkAllowed: network.allowed, networkBlocked: network.blocked.length,
     aborted, startupFailure,
+    // false só quando o perfil descartável não pôde ser removido (never silencioso):
+    // a ausência/campos positivos significam perfil removido ou nunca criado.
+    profileCleanupFailed: profileCleanup === false,
   };
   summary.result = summary.failed || summary.blocked || aborted || startupFailure ? "failed" : "passed";
   return {
