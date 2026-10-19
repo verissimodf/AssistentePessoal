@@ -74,7 +74,7 @@ import { getMailService, setMailTransport } from "./mail-service.js";
 import { redactAccount, ACCOUNT_TYPES } from "./mail.js";
 import { getDraftStore, setDraftStore } from "./mail-drafts.js";
 import { APP_VERSION, GIT_COMMIT, BUILD_TIME, BUILD_MODE } from "./build-info.js";
-import { inspectCandidate } from "./skill-scanner.js";
+import { inspectCandidate, listSkillVerdicts } from "./skill-scanner.js";
 
 // Identidade da ÁRVORE construída (injetada no build por `scripts/write-build-info.mjs`).
 // `APP_VERSION` é o manifesto do repositório; o commit vem SÓ do `--build-arg GIT_SHA` e pode
@@ -805,6 +805,17 @@ route("POST", "/api/skills/inspect", "session", async ({ form, principal }) => {
   } finally {
     try { rmSync(quarantineRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
     catch { audit("skill.quarantine_cleanup_failed", { admin: principal.adminId, status: "error" }); }
+  }
+});
+
+// Fase Skills — histórico de vereditos persistidos. SOMENTE LEITURA: não corre o scanner,
+// não instala/ativa nada, sem efeitos colaterais. Falha real de leitura ⇒ 500 estruturado
+// (sem stack/caminhos no corpo). Limite explícito e projeção mínima vivem em skill-scanner.js.
+route("GET", "/api/skills/verdicts", "session", () => {
+  try {
+    return listSkillVerdicts(join(DATA_DIR, "skill-verdicts"));
+  } catch {
+    throw new AuthError(500, "verdicts_unreadable");
   }
 });
 

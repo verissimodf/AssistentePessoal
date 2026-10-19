@@ -396,3 +396,63 @@ export function inspectCandidate(candidatePath, options = {}) {
   }
   return full;
 }
+
+// ---------------------------------------------------------------- histórico (leitura)
+
+/** Limite máximo explícito de registros por resposta (o mais recente primeiro). */
+export const MAX_VERDICT_LIST = 200;
+const VERDICT_DECISIONS = new Set(["passed", "failed", "incomplete", "blocked"]);
+
+/**
+ * Lê o histórico de vereditos persistidos em `reportsDir` (<sha256>.verdict.json, escritos pelo
+ * próprio gate). SOMENTE LEITURA: não corre o scanner, não instala/ativa nada, sem efeitos.
+ *
+ * Contrato de registros inválidos (decisão documentada): um ficheiro individual inválido — nome
+ * fora do padrão, JSON quebrado, campos ausentes/tipos errados, hash divergente entre nome e
+ * `constraints.boundToArtifactHash`, ou link simbólico — é IGNORADO (contado em `skipped`),
+ * preservando os demais. Falha real de leitura do DIRETÓRIO (ex.: permissão) NÃO é silenciada:
+ * lança `Error("verdicts_unreadable")` — a rota converte em 500 estruturado.
+ *
+ * Projeção explícita: cada item contém `hash` (do nome do ficheiro, 64-hex), `finishedAt`
+ * (ISO válido), `decision` (conjunto fechado) e, SÓ SE presentes e válidos, `scannerVersion`
+ * (string ≤64) e `issueCount` (inteiro 0..1e6). Nunca devolve o objeto persistido completo,
+ * conteúdo de Skill, caminhos internos ou `*.scanner-report.json`.
+ */
+export function listSkillVerdicts(reportsDir, { limit = MAX_VERDICT_LIST } = {}) {
+  let entries;
+  try {
+    // withFileTypes usa lstat: link simbólico NÃO é seguido (nem para fora do diretório).
+    entries = readdirSync(reportsDir, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") return { verdicts: [], truncated: false, skipped: 0 }; // inexistente = vazio
+    throw new Error("verdicts_unreadable"); // falha real de leitura — nunca sucesso silencioso
+  }
+  const items = [];
+  let skipped = 0;
+  for (const entry of entries) {
+    // Apenas ficheiros regulares nomeados <64-hex>.verdict.json; symlinks e demais são ignorados.
+    if (entry.isSymbolicLink() || !entry.isFile()) { skipped++; continue; }
+    const match = entry.name.match(/^([a-f0-9]{64})\.verdict\.json$/);
+    if (!match) { skipped++; continue; }
+    let record;
+    try {
+      record = JSON.parse(readFileSync(join(reportsDir, entry.name), "utf8"));
+    } catch { skipped++; continue; } // JSON inválido: ignora o registro, preserva os demais
+    const { finishedAt, result } = record ?? {};
+    const decision = result?.decision;
+    if (typeof finishedAt !== "string" || Number.isNaN(Date.parse(finishedAt)) || !VERDICT_DECISIONS.has(decision)) {
+      skipped++; continue;
+    }
+    // Identidade: o nome do ficheiro é o hash analisado; divergência com o veredito = corrompido.
+    const bound = record?.constraints?.boundToArtifactHash;
+    if (typeof bound === "string" && bound !== match[1]) { skipped++; continue; }
+    const item = { hash: match[1], finishedAt, decision };
+    const scannerVersion = record?.scan?.version;
+    if (typeof scannerVersion === "string" && scannerVersion.trim()) item.scannerVersion = scannerVersion.slice(0, 64);
+    const issueCount = result?.issueCount;
+    if (Number.isInteger(issueCount) && issueCount >= 0 && issueCount <= 1_000_000) item.issueCount = issueCount;
+    items.push(item);
+  }
+  items.sort((a, b) => Date.parse(b.finishedAt) - Date.parse(a.finishedAt));
+  return { verdicts: items.slice(0, limit), truncated: items.length > limit, skipped };
+}
