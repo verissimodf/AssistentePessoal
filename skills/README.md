@@ -45,6 +45,28 @@ Campos obrigatórios (schema fechado — campos desconhecidos rejeitados):
 | `risk` | `low`/`medium`/`high` |
 | `reviewState` | `draft`/`reviewed`/`approved` (nunca `enabled`) |
 
+## Barreira de segurança pré-instalação
+
+Skills de terceiros devem ser tratadas como conteúdo não confiável e analisadas **antes** de serem
+copiadas para o catálogo, instaladas ou ativadas. O adaptador `server/skill-scanner.js` integra o
+CLI NVIDIA SkillSpector, sem executar a Skill candidata e sem análise semântica por LLM por padrão.
+
+- O candidato deve estar em diretório local de quarentena e conter `SKILL.md`; URLs remotas não são
+  passadas diretamente ao scanner. Aquisição e extração do pacote precisam ocorrer separadamente,
+  com limites de tamanho e proteção contra traversal/zip bombs.
+- O scanner é chamado sem shell, com tempo e saída limitados, sem credenciais do processo JARVIS e
+  com `--no-llm --fail-on-incomplete --min-coverage 100`.
+- `SAFE` com saída zero permite prosseguir para as próximas validações; `CAUTION` exige revisão
+  humana e não permite instalação automática; `DO_NOT_INSTALL`, scanner ausente, erro, cobertura
+  incompleta, JSON inválido ou código de saída diferente de zero bloqueiam.
+- A análise é uma barreira, não uma garantia. Ainda são obrigatórios o manifesto fechado, allowlists
+  do servidor, revisão humana, permissões mínimas, integridade do artefato e execução isolada.
+- O scanner não é instalado automaticamente pelo JARVIS. Configure `JARVIS_SKILLSPECTOR_BIN` se o
+  executável não estiver no `PATH`; a ausência do scanner falha fechada.
+- O adaptador ainda não está ligado a uma operação de instalação: o registro atual trabalha com
+  manifestos JSON e a instalação/execução de bundles de Skills continua fora do escopo implementado.
+  Não ativar Skills externas até essa integração estar ligada e testada.
+
 ## Por que é seguro por omissão
 
 - Um manifesto **não pode** declarar ferramenta inexistente, permissão fora da allowlist,
