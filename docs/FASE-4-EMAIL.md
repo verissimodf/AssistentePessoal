@@ -129,8 +129,8 @@ Controles obrigatórios — registrados aqui como **critérios de aceite** (impl
 ## 8. Dependências
 
 - Fase 2 (isolamento e contas por administrador) — **concluída**.
-- D_REC (política de recuperação/propriedade) — proposta em `docs/RECUPERACAO.md`; afeta a titularidade
-  das contas após recuperação de acesso.
+- D_REC (política de recuperação/propriedade) — **decidida** para contas de e-mail em 2026-10-19
+  (Padrão A + exceção B, §11.3); política em `docs/D_REC.md` e `docs/RECUPERACAO.md`.
 
 ## 9. Estado e bloqueadores (o que falta para liberar a implementação)
 
