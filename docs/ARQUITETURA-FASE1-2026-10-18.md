@@ -105,6 +105,32 @@ limites de execução dentro de bounds; risco explícito; bloco `review` obrigat
 (autoativação proibida); ativação = `approved` **e** presença em `enabled.json` (lista humana).
 Nenhum mecanismo de execução de código. Cobertura: `tests/skill-registry.test.mjs` (14/14).
 
+### Barreira de segurança pré-instalação (Etapa 4 — implementada, não ligada a instalação)
+
+`server/skill-scanner.js` integra o scanner estático NVIDIA SkillSpector (v2.13.0 fixada,
+Apache-2.0; scanner independente — o SkillEvaluator completo NÃO é necessário). É o ponto único
+onde uma Skill candidata de terceiros é recebida e validada **antes** de qualquer contato com o
+catálogo ativo: candidatos vindos de `skills/` são recusados (só quarentena local).
+
+- Fluxo: hash sha256 do artefato → validação do manifesto (schema fechado do registro, quando
+  `.json`) → cópia descartável em quarentena, conferida byte a byte contra o original →
+  inspeção estática sobre a CÓPIA (`--no-llm --fail-on-incomplete`, sem shell, sem credenciais,
+  HOME/TMP temporários, tempo/saída limitados) → veredito vinculado ao hash e preservável (0600).
+- Resultados distintos: `passed` / `failed` / `incomplete` / `blocked`; scanner ausente, erro,
+  timeout ou relatório malformado = `blocked` (fail closed). Nunca executa a candidata.
+- O veredito é evidência **limitada** a método/versão/artefato: não concede permissões, não ativa,
+  não autoriza execução. `verifyArtifactAgainstVerdict` bloqueia instalação se o hash mudou após a
+  análise. Revisão humana independente (PR + `enabled.json`) continua obrigatória — scanner SAFE
+  sem lista humana de ativação não ativa nada.
+- Cobertura: `tests/skill-scanner.test.mjs` (15 testes: fixtures inerte benigna/hostil, injeção,
+  exfiltração, segredo canário, scanner ausente/timeout/crash/malformado, mudança de hash,
+  ativação humana, nunca-executa). Verificação real com SkillSpector 2.13.0 em Ubuntu: benigna
+  `passed`, hostil inerte `failed` (SC2/PE3/TM2, score 62).
+- Limitações: o gate não está ligado a nenhuma operação de instalação (não existe instalação de
+  Skills nesta fase); a verificação real depende do scanner instalado localmente (no CI corre só o
+  contrato com stubs); aquisição remota (URL/git) e extração de pacotes ficam para trabalho futuro,
+  com os mesmos cuidados de zip-bomb/traversal que o scanner impõe internamente.
+
 ## Fase F — Gateway de MCPs e plugins (DESENHO — nada conectado)
 
 Requisitos do briefing traduzidos no desenho do conector (a implementar numa fase futura):
