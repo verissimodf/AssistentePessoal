@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
@@ -60,6 +60,7 @@ const fake = (stdout, status = 0) => (_command, args) => {
 
 // Stub REAL (spawnSync de verdade): comportamento escolhido por ficheiro de controlo.
 const stubDir = mkdtempSync(join(tmpdir(), "jarvis-scan-stub-"));
+after(() => { try { rmSync(stubDir, { recursive: true, force: true }); } catch { /* já removido */ } });
 const stub = (name, code) => {
   const p = join(stubDir, `${name}.mjs`);
   writeFileSync(p, code);
