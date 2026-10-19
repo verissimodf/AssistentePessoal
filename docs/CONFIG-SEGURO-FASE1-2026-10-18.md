@@ -53,6 +53,13 @@ encerra **apenas** os PIDs que criou (sem `pkill -f`): seguro com outros projeto
   `approval_ref` = PR/commit) e `reviewState: approved`.
 - Ativar: adicionar o id a `skills/enabled.json` no deploy. Lista vazia = nada ativo.
 - Revogar: remover da lista (e opcionalmente voltar a `draft`).
+- Analisar candidata de terceiros (barreira pré-instalação): instalar o scanner isolado e fixado
+  (`uv tool install 'git+https://github.com/NVIDIA/SkillSpector.git@v2.13.0'` — nunca automático)
+  e correr `inspectCandidate(caminhoEmQuarentena)` de `server/skill-scanner.js`, com
+  `JARVIS_SKILLSPECTOR_BIN` se fora do PATH. Só `passed` (com hash intacto verificado por
+  `verifyArtifactAgainstVerdict`) segue para revisão humana — e mesmo assim não ativa nada.
+  Scanner ausente/falho/malformado = bloqueado (fail closed); relatórios preservados em 0600 e
+  tratados como sensíveis (podem conter trechos da candidata).
 
 ## §MCPs (Fase F, por implementar) — checklist de aprovação futura
 
