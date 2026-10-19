@@ -179,7 +179,7 @@ function runWorker(scenarioObj, { chrome = CHROME, env = {} } = {}) {
     });
     let stderr = "";
     proc.stderr.on("data", (d) => { stderr += d; });
-    proc.on("exit", (code) => {
+    proc.on("close", (code) => {
       let evidence = null;
       try { evidence = JSON.parse(readFileSync(evidencePath, "utf8")); } catch { /* sem evidência */ }
       res({ rc: code, evidence, stderr, elapsedMs: Date.now() - t0, dir });
