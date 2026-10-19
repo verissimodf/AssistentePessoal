@@ -32,3 +32,40 @@ jobs:
         run: |
           (cd server && node --no-warnings index.js &) ; sleep 3
           curl -sf http://127.0.0.1:7777/api/health
+
+  # Job dedicado: SkillSpector REAL fixado por commit imutável (não tag móvel) executando os
+  # testes reais de contrato do scanner. Independente dos jobs acima (nada aqui muda neles).
+  # O teste real (tests/skill-scanner.test.mjs) roda com o binário presente e falha/skip ⇒ job falha.
+  skillspector:
+    name: SkillSpector real (v2.13.0 @ 091a509)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # astral-sh/setup-uv v10.3.0 — SHA imutável do commit, conferido na API do GitHub
+      # (tags + release target apontam para o mesmo commit).
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
+      - name: Instalar SkillSpector fixado (commit imutável, sem tag móvel)
+        run: uv tool install "git+https://github.com/NVIDIA/SkillSpector.git@091a509b3d6ba8ff5be528966e1f43c2e68cf214"
+      - name: Verificar binário e versão exata (binário inesperado ⇒ falha)
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v skillspector || { echo "::error::skillspector ausente do PATH"; exit 1; }
+          v="$(skillspector --version)"
+          echo "instalado: $v"
+          [ "$v" = "SkillSpector v2.13.0" ] || { echo "::error::versão inesperada: $v (esperada: SkillSpector v2.13.0)"; exit 1; }
+      - name: Testes reais de contrato do scanner (execução obrigatória, sem skip)
+        run: |
+          set -o pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          node --no-warnings --test tests/skill-scanner.test.mjs 2>&1 | tee /tmp/scanner-test.log
+          # o teste REAL (scanner instalado) tem de ter EXECUTADO — não pode aparecer como skip
+          grep -E "^ok [0-9]+ - scanner REAL" /tmp/scanner-test.log | grep -vq "# SKIP" \
+            || { echo "::error::o teste real do scanner não executou (skip)"; exit 1; }
+          # nenhum teste ignorado e nenhum falha na suíte inteira
+          grep -q "^# skipped 0$" /tmp/scanner-test.log || { echo "::error::há testes ignorados"; exit 1; }
+          grep -q "^# fail 0$" /tmp/scanner-test.log || { echo "::error::falhas nos testes do scanner"; exit 1; }
