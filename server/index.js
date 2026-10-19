@@ -7,9 +7,11 @@
 import { createServer } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import {
   db,
+  DATA_DIR,
   agents,
   bots,
   auth,
@@ -72,6 +74,7 @@ import { getMailService, setMailTransport } from "./mail-service.js";
 import { redactAccount, ACCOUNT_TYPES } from "./mail.js";
 import { getDraftStore, setDraftStore } from "./mail-drafts.js";
 import { APP_VERSION, GIT_COMMIT, BUILD_TIME, BUILD_MODE } from "./build-info.js";
+import { inspectCandidate } from "./skill-scanner.js";
 
 // Identidade da ÁRVORE construída (injetada no build por `scripts/write-build-info.mjs`).
 // `APP_VERSION` é o manifesto do repositório; o commit vem SÓ do `--build-arg GIT_SHA` e pode
@@ -753,6 +756,55 @@ route("POST", "/api/mail/drafts/:id/send", "session", async ({ params, body, pri
       e?.outcome === "unknown" ? "unknown" : "failed",
     );
     throw e;
+  }
+});
+
+// Fase Skills — recepção em quarentena e análise estática. Nunca instala nem ativa.
+route("POST", "/api/skills/inspect", "session", async ({ form, principal }) => {
+  if (!form || [...form.keys()].length !== 1 || !form.has("file")) {
+    throw new AuthError(400, "skill_file_required");
+  }
+  const file = form.get("file");
+  if (!file || typeof file.arrayBuffer !== "function" || file.name?.toLowerCase() !== "skill.md") {
+    throw new AuthError(400, "skill_manifest_must_be_skill_md");
+  }
+  if (!Number.isSafeInteger(file.size) || file.size < 1 || file.size > MAX_UPLOAD) {
+    throw new AuthError(file.size > MAX_UPLOAD ? 413 : 400, file.size > MAX_UPLOAD ? "payload_too_large" : "skill_file_empty");
+  }
+  const quarantineRoot = mkdtempSync(join(DATA_DIR, "skill-quarantine-"), { mode: 0o700 });
+  const candidate = join(quarantineRoot, "SKILL.md");
+  try {
+    writeFileSync(candidate, Buffer.from(await file.arrayBuffer()), { mode: 0o600, flag: "wx" });
+    const verdict = inspectCandidate(candidate, { reportsDir: join(DATA_DIR, "skill-verdicts") });
+    audit("skill.inspect", {
+      admin: principal.adminId,
+      status: verdict.result.decision,
+      ...(verdict.artifact?.hash?.digest ? { inputHash: verdict.artifact.hash.digest } : {}),
+    });
+    // Não expor relatório bruto, conteúdo da Skill, caminho local ou diagnósticos do processo.
+    return {
+      artifact: verdict.artifact,
+      finishedAt: verdict.finishedAt,
+      verdictVersion: verdict.verdictVersion,
+      scan: verdict.scan,
+      result: {
+        decision: verdict.result.decision,
+        safeToInstall: false,
+        reviewRequired: true,
+        reason: verdict.result.reason,
+        issueCount: Array.isArray(verdict.result.issues) ? verdict.result.issues.length : 0,
+      },
+      constraints: {
+        grantsPermissions: false,
+        grantsActivation: false,
+        allowsExecution: false,
+        requiresHumanReview: true,
+        boundToArtifactHash: verdict.constraints.boundToArtifactHash,
+      },
+    };
+  } finally {
+    try { rmSync(quarantineRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
+    catch { audit("skill.quarantine_cleanup_failed", { admin: principal.adminId, status: "error" }); }
   }
 });
 
