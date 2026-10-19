@@ -36,9 +36,11 @@ before(async () => {
     csrf: (await login.json()).csrf,
   };
 });
-after(() => {
-  server?.close();
-  rmSync(dir, { recursive: true, force: true });
+after(async () => {
+  if (server?.listening) await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  // Windows mantém o ficheiro SQLite bloqueado enquanto a ligação estiver aberta.
+  db.close();
+  rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 const upload = (name = "SKILL.md", text = "Simple local note summarizer. No network or side effects.\n", authHeaders = true) => {
