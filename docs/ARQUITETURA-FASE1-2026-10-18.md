@@ -151,7 +151,7 @@ catálogo ativo: candidatos vindos de `skills/` são recusados (só quarentena l
   verificação de conjunto), hashes de build dependentes dos artefatos do PyPI, regeneração de
   ambos os arquivos ao mudar o commit do scanner, `incomplete` real/Windows sem cobertura e
   backend de build sem plugins no upstream (se mudar, atualizar arquivo/teste). Ver
-  `docs/CONTINUIDADE.md` §19–§22 e `docs/RELATORIO-P02-2026-10-18.md` §L–§O. Aquisição remota
+  `docs/CONTINUIDADE.md` §19–§23 e `docs/RELATORIO-P02-2026-10-18.md` §L–§P. Aquisição remota
   (URL/git) e extração de pacotes ficam para trabalho futuro, com os mesmos cuidados de
   zip-bomb/traversal que o scanner impõe internamente.
 

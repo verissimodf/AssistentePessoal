@@ -1,12 +1,16 @@
 # J.A.R.V.I.S. — Documento de Continuidade (Fases 2, 3 e 4)
 
-Data: 2026-10-15 (histórico). Baseline atual: 2026-10-19 — ver §22. Estado histórico: Fase 2 integrada; Fase 3 (gestão documental) implementada com o primeiro formato **TXT** (ver progresso abaixo).
+Data: 2026-10-15 (histórico). Baseline atual: 2026-10-19 — ver §23. Estado histórico: Fase 2 integrada; Fase 3 (gestão documental) implementada com o primeiro formato **TXT** (ver progresso abaixo).
 
 Procedência: **[V]** verificado nesta sessão · **[R]** reportado pelo responsável · **[I]** inferência · **[D]** decisão pendente.
 
-> **Atualização 2026-10-19:** o estado corrente está em **§22** (pós-PRs #40–#44); as seções 0–21 são históricas e foram preservadas. A §21 registra a baseline pós-#42.
+> **Atualização 2026-10-19:** o estado corrente está em **§23** (pós-PRs #45 e #47); as seções 0–22 são históricas e foram preservadas. A §21 registra a baseline pós-#42; a §22, a pós-#44.
 
-## 0. Progresso de execução (atualizado)
+## 0. Progresso de execução (histórico — 2026-10-15)
+
+> O estado corrente está em **§23**. Em especial, a Fase 4 foi iniciada, a titularidade foi
+> decidida e implementada (PR #47) e o D_REC-1a existe; a especificação como documento e as
+> autorizações operacionais continuam pendentes.
 
 - **Fase 2 — Preferências e isolamento:** integrada na `main` (PR #3, merge `514c8ff`). Tabela `ownership` (v2), configurações pessoal/global, bloqueio de dados sem dono com reivindicação explícita e auditada. CI verde (Linux + Windows).
 - **Fase 3 — Gestão documental:** implementada com o **primeiro formato TXT** (sem dependência nova), conforme o PM §6 (“começando por PDF ou TXT, conforme a análise técnica”). Módulo `server/documents.js`, migração **v3** (tabela `documents` + extensão do CHECK de `ownership` para `document`), rotas `/api/documents*`, ferramenta de agente `document_search`, página **Documentos** e `tests/documents.test.mjs`. Validação de entrada, armazenamento local privado, busca por dono, exclusão e tratamento de conteúdo não confiável.
@@ -133,7 +137,12 @@ Sempre [derivado]: suíte atual (58 + 7) passando; testes novos com dois admins 
 ## 11. Riscos
 Base divergente (X3) — regressão [V]; migração de dados sem dono pode ocultá-los ou transferir privilégio [I]; filtrar `recall` muda o comportamento de agentes e bots [I]; prompt injection por documentos [I]; biblioteca de PDF = dependência nova [I]; OAuth exige app registrado e callback local, e a verificação do Google pode restringir escopos [I]; senha de app contraria permissões mínimas [I]; 0600 não vale no Windows [V].
 
-## 12. Decisões — estado
+## 12. Decisões — estado em 2026-10-15
+
+> **Seção histórica.** O estado corrente está em **§23**: D_REC-1a foi implementado, F4.11 e a
+> titularidade foram decididas; a especificação como documento e as autorizações operacionais
+> continuam pendentes.
+
 Atualizado em 2026-10-15: decisões resolvidas pela implementação (D1/D3/D4/D5/D6) ou **adotadas para a
 especificação da Fase 4** (D7/D9/D10). **D_REC** é proposta nova, aguardando aprovação.
 
@@ -274,7 +283,7 @@ Status: **implementado e testado em cópia isolada**; a v9 **não** foi aplicada
 
 Procedência: **[V]** verificado nesta sessão · **[D]** decisão do proprietário · **[I]** não confirmado/inferência.
 
-Esta seção registra a baseline **pós-PR #40**; o estado corrente pós-PRs #41 e #42 está em §21. As seções 0–18 são históricas e foram preservadas.
+Esta seção registra a baseline **pós-PR #40**; o estado corrente pós-PRs #45 e #47 está em §23. As seções 0–18 são históricas e foram preservadas.
 
 ### 19.1 Repositório e PR #40
 
@@ -334,7 +343,7 @@ as melhorias técnicas restantes estão em §19.3.
 
 Procedência: **[V]** verificado nesta sessão · **[D]** decisão do proprietário · **[I]** não confirmado/inferência.
 
-Esta seção registra a baseline **pós-PR #41**; o estado corrente pós-PR #42 está em §21. As seções 0–19 são históricas e foram preservadas.
+Esta seção registra a baseline **pós-PR #41**; o estado corrente pós-PRs #45 e #47 está em §23. As seções 0–19 são históricas e foram preservadas.
 
 ### 20.1 Repositório e PR #41
 
@@ -388,16 +397,16 @@ deploy/migração v12, credenciais externas, heartbeat e retenção) permanecem 
 - `docs/RELATORIO-P02-2026-10-18.md` §M — detalhe do PR #41 e do CI.
 - `docs/ARQUITETURA-FASE1-2026-10-18.md` — cobertura de 19 testes e atestação de proveniência.
 
-As alterações documentais desta baseline permaneceram **locais e não commitadas** até a
-consolidação documental; foram então transferidas para branch e PR próprio, ainda **não integrado à
-`main`** até o merge (ver §21). Nenhum deploy, migração ou alteração de código foi feita.
+As alterações documentais desta baseline foram integradas à `main` pelo PR #43 (merge `a4b2085`,
+2026-10-19T18:46:54Z); nenhum deploy, migração ou alteração de código foi feita.
 
-## 21. Baseline consolidada 2026-10-19 — pós-PRs #40, #41 e #42 (estado corrente)
+## 21. Baseline consolidada 2026-10-19 — pós-PRs #40, #41 e #42
 
 Procedência: **[V]** verificado nesta sessão via API do GitHub e git · **[D]** decisão do proprietário · **[I]** não confirmado/inferência.
 
-Esta seção consolida o estado corrente após os PRs #40, #41 e #42. As seções 0–20 são históricas e
-foram preservadas; o detalhe de cada PR continua em §19 (pós-#40) e §20 (pós-#41).
+Esta seção consolidou o estado após os PRs #40, #41 e #42; o estado corrente pós-PRs #45 e #47 está
+em §23. As seções 0–20 são históricas e foram preservadas; o detalhe de cada PR continua em §19
+(pós-#40) e §20 (pós-#41).
 
 ### 21.1 Repositório e PRs integrados
 
@@ -495,15 +504,15 @@ e retenção/expurgo de backups e do ledger.
 - `docs/RELATORIO-P02-2026-10-18.md` §N — detalhe do PR #42 e do CI pós-merge.
 - `docs/ARQUITETURA-FASE1-2026-10-18.md` — pin do `uv`, constraints e verificador endurecido.
 
-Esta baseline documental está em **PR próprio, ainda não integrado à `main`** até o merge; nenhum
-deploy, migração ou alteração de código/workflow foi feita nesta tarefa.
+Esta baseline documental foi integrada à `main` pelo PR #43 (merge `a4b2085`); nenhum deploy,
+migração ou alteração de código/workflow foi feita nesta tarefa.
 
-## 22. Baseline consolidada 2026-10-19 — pós-PR #44 (estado corrente)
+## 22. Baseline consolidada 2026-10-19 — pós-PR #44
 
 Procedência: **[V]** verificado nesta sessão via API do GitHub e git · **[D]** decisão do proprietário · **[I]** não confirmado/inferência.
 
-Esta seção consolida o estado corrente após o PR #44. As seções 0–21 são históricas e foram
-preservadas; a §21 continua sendo a baseline pós-#42.
+Esta seção consolidou o estado após o PR #44; o estado corrente pós-PRs #45 e #47 está em §23. As
+seções 0–21 são históricas e foram preservadas; a §21 continua sendo a baseline pós-#42.
 
 ### 22.1 Repositório e PR #44
 
@@ -618,10 +627,10 @@ heartbeat/autonomia e retenção/expurgo de backups e do ledger.
 - `docs/RELATORIO-P02-2026-10-18.md` §O — detalhe do PR #44 e do CI pós-merge.
 - `docs/ARQUITETURA-FASE1-2026-10-18.md` — build fixado, `--require-build-hashes` e limitações.
 
-Esta baseline documental está em **PR próprio, ainda não integrado à `main`** até o merge. As
-alterações documentais locais do worktree principal foram integralmente preservadas; esta baseline
-parte de `origin/main` (`686dcfd`), não do worktree local. Nenhum código, workflow, dependência ou
-configuração de produção foi alterado nesta tarefa.
+Esta baseline documental foi integrada à `main` pelo PR #45 (merge `f563af5`, 2026-10-19T21:16:45Z).
+As alterações documentais locais do worktree principal foram integralmente preservadas; esta
+baseline partiu de `origin/main` (`686dcfd`), não do worktree local. Nenhum código, workflow,
+dependência ou configuração de produção foi alterado nesta tarefa.
 
 ### 22.9 Próxima lacuna funcional (não iniciada)
 
@@ -629,3 +638,97 @@ A maior lacuna funcional é a **Fase 4 — e-mail**: com a F4.11 aprovada, o nú
 rotas/ferramentas com transporte mockado e o adaptador IMAP/SMTP já existem, mas o transporte real,
 a conta dedicada de teste e as autorizações operacionais continuam inativos. Depende de aprovação
 do proprietário; **não foi iniciada nesta execução**.
+
+## 23. Baseline consolidada 2026-10-19 — pós-PRs #45 e #47 (estado corrente)
+
+Procedência: **[V]** verificado nesta sessão via API do GitHub e git · **[D]** decisão do proprietário · **[I]** não confirmado/inferência.
+
+Esta seção consolida o estado após o PR #45 (baseline documental pós-#44) e o PR #47
+(transferência explícita de contas de e-mail). As seções 0–22 são históricas e foram preservadas; a
+§22 continua sendo o detalhe pós-#44. Esta atualização é **puramente documental**: nenhum código,
+workflow, dependência ou configuração de produção foi alterado nesta tarefa.
+
+### 23.1 Repositório e PRs
+
+| Item | Valor | Proc. |
+|---|---|---|
+| `origin/main` (baseline de trabalho) | `57a991f51174799e96a0897e3b5f380c5e5f50cd` | `git fetch --all`; `git rev-parse origin/main` |
+| PR #45 | **MERGED**; “docs: consolida baseline pós-PR #44”; head `a49c14f17927c88c968edc5d036f00fe3125491d`; merge `f563af5f51291306185ee127b97ff9f02de4d251`; `mergedAt` 2026-10-19T21:16:45Z; 4 documentos, +284/−22 | `gh pr view 45`; `git diff --stat 686dcfd f563af5` |
+| PR #47 | **MERGED**; “feat(fase4): transferência explícita de contas de e-mail (D_REC-1a)”; head `a7538902f140aaf9d4fdb0bddc529079eed7da65`; merge `57a991f51174799e96a0897e3b5f380c5e5f50cd`; `mergedAt` 2026-10-19T22:21:12Z; 6 arquivos, +578/−35 | `gh pr view 47` |
+| PR #46 | **Substituída** por esta baseline; head `cc68a38d6444bef1db237e20ec09c2e2d7c13d40`; merge-base `686dcfd`; checks antigos verdes, mas o conteúdo estava desatualizado | `gh pr view 46`; `git diff origin/main cc68a38` |
+
+### 23.2 Revisão da PR #46
+
+A PR #46 propunha uma baseline pós-PR #44 nos quatro mesmos documentos. A revisão confrontou o diff
+original com a `main` atual e concluiu que **não há conteúdo técnico exclusivo a reaplicar**:
+
+- o PR #45 já integrou os quatro documentos com as conclusões do #44, incluindo os **6 testes** de
+  constraints de build, os pins/hashes, as provas negativas e o CI pós-merge `39321916745`;
+- a versão da `main` é mais precisa em pontos que a PR #46 deixava incompletos (contagem de testes,
+  detalhes dos jobs de CI e limitações de runtime/build);
+- a PR #46 ficou conflitante porque foi criada antes do #45 e não incorporou a atualização
+  documental nem o #47.
+
+A PR substituta reaplica somente as correções de estado necessárias (baseline #45/#47, Fase 4 e
+referências cruzadas) e referencia a #46; a justificativa final do encerramento fica registrada no
+próprio PR #46. Nenhum conteúdo válido da #46 é descartado.
+
+### 23.3 Fase 4 — estado atual verificado na `main`
+
+| Item | Estado |
+|---|---|
+| F4.11 (pastas/filtros/limites/retenção) | **aprovada** em 2026-10-15; limites implementados e testados |
+| Titularidade de contas de e-mail | **decidida** em 2026-10-19: Padrão A + exceção B (`docs/FASE-4-EMAIL.md` §11.3; `docs/D_REC.md` D_REC-1a) |
+| Transferência explícita | API `POST /api/ownership/mail/transfer` e `server/settings.js::transferMailAccount`; 7 testes em `tests/mail-ownership.test.mjs`; sem UI dedicada |
+| Especificação como documento / autorização geral | **pendente** (§11, item 2) |
+| D7 / transporte real | **pendente**; `JARVIS_MAIL_TRANSPORT` continua mock por padrão |
+| O1–O4 (operação real) | **pendentes**: ativar transporte, primeira conexão/leitura, envio e escopo adicional |
+| Validação operacional | **não executada**; nenhuma conta real, credencial real, envio ou deploy |
+
+A transferência move o bloco cifrado e grava a cópia no destino com `enabled=false`/`state="reconnect"`.
+Ela **não** conecta a conta, **não** ativa o transporte, **não** envia e **não** reativa credenciais.
+A decisão de titularidade não substitui as autorizações operacionais.
+
+### 23.4 CI pós-merge
+
+| Run | Head | Evento | Resultado | Jobs |
+|---|---|---|---|---|
+| [`39326226275`](https://github.com/verissimodf/AssistentePessoal/actions/runs/39326226275) | `f563af5` | `push` | **success** | 3/3 success: SkillSpector, Ubuntu, Windows |
+| [`39334333129`](https://github.com/verissimodf/AssistentePessoal/actions/runs/39334333129) | `57a991f` | `push` | **success** | 3/3 success: SkillSpector, Ubuntu, Windows |
+
+O run do PR #47 (`39332693003`) também teve os três jobs verdes antes do merge. Esses resultados
+cobrem o CI; **não** cobrem deploy, produção, conta real, credenciais reais ou envio.
+
+### 23.5 Próxima fase recomendada — validação operacional da Fase 4 (requer autorização)
+
+**Objetivo:** validar o caminho real de **leitura e titularidade** de e-mail com uma conta de teste
+dedicada e transformar a configuração atual em uma experiência operacional verificável no painel,
+sem envio real nesta etapa.
+
+**Escopo funcional proposto:**
+1. teste de conexão explícito e estado da conta (mock/real, habilitada, último resultado sanitizado);
+2. validação de leitura real e isolamento entre administradores com a conta dedicada;
+3. tratamento de erro de autenticação/rede sem expor credenciais ou conteúdo;
+4. nenhuma ativação de envio; o envio permanece bloqueado até autorização O3 separada.
+
+**Reutilização:** `server/mail.js`, `server/mail-imap.js`, `server/mail-service.js`, rotas
+`/api/mail/*`, `admin_settings` cifrado, auditoria sanitizada e a aba de comunicação em
+`src/routes/configuracoes.tsx`. Persistência nova só se o estado do teste precisar sobreviver ao
+processo; caso contrário, manter em memória e não criar tabela.
+
+**Lacunas confirmadas:** o formulário atual grava campos e `enabled`, mas não executa um teste de
+conexão nem mostra estado real; F4.5 (gestão de conexão) continua pendente; não há UI de
+transferência de conta; o adaptador real nunca foi exercitado contra provedor.
+
+**Critérios de aceite:** autorização O1/O2 registrada; conta dedicada configurada para um único
+administrador; leitura real retorna corpo sanitizado; segundo admin recebe `404 account_not_found`;
+nenhuma senha aparece em resposta/log/auditoria; teste de conexão é server-side e auditado apenas
+com metadados; transporte pode ser desligado e volta ao mock; envio real continua inexistente.
+
+**Dependência de decisão:** a execução depende de autorização explícita do proprietário para O1
+(transporte real) e O2 (primeira conexão/leitura). Sem ela, o fallback técnico não bloqueador é
+exercitar `incomplete` real/Windows do SkillSpector; ele não substitui a validação da Fase 4.
+
+**Riscos/rollback:** o teste usa apenas conta dedicada; em caso de erro, remover
+`JARVIS_MAIL_TRANSPORT`, reiniciar o serviço, revogar a senha de aplicativo no provedor e apagar o
+campo cifrado. Nenhuma credencial deve ser registrada no repositório, terminal ou relatório.

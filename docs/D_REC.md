@@ -5,8 +5,8 @@ D_REC-3 (reautenticação), D_REC-4 (triagem) e D_REC-2 (expurgo **exclusivament
 Nenhuma execução real sobre dados reais; o mecanismo de expurgo e a transferência de conta de e-mail
 exigem autorização explícita por operação e escopo.
 Complementa a política em `docs/RECUPERACAO.md` §D_REC e serve de referência para a Fase 4.
-Base auditada: `main` = `f563af5`; decisão de titularidade de e-mail registrada em 2026-10-19
-(`docs/FASE-4-EMAIL.md` §11.3).
+Base auditada: `main` = `57a991f` (merge do PR #47; decisão preparada sobre `f563af5`); decisão de
+titularidade de e-mail registrada em 2026-10-19 (`docs/FASE-4-EMAIL.md` §11.3).
 
 ## 1. Resumo
 
