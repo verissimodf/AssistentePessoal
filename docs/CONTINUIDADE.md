@@ -1,10 +1,10 @@
 # J.A.R.V.I.S. — Documento de Continuidade (Fases 2, 3 e 4)
 
-Data: 2026-10-15 (histórico). Baseline atual: 2026-10-19 — ver §21. Estado histórico: Fase 2 integrada; Fase 3 (gestão documental) implementada com o primeiro formato **TXT** (ver progresso abaixo).
+Data: 2026-10-15 (histórico). Baseline atual: 2026-10-19 — ver §22. Estado histórico: Fase 2 integrada; Fase 3 (gestão documental) implementada com o primeiro formato **TXT** (ver progresso abaixo).
 
 Procedência: **[V]** verificado nesta sessão · **[R]** reportado pelo responsável · **[I]** inferência · **[D]** decisão pendente.
 
-> **Atualização 2026-10-19:** o estado corrente está em **§21** (pós-PRs #40–#42); as seções 0–20 são históricas e foram preservadas.
+> **Atualização 2026-10-19:** o estado corrente está em **§22** (pós-PRs #40–#44); as seções 0–21 são históricas e foram preservadas. A §21 registra a baseline pós-#42.
 
 ## 0. Progresso de execução (atualizado)
 
@@ -497,3 +497,134 @@ e retenção/expurgo de backups e do ledger.
 
 Esta baseline documental está em **PR próprio, ainda não integrado à `main`** até o merge; nenhum
 deploy, migração ou alteração de código/workflow foi feita nesta tarefa.
+
+## 22. Baseline consolidada 2026-10-19 — pós-PR #44 (estado corrente)
+
+Procedência: **[V]** verificado nesta sessão via API do GitHub e git · **[D]** decisão do proprietário · **[I]** não confirmado/inferência.
+
+Esta seção consolida o estado corrente após o PR #44. As seções 0–21 são históricas e foram
+preservadas; a §21 continua sendo a baseline pós-#42.
+
+### 22.1 Repositório e PR #44
+
+| Item | Valor | Proc. |
+|---|---|---|
+| `origin/main` | `686dcfd6812568c7e0f8aefdec1278fac17486d5` | [V] |
+| PR #44 | head `351b318f1a67ac4263d688e3bdfdcac57ae197ff`; base `a4b208514e6dee685b86daa2de0208e57e9d9598`; merge `686dcfd6812568c7e0f8aefdec1278fac17486d5`; `mergedAt` 2026-10-19T20:45:01Z; estado **MERGED** | [V] |
+| Diff do PR #44 | 3 arquivos, +151/−4: `.github/skillspector-build-constraints.txt` (+34), `.github/workflows/ci.yml` (+11/−4), `tests/verify-skillspector-build-constraints.test.mjs` (+106); nenhum código de aplicação, documento, dependência de runtime ou política de Skills alterado | [V] |
+| CI pós-merge | run `39321916745` (`push` em `686dcfd`) — global **success**; 3/3 jobs **success** | [V] |
+
+O PR #44 foi integrado por merge commit de dois pais (`a4b2085` e `351b318`), não por squash. O run
+de validação do PR (`39309593743`) também teve 3/3 jobs verdes.
+
+### 22.2 O que o PR #44 fixou
+
+O backend de build do scanner no commit `091a509b3d6ba8ff5be528966e1f43c2e68cf214` é
+`hatchling.build`, com `requires = ["hatchling"]` e **sem plugins**. O `uv.lock` do mesmo commit
+trava `hatchling 1.31.0` e as transitivas `packaging 26.2`, `pathspec 1.1.1`, `pluggy 1.6.0` e
+`trove-classifiers 2026.6.1.19`.
+
+O `uv 0.13.1` suporta `--build-constraints` no fluxo `uv tool install`. O PR #44:
+
+1. adicionou `.github/skillspector-build-constraints.txt` com os **5 pins exatos** das cinco
+   dependências de build e hashes SHA-256 (sdist + wheel), gerados com
+   `uv pip compile --generate-hashes` a partir das versões do `uv.lock` do upstream;
+2. passou a instalar com `--build-constraints` **e** `--require-build-hashes`, que exige hash para
+   **todas** as dependências de build: uma transitiva não pinada faz a instalação falhar em vez de
+   resolver a versão atual;
+3. adicionou `--no-cache` ao passo de instalação, para não reutilizar um wheel de build antigo;
+4. adicionou `tests/verify-skillspector-build-constraints.test.mjs` (**6 testes**): conjunto exato
+   de pins/versões, presença de hash, rejeição de duplicatas e de linhas não pinadas, ligação do
+   workflow (`--build-constraints`, `--require-build-hashes`, `--no-cache`) e consistência entre o
+   commit do scanner no workflow, nas constraints de runtime e nas de build.
+
+Provas negativas executadas com cache limpo: `hatchling==1.31.0` + `pluggy==0.13.1` falha por
+resolução (`No solution found ... pluggy==0.13.1`); apenas `hatchling` com hash, omitindo as
+transitivas, falha com `Hash-checking is required, but no trusted hash was provided for: pathspec`.
+A suíte total passou a **522 testes** (516 antes; +6 do teste de build), com **0 falhas** (skips de
+plataforma no CI); o teste real do scanner continua **19/19**; `npx vitest run` 84/84;
+`npm run build` e `git diff --check` ok.
+
+O runtime não foi alterado: 63 pins, `uv 0.13.1` com checksum, commit imutável do scanner e
+atestação `source_revision`/`package_vcs_metadata` continuam como no PR #42.
+
+### 22.3 CI pós-merge confirmado
+
+Run **`39321916745`** ([link](https://github.com/verissimodf/AssistentePessoal/actions/runs/39321916745)),
+evento `push`, head `686dcfd…`, criado em 2026-10-19T20:45:03Z, conclusão **success**.
+
+| Job | ID | Janela | Resultado | Evidência |
+|---|---|---|---|---|
+| `SkillSpector real (v2.13.0 @ 091a509)` | `118297842672` | 20:45:07–20:45:34Z | **success** | `instalado: uv 0.13.1`; `ok: 63 pins conferidos; 62 dependências instaladas; Python 3.12`; `SkillSpector v2.13.0`; `ok 19 - scanner REAL`; `# skipped 0`; `# fail 0` |
+| `Testes (ubuntu-latest)` | `118297842183` | 20:45:06–20:47:09Z | **success** | `# tests 522`; `# pass 517`; `# fail 0`; `# skipped 5` |
+| `Testes (windows-latest)` | `118297842682` | 20:45:06–20:50:12Z | **success** | `# tests 522`; `# pass 498`; `# fail 0`; `# skipped 24` |
+
+Os skips dos jobs de matriz são condicionais de plataforma já existentes; o job dedicado exige e
+obteve `# skipped 0` e `# fail 0`. O passo de instalação com `--build-constraints` +
+`--require-build-hashes` concluiu sem erro.
+
+### 22.4 Limitações remanescentes (conhecidas e documentadas)
+
+1. **Hashes de runtime não são aplicados** pelo `uv tool install` 0.13.1 nesse fluxo; a garantia de
+   runtime continua sendo pins exatos + verificação do conjunto instalado no CI.
+2. **Hashes de build** são exigidos e aplicados (`--require-build-hashes`), mas refletem os
+   artefatos do PyPI no momento da geração; não há garantia de retenção eterna no índice.
+3. **Ambos os arquivos de constraints precisam ser regenerados** quando o commit do scanner mudar
+   (runtime e build). O teste de consistência e o job falham explicitamente até lá.
+4. **Fallback para sdist:** se alguma dependência de runtime passar a ser instalada a partir de
+   sdist, o `--require-build-hashes` também exigirá hashes para as dependências de build dela; o
+   job falha explicitamente até revisão. Isso não ocorreu no conjunto validado (Linux/Python 3.12).
+5. **`incomplete` real e Windows** continuam sem cobertura real do scanner; o job dedicado é
+   Ubuntu-only e o teste real é skip esperado nos jobs de matriz.
+6. **Checksum do `uv` fixado para linux-x86_64**; mudança de arquitetura do runner exige atualização
+   explícita e falha até lá.
+7. **Backend de build sem plugins** hoje; se o upstream adicionar plugins ou requisitos dinâmicos,
+   o arquivo de build e o teste precisam ser atualizados.
+8. **`--no-cache`** aumenta um pouco o tempo do job, deliberadamente, para não reutilizar builds
+   anteriores.
+9. **Atestação de proveniência** verifica a consistência declarada, não a integridade criptográfica
+   do binário.
+
+### 22.5 Melhorias técnicas futuras (não bloqueadores)
+
+1. Exercitar a saída `incomplete` com o scanner real e, se justificado, o scanner no Windows.
+2. Avaliar um mecanismo equivalente de hashes para as dependências de runtime, se o fluxo do `uv`
+   evoluir nesse sentido.
+3. Validar integrações externas (IMAP/SMTP, Telegram, Ollama, TTS) com credenciais e serviços
+   reais; a indisponibilidade real desses serviços também não foi testada. Depende do proprietário.
+
+### 22.6 Decisões que dependem de autorização do proprietário
+
+Continuam abertas e **não foram tocadas**: Fase 4/e-mail (F4.11 aprovada em 2026-10-15 — correção
+de estado em relação às seções históricas, que a registravam como pendente —, mas especificação
+como documento, autorização de implementação, D_REC e autorizações operacionais pendentes),
+política de instalação/ativação de Skills (`enabled.json`), deploy e migração de
+produção (código atual na v12), validação de integrações com credenciais reais, heartbeat/autonomia
+e retenção/expurgo de backups e do ledger.
+
+### 22.7 Itens não verificados em produção
+
+- Deploy, migração e runtime de produção não foram executados nem inspecionados nesta tarefa.
+- A indisponibilidade real de serviços externos (GitHub, NVIDIA, PyPI, IMAP/SMTP, Telegram, Ollama,
+  TTS) não foi provocada; existem apenas stubs e simulações locais.
+- A atestação de proveniência verifica a **consistência declarada**, não a integridade
+  criptográfica do binário.
+
+### 22.8 Documentos atualizados nesta baseline
+
+- `roadmap.md` — concluído × parcial × decisões do proprietário × próxima tarefa.
+- `docs/CONTINUIDADE.md` — esta seção consolidada (as seções §19, §20 e §21 foram preservadas).
+- `docs/RELATORIO-P02-2026-10-18.md` §O — detalhe do PR #44 e do CI pós-merge.
+- `docs/ARQUITETURA-FASE1-2026-10-18.md` — build fixado, `--require-build-hashes` e limitações.
+
+Esta baseline documental está em **PR próprio, ainda não integrado à `main`** até o merge. As
+alterações documentais locais do worktree principal foram integralmente preservadas; esta baseline
+parte de `origin/main` (`686dcfd`), não do worktree local. Nenhum código, workflow, dependência ou
+configuração de produção foi alterado nesta tarefa.
+
+### 22.9 Próxima lacuna funcional (não iniciada)
+
+A maior lacuna funcional é a **Fase 4 — e-mail**: com a F4.11 aprovada, o núcleo de e-mail, as
+rotas/ferramentas com transporte mockado e o adaptador IMAP/SMTP já existem, mas o transporte real,
+a conta dedicada de teste e as autorizações operacionais continuam inativos. Depende de aprovação
+do proprietário; **não foi iniciada nesta execução**.
