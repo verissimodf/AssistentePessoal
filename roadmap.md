@@ -1,11 +1,11 @@
 # Roadmap
 
-Baseline: 2026-10-19 — `origin/main` = `03ebb2d35e427e5d7b4a1e0457c9f46b9492204e` (PRs #40, #41
-e #42 integrados).
+Baseline: 2026-10-19 — `origin/main` = `686dcfd6812568c7e0f8aefdec1278fac17486d5` (PRs #40, #41,
+#42, #43 e #44 integrados).
 
 > Numeração alinhada ao Plano Mestre: Fase 2 = preferências/isolamento, Fase 3 = documentos,
 > Fase 4 = e-mail. A versão anterior deste arquivo usava "Fase 2" para documentos; a equivalência
-> e o histórico ficam registrados em `docs/CONTINUIDADE.md` (§6, §19, §20 e §21).
+> e o histórico ficam registrados em `docs/CONTINUIDADE.md` (§6, §19, §20, §21 e §22).
 
 ## Concluído
 
@@ -25,15 +25,22 @@ e #42 integrados).
   `uv.lock` do commit `091a509…`, instalação por constraints e verificação do conjunto efetivamente
   instalado; verificador endurecido (parsing estrito, PEP 503, duplicatas rejeitadas, `skillspector`
   obrigatório) com 16 testes (PR #42, merge `03ebb2d`). CI pós-merge verde nos três jobs.
+- [x] Runtime **e build** do SkillSpector fixados: dependências de build (PEP 517 — `hatchling 1.31.0`
+  e transitivas) pinadas com hash SHA-256 em `.github/skillspector-build-constraints.txt` a partir
+  do `uv.lock` do commit `091a509…` e aplicadas no `uv tool install` via `--build-constraints`
+  **`--require-build-hashes`** (com `--no-cache`); provas negativas comprovam falha em pin
+  divergente ou hash ausente (PR #44, merge `686dcfd`). Comprova hash para **todas** as
+  dependências de build; hashes de **runtime** continuam sem mecanismo aplicável no
+  `uv tool install` 0.13.1 — item **não iniciado nesta tarefa**.
 
 ## Parcial / pendente
 
-- [ ] Fixar as dependências de **build** (hatchling e transitivas) com `--build-constraints`; hoje
-  ficam fora do lock e não são cobertas pelo verificador.
-- [ ] Hashes de dependências: o `uv tool install` 0.13.1 não os aplica; a garantia atual é pins
-  exatos + verificação do conjunto instalado. Avaliar um mecanismo equivalente em follow-up.
-- [ ] Regenerar `.github/skillspector-constraints.txt` ao mudar o commit do scanner; até lá o job
-  falha explicitamente.
+- [ ] Hashes de dependências de **runtime**: o `uv tool install` 0.13.1 não os aplica; a garantia
+  atual para o runtime é pins exatos + verificação do conjunto instalado (para o **build** o hash
+  já é exigido via `--require-build-hashes`). Avaliar um mecanismo equivalente para o runtime em
+  follow-up.
+- [ ] Regenerar `.github/skillspector-constraints.txt` **e** `.github/skillspector-build-constraints.txt`
+  ao mudar o commit do scanner; até lá o job falha explicitamente.
 - [ ] Exercitar a saída `incomplete` com o scanner real e, se justificado, o scanner no Windows.
 - [ ] Fase F — gateway de MCPs/plugins: somente desenho; nenhum conector ativo.
 - [ ] Testar indisponibilidade real de serviços externos (GitHub, NVIDIA, PyPI, IMAP/SMTP,
@@ -55,7 +62,8 @@ e #42 integrados).
 
 ## Próxima tarefa recomendada
 
-- [ ] Fixar as dependências de build do scanner (`hatchling` e transitivas) com
-  `--build-constraints`, mantendo o lock de runtime e a verificação de conjunto já concluídos no
-  PR #42. É um follow-up de supply chain, pequeno, sem efeito em produção, credenciais ou política
-  de Skills; **não iniciado nesta tarefa**.
+- [ ] Exercitar a saída `incomplete` com o scanner real e, se justificado, o scanner no Windows
+  (hoje a cobertura de `incomplete` é só por stubs e o job do scanner é Ubuntu-only, com o teste
+  real em skip no Windows). É o follow-up mais próximo do trabalho concluído (PRs #40–#44), de
+  escopo pequeno, sem efeito em produção, credenciais ou política de Skills; **não iniciado nesta
+  tarefa**.

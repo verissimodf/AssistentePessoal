@@ -127,8 +127,10 @@ catálogo ativo: candidatos vindos de `skills/` são recusados (só quarentena l
   ativação humana, nunca-executa, além de 4 testes de proveniência `source_revision` —
   correta/ausente/malformada/divergente). O verificador de dependências tem 16 testes próprios em
   `tests/verify-skillspector-deps.test.mjs` (parsing estrito, PEP 503, duplicatas, pacote principal
-  e divergências). Verificação real com SkillSpector 2.13.0 em Ubuntu: benigna `passed`, hostil
-  inerte `failed` (SC2/PE3/TM2, score 62).
+  e divergências); o verificador de constraints de build tem 106 linhas de testes em
+  `tests/verify-skillspector-build-constraints.test.mjs` (conjunto exato de pins/hashes,
+  duplicatas e linhas não pinadas rejeitadas, ligação do workflow). Verificação real com
+  SkillSpector 2.13.0 em Ubuntu: benigna `passed`, hostil inerte `failed` (SC2/PE3/TM2, score 62).
 - Limitações: o gate não está ligado a nenhuma operação de instalação (não existe instalação de
   Skills nesta fase); a verificação real local depende do scanner instalado. Desde o PR #40
   (merge `6ec1986`), o CI tem o job dedicado `SkillSpector real (v2.13.0 @ 091a509)`, que instala o
@@ -139,9 +141,17 @@ catálogo ativo: candidatos vindos de `skills/` são recusados (só quarentena l
   criptográfica do binário. Desde o PR #42 (merge `03ebb2d`), o job fixa `uv 0.13.1` com checksum,
   instala as dependências por 63 pins exportados do `uv.lock` do scanner e verifica o conjunto
   efetivamente instalado; o verificador tem 16 testes próprios (parsing estrito, PEP 503,
-  duplicatas rejeitadas, `skillspector` obrigatório). Permanecem fora do lock as dependências de
-  build (hatchling e transitivas); hashes não são aplicados pelo `uv tool install` nesse fluxo (ver
-  `docs/CONTINUIDADE.md` §19–§21 e `docs/RELATORIO-P02-2026-10-18.md` §L–§N). Aquisição remota
+  duplicatas rejeitadas, `skillspector` obrigatório). Desde o PR #44 (merge `686dcfd`), o
+  **runtime e o build** do scanner estão fixados: as dependências de build (PEP 517 —
+  `hatchling 1.31.0` e transitivas) são pinadas com hash em
+  `.github/skillspector-build-constraints.txt` e aplicadas no `uv tool install` via
+  **`--build-constraints` `--require-build-hashes` `--no-cache`** — hash exigido para todas as
+  dependências de build; pins divergentes ou hash faltante (incl. dependência via sdist sem
+  hashes) falham a instalação, comprovado por provas negativas. Permanecem sem hashes as
+  dependências de **runtime** (`uv tool install` 0.13.1 não os aplica; garantia = pins exatos +
+  verificação de conjunto). Ao mudar o commit do scanner, as duas constraints e os testes
+  associados precisam ser regenerados — até lá o job falha explicitamente (ver
+  `docs/CONTINUIDADE.md` §19–§22 e `docs/RELATORIO-P02-2026-10-18.md` §L–§O). Aquisição remota
   (URL/git) e extração de pacotes ficam para trabalho futuro, com os mesmos cuidados de
   zip-bomb/traversal que o scanner impõe internamente.
 
