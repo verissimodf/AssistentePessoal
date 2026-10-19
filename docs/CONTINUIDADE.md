@@ -1,8 +1,10 @@
 # J.A.R.V.I.S. — Documento de Continuidade (Fases 2, 3 e 4)
 
-Data: 2026-10-15 (UTC). Estado: Fase 2 integrada; Fase 3 (gestão documental) implementada com o primeiro formato **TXT** (ver progresso abaixo).
+Data: 2026-10-15 (histórico). Baseline atual: 2026-10-19 — ver §21. Estado histórico: Fase 2 integrada; Fase 3 (gestão documental) implementada com o primeiro formato **TXT** (ver progresso abaixo).
 
 Procedência: **[V]** verificado nesta sessão · **[R]** reportado pelo responsável · **[I]** inferência · **[D]** decisão pendente.
+
+> **Atualização 2026-10-19:** o estado corrente está em **§21** (pós-PRs #40–#42); as seções 0–20 são históricas e foram preservadas.
 
 ## 0. Progresso de execução (atualizado)
 
@@ -68,7 +70,7 @@ Testes rodados com as dependências existentes, sem instalação, em bancos temp
 | X4 | repositório de referência AssistentePessoal × Jarvis | [V] |
 | X5 | PM §5.3 pede para avaliar OAuth; o código usa senha de app | [V] |
 
-Terminologia adotada: a do Plano Mestre. Roadmap não alterado (D2).
+Terminologia adotada: a do Plano Mestre. D2 resolvido documentalmente em 2026-10-19: o `roadmap.md` foi alinhado ao Plano Mestre e X1/X2 foram corrigidos (ver §19).
 
 ## 7. Especificação original (PM §6, literal)
 **Fase 2 — Preferências e isolamento dos dados.** Objetivo: separar os dados de cada administrador. Escopo: Preferências individuais. Proprietários e permissões dos recursos. Separação entre configurações globais e pessoais. Políticas de compartilhamento. Migrações compatíveis com os dados existentes. Critérios: Um usuário não consegue acessar dados privados do outro. O isolamento é aplicado no backend e nas ferramentas dos agentes. Recursos compartilhados possuem regras explícitas. Os dados existentes continuam disponíveis de acordo com a política de migração aprovada. (Complementos: §3.3 — separação "nas consultas, gravações, ferramentas de agentes, rotas HTTP, tarefas agendadas e integrações"; §4; §5.1.)
@@ -169,7 +171,7 @@ especificação da Fase 4** (D7/D9/D10). **D_REC** é proposta nova, aguardando 
 | Alta | F4.11 — pastas, filtros, limites, retenção | Aprovar a recomendação inicial (§3.1) |
 | Alta | Aprovação da especificação da Fase 4 + autorização de implementação | Revisão do PR #6 |
 | Posterior | D8 — limites/cota por documento | Definir valores |
-| Posterior | D2 — numeração | Ajustar ou registrar a equivalência no roadmap |
+| Posterior | D2 — numeração | **Resolvido em 2026-10-19**: roadmap alinhado ao Plano Mestre (§19) |
 
 
 | Prioridade | Decisão | Próximo passo |
@@ -180,10 +182,10 @@ especificação da Fase 4** (D7/D9/D10). **D_REC** é proposta nova, aguardando 
 | Alta | D6 — PDF ou TXT | Escolher o primeiro formato documental |
 | Alta | D7/D9 — e-mail | Definir autenticação e confirmações |
 | Posterior | D8/D10 | Definir limites e preparar contas de teste autorizadas |
-| Posterior | D2 — numeração | Ajustar ou registrar a equivalência no roadmap |
+| Posterior | D2 — numeração | **Resolvido em 2026-10-19**: roadmap alinhado ao Plano Mestre (§19) |
 
 - D1 Base oficial: sincronizar `143d042b` aqui (enviar L1) ou aprovar `2ab542c` após comparação.
-- D2 Numeração: corrigir `roadmap.md` para o Plano Mestre ou registrar a equivalência.
+- D2 Numeração: **resolvido em 2026-10-19** — `roadmap.md` alinhado ao Plano Mestre; histórico em §6 e §19.
 - D3 Dados antigos sem dono (decisão de produto e segurança, não detalhe de migração): (a) somente leitura e compartilhados; (b) ocultos até um admin assumir, com auditoria; (c) compartilhados com leitura e escrita, marcados como legado; (d) outra. Preferência técnica registrada pelo revisor [R]: preservar os dados, fazer backup verificável e exigir uma política explícita de acesso antes de torná-los disponíveis aos administradores.
 - D4 Compartilhamento: (a) por item; (b) espaço comum entre os dois admins; (c) nenhum nesta fase.
 - D5 Quais configurações são globais e quais são pessoais (provedores e chaves, idioma, voz, agente ativo, host).
@@ -267,3 +269,231 @@ Status: **implementado e testado em cópia isolada**; a v9 **não** foi aplicada
 - Documentação: `docs/RECUPERACAO.md` §v9 (procedimento, ordem segura de implantação/rollback código+banco, retenção).
 - Resultados: `node --test` **361/361** (execução por arquivo; a suíte combinada pode apresentar flakiness pré-existente em `run-limits` sob carga paralela); `vitest` **44/44**. Sem commit/push, sem banco real, sem auto-resposta do Telegram, sem ampliação de permissões.
 - Limitações: os triggers protegem a trilha contra o SQL do serviço, **não** contra acesso direto ao arquivo do banco; `trg_audit_no_delete` impede um `DELETE` normal (política de retenção exige decisão explícita); hash chain não implementado; vínculo com `clientMsgId` pendente; validação em produção pendente.
+
+## 19. Baseline 2026-10-19 — pós-PR #40 (atualização)
+
+Procedência: **[V]** verificado nesta sessão · **[D]** decisão do proprietário · **[I]** não confirmado/inferência.
+
+Esta seção registra a baseline **pós-PR #40**; o estado corrente pós-PRs #41 e #42 está em §21. As seções 0–18 são históricas e foram preservadas.
+
+### 19.1 Repositório e PR #40
+
+| Item | Valor | Proc. |
+|---|---|---|
+| `origin/main` | `6ec1986ed895e0c57020c09cd880eec3932cbaba` | [V] |
+| PR #40 | head `581a077c154a19247876d8c14adb2e3fbc523301`; base `594cec1face28dae19340cbb0913b28a477692ef`; merge `6ec1986ed895e0c57020c09cd880eec3932cbaba`; `mergedAt` 2026-10-19T15:26:44Z | [V] |
+| Diff do PR | apenas `.github/workflows/ci.yml` (+37 linhas); job `testes` da matriz Ubuntu/Windows inalterado (7 steps) | [V] |
+| SkillSpector no CI | v2.13.0, commit imutável `091a509b3d6ba8ff5be528966e1f43c2e68cf214` | [V] |
+| `astral-sh/setup-uv` | v10.3.0, SHA imutável `1c37ad07a6a961277cf70c0d37d6f313000f5884` | [V] |
+| CI pós-merge | run `39278025495` concluído **success** às 15:58:38Z; os três jobs **success** (Windows às 15:34:24Z) | [V] |
+
+### 19.2 Contrato do job real
+
+O job dedicado `SkillSpector real (v2.13.0 @ 091a509)`:
+
+- instala o scanner pelo commit imutável, não pela tag móvel;
+- confirma `command -v skillspector` e a versão **exata** `SkillSpector v2.13.0`;
+- executa `node --no-warnings --test tests/skill-scanner.test.mjs` com o scanner real;
+- usa `set -o pipefail` e asserções TAP que exigem o teste `scanner REAL` sem `# SKIP`,
+  `# skipped 0` e `# fail 0`;
+- falha em ausência, erro de instalação, versão divergente, erro de execução ou skip silencioso;
+- declara `permissions: contents: read` e não altera os jobs Ubuntu/Windows existentes.
+
+O run de PR #40 (`39274961499`) teve os três checks verdes: `SkillSpector real`,
+`Testes (ubuntu-latest)` e `Testes (windows-latest)`. No run pós-merge, os três jobs concluíram
+com sucesso (scanner 15:28:11Z, Ubuntu 15:29:02Z, Windows 15:34:24Z) e o run global concluiu
+**success** às 15:58:38Z (`39278025495`).
+
+### 19.3 Melhorias futuras (não bloqueadores)
+
+1. Atestar em runtime o `source_revision` reportado pelo scanner no CI — **concluído no PR #41**
+   (ver §20).
+2. Avaliar a fixação do executável `uv` e das dependências Python transitivas — **concluído no
+   PR #42** (ver §21).
+3. Exercitar a saída `incomplete` com o scanner real e, se justificado, o scanner no Windows.
+4. Registrar que a indisponibilidade real dos serviços externos não foi testada.
+
+### 19.4 Próxima lacuna recomendada
+
+**Atestar `source_revision` no relatório real do SkillSpector**, comparando-o ao commit fixado e
+falhando o job quando não corresponder. Escopo delimitado: expor de forma aditiva o
+`source_revision` já presente no relatório interno do scanner e assertá-lo no teste real, sem
+instalar/ativar Skills, sem credenciais e sem alterar produção. **Concluído no PR #41**
+(`71c0832`; ver §20). As lacunas que dependem de decisão do proprietário (Fase 4/e-mail, política
+de Skills, deploy/migração v12, credenciais externas, heartbeat e retenção) permanecem bloqueadas;
+as melhorias técnicas restantes estão em §19.3.
+
+### 19.5 Documentos atualizados nesta baseline
+
+- `roadmap.md` — concluído × parcial × decisões do proprietário × próxima tarefa.
+- `docs/CONTINUIDADE.md` — esta seção (histórico preservado).
+- `docs/RELATORIO-P02-2026-10-18.md` §L — detalhe do CI e das melhorias futuras.
+- `docs/ARQUITETURA-FASE1-2026-10-18.md` — correção da afirmação de que o CI só corria stubs.
+
+## 20. Baseline 2026-10-19 — pós-PR #41 (atualização)
+
+Procedência: **[V]** verificado nesta sessão · **[D]** decisão do proprietário · **[I]** não confirmado/inferência.
+
+Esta seção registra a baseline **pós-PR #41**; o estado corrente pós-PR #42 está em §21. As seções 0–19 são históricas e foram preservadas.
+
+### 20.1 Repositório e PR #41
+
+| Item | Valor | Proc. |
+|---|---|---|
+| `origin/main` | `71c083227b999155068ae91a6d1c963d69b6232c` | [V] |
+| PR #41 | head `7d1b2dc534a6083c15f9b11c93425be4893f9592`; base `6ec1986ed895e0c57020c09cd880eec3932cbaba`; merge `71c083227b999155068ae91a6d1c963d69b6232c`; `mergedAt` 2026-10-19T17:21:28Z | [V] |
+| Diff do PR | `server/skill-scanner.js` e `tests/skill-scanner.test.mjs` (+134 linhas, 0 remoções); nenhum workflow, rota ou dependência alterados | [V] |
+| Atestação de proveniência | o relatório real declara a revisão `091a509b3d6ba8ff5be528966e1f43c2e68cf214` com origem `package_vcs_metadata`; o teste real exige os dois, separadamente da versão `2.13.0` | [V] |
+| CI pós-merge | run `39293416082` concluído **success** às 17:26:24Z; três jobs **success** (scanner 17:22:09Z, Ubuntu 17:23:24Z, Windows 17:26:23Z) | [V] |
+
+### 20.2 O que o PR #41 fechou
+
+O adaptador expõe de forma **aditiva** `sourceRevision` e `sourceRevisionSource`, extraídos do
+formato real do SkillSpector 2.13.0 — por analyzer, em
+`metadata.llm_provenance.analyzers[].analyzer_revision.source_revision` (origem
+`package_vcs_metadata`, do `direct_url.json` da distribuição instalada). A extração é conservadora:
+se a lista estiver vazia ou algum analyzer não declarar a mesma revisão hex válida e a mesma
+origem, o valor exposto é `null` — nunca um valor arbitrário. O teste real atesta a versão `2.13.0`
+e a revisão fixada **separadamente**; os testes de unidade cobrem revisão correta, ausente,
+malformada e divergente; o job pós-merge executou o teste real sem skip (`ok 19`, `# skipped 0`,
+`# fail 0`) e os logs não expõem conteúdo de Skills. Limitação: a atestação comprova a
+**consistência declarada**, não a integridade criptográfica do binário.
+
+Links: [PR #41](https://github.com/verissimodf/AssistentePessoal/pull/41) ·
+[run pós-merge](https://github.com/verissimodf/AssistentePessoal/actions/runs/39293416082).
+
+### 20.3 Melhorias futuras (não bloqueadores)
+
+1. Fixar de forma reproduzível o executável `uv` e as dependências Python transitivas do job do
+   scanner — **concluído no PR #42** (`uv 0.13.1` com checksum e 63 pins; ver §21).
+2. Exercitar a saída `incomplete` com o scanner real e, se justificado, o scanner no Windows (a
+   cobertura atual de `incomplete` é só por stubs; no Windows o teste real é skip).
+3. Validar integrações externas (IMAP/SMTP, Telegram, Ollama, TTS) com credenciais e serviços
+   reais; a indisponibilidade real desses serviços também não foi testada. Depende do proprietário.
+
+### 20.4 Próxima tarefa recomendada
+
+**Fixar de forma reproduzível o `uv` e as dependências Python transitivas do job do scanner**
+(versão explícita do `uv` e lock/constraints), mantendo o commit imutável do SkillSpector e a
+atestação de proveniência. É um follow-up de supply chain, pequeno, sem efeito em produção,
+credenciais ou política de Skills; **concluído no PR #42** (`03ebb2d`; ver §21).
+
+As pendências que dependem de decisão do proprietário (Fase 4/e-mail, política de Skills,
+deploy/migração v12, credenciais externas, heartbeat e retenção) permanecem bloqueadas.
+
+### 20.5 Documentos atualizados nesta baseline
+
+- `roadmap.md` — concluído × parcial × decisões do proprietário × próxima tarefa.
+- `docs/CONTINUIDADE.md` — esta seção (a §19 foi preservada como baseline pós-PR #40).
+- `docs/RELATORIO-P02-2026-10-18.md` §M — detalhe do PR #41 e do CI.
+- `docs/ARQUITETURA-FASE1-2026-10-18.md` — cobertura de 19 testes e atestação de proveniência.
+
+As alterações documentais desta baseline permaneceram **locais e não commitadas** até a
+consolidação documental; foram então transferidas para branch e PR próprio, ainda **não integrado à
+`main`** até o merge (ver §21). Nenhum deploy, migração ou alteração de código foi feita.
+
+## 21. Baseline consolidada 2026-10-19 — pós-PRs #40, #41 e #42 (estado corrente)
+
+Procedência: **[V]** verificado nesta sessão via API do GitHub e git · **[D]** decisão do proprietário · **[I]** não confirmado/inferência.
+
+Esta seção consolida o estado corrente após os PRs #40, #41 e #42. As seções 0–20 são históricas e
+foram preservadas; o detalhe de cada PR continua em §19 (pós-#40) e §20 (pós-#41).
+
+### 21.1 Repositório e PRs integrados
+
+| Item | Valor | Proc. |
+|---|---|---|
+| `origin/main` | `03ebb2d35e427e5d7b4a1e0457c9f46b9492204e` | [V] |
+| PR #40 | merge `6ec1986ed895e0c57020c09cd880eec3932cbaba`; `mergedAt` 2026-10-19T15:26:44Z | [V] |
+| PR #41 | merge `71c083227b999155068ae91a6d1c963d69b6232c`; `mergedAt` 2026-10-19T17:21:28Z | [V] |
+| PR #42 | head `017e141d54963c7e9f7502ec3bdc22051fcc9fbc`; base `71c083227b999155068ae91a6d1c963d69b6232c`; merge `03ebb2d35e427e5d7b4a1e0457c9f46b9492204e`; `mergedAt` 2026-10-19T18:19:32Z; estado **MERGED** | [V] |
+| Diff do PR #42 | 4 arquivos, +540/−3: `.github/workflows/ci.yml` (+17/−3), `.github/skillspector-constraints.txt` (+231), `scripts/verify-skillspector-deps.mjs` (+147), `tests/verify-skillspector-deps.test.mjs` (+145) | [V] |
+| CI pós-merge | run `39301820429` (`push` em `03ebb2d`) — global **success**; 3/3 jobs **success** | [V] |
+
+O PR #42 foi integrado por merge commit de dois pais (`71c0832` e `017e141`), não por squash; a
+`main` contém o histórico do endurecimento do verificador. O merge não alterou documentos.
+
+### 21.2 O que o PR #42 fixou
+
+- **`uv` reproduzível:** `astral-sh/setup-uv` recebe `version: 0.13.1` e o checksum sha256 oficial
+  do artefato linux-x86_64 (`eadd9d27c134ab5ac1ffd4473b97a741407f3ea238288f03121fc4deddf90220`);
+  um passo falha se `uv --version` divergir. Fim do `Falling back to latest`.
+- **Dependências fixadas:** `.github/skillspector-constraints.txt` com **63 pins `==`** derivados
+  do `uv.lock` do commit `091a509b3d6ba8ff5be528966e1f43c2e68cf214` via
+  `uv export --locked --no-dev --no-emit-project --no-emit-local --no-hashes` — 62 incondicionais
+  + `colorama==0.4.6 ; sys_platform == 'win32'`. Export determinístico (sha256 `e1b4a094…` nas duas
+  execuções).
+- **Instalação e verificação:** instalação com `--python 3.12 --constraints`; o verificador
+  `scripts/verify-skillspector-deps.mjs` confere o **conjunto efetivamente instalado** contra as
+  constraints (pacote extra, versão divergente, pin ausente, pin não-`==`, pin Linux ausente,
+  Python ≠ 3.12).
+- **Verificador endurecido:** parsing estrito de `uv pip list --format freeze` (linha não
+  interpretável falha), normalização PEP 503, nomes duplicados rejeitados (sem sobrescrever no
+  `Map`) e exigência explícita do pacote principal `skillspector`; funções puras exportadas e
+  **16 testes** em `tests/verify-skillspector-deps.test.mjs`.
+- **Preservado:** commit imutável do scanner, versão `2.13.0`, atestação `source_revision` /
+  `package_vcs_metadata` (PR #41), execução obrigatória sem skip e ausência de conteúdo de Skills
+  nos logs.
+
+### 21.3 CI pós-merge confirmado
+
+Run **`39301820429`** ([link](https://github.com/verissimodf/AssistentePessoal/actions/runs/39301820429)),
+evento `push`, head `03ebb2d…`, criado em 2026-10-19T18:21:30Z, conclusão **success**.
+
+| Job | ID | Janela | Resultado |
+|---|---|---|---|
+| `SkillSpector real (v2.13.0 @ 091a509)` | `118228680611` | 18:21:33–18:22:04Z | **success** |
+| `Testes (ubuntu-latest)` | `118228679953` | 18:21:33–18:24:05Z | **success** |
+| `Testes (windows-latest)` | `118228680646` | 18:21:33–18:26:52Z | **success** |
+
+Evidência do job dedicado: `instalado: uv 0.13.1`; `Resolved 63 packages` / `Installed 63
+packages`; `ok: 63 pins conferidos; 62 dependências instaladas; Python 3.12`; a condicional
+`colorama==0.4.6 ; sys_platform == 'win32'` foi listada como não aplicável; `ok 19 - scanner REAL`;
+`# skipped 0`; `# fail 0`. Na matriz, Ubuntu e Windows registraram `# tests 516` e `# fail 0` (o
+teste real do scanner é skip esperado nesses jobs, coberto pelo job dedicado).
+
+### 21.4 Limitações remanescentes (conhecidas e documentadas)
+
+1. **Hashes não são aplicados** pelo `uv tool install` 0.13.1 nesse fluxo: constraints com hash são
+   ignoradas (prova negativa com hash corrompido instalou igual) e `--require-hashes` rejeita o
+   requisito git. O mecanismo equivalente é pins exatos + verificação de conjunto no CI.
+2. **Dependências de build** do próprio projeto (hatchling e transitivas) continuam resolvidas na
+   construção — fora do lock e não cobertas pelo verificador.
+3. **Constraints precisam ser regeneradas** quando o commit do scanner mudar; nesse caso o job
+   falha explicitamente (pacote/pin divergente) em vez de derivar em silêncio.
+4. **Checksum do `uv` fixado para linux-x86_64**: mudança de arquitetura do runner exige atualização
+   explícita e falha até lá.
+5. **`incomplete` real e Windows** continuam sem cobertura real (só stubs); o job do scanner é
+   Ubuntu-only.
+
+### 21.5 Melhorias técnicas futuras (não bloqueadores)
+
+1. Fixar as dependências de build com `--build-constraints` (hatchling e transitivas).
+2. Exercitar a saída `incomplete` com o scanner real e, se justificado, o scanner no Windows.
+3. Validar integrações externas (IMAP/SMTP, Telegram, Ollama, TTS) com credenciais e serviços reais;
+   a indisponibilidade real desses serviços também não foi testada.
+
+### 21.6 Decisões que dependem de autorização do proprietário
+
+Continuam abertas e **não foram tocadas**: Fase 4/e-mail (especificação não aprovada; F4.11 e
+D_REC pendentes), política de instalação/ativação de Skills (`enabled.json`), deploy e migração de
+produção (código atual na v12), validação de integrações com credenciais reais, heartbeat/autonomia
+e retenção/expurgo de backups e do ledger.
+
+### 21.7 Itens não verificados em produção
+
+- Deploy, migração e runtime de produção não foram executados nem inspecionados nesta tarefa.
+- A indisponibilidade real de serviços externos (GitHub, NVIDIA, PyPI, IMAP/SMTP, Telegram, Ollama,
+  TTS) não foi provocada; existem apenas stubs e simulações locais.
+- A atestação de proveniência verifica a **consistência declarada**, não a integridade
+  criptográfica do binário.
+
+### 21.8 Documentos atualizados nesta baseline
+
+- `roadmap.md` — concluído × parcial × decisões do proprietário × próxima tarefa.
+- `docs/CONTINUIDADE.md` — esta seção consolidada (as seções §19 e §20 foram preservadas).
+- `docs/RELATORIO-P02-2026-10-18.md` §N — detalhe do PR #42 e do CI pós-merge.
+- `docs/ARQUITETURA-FASE1-2026-10-18.md` — pin do `uv`, constraints e verificador endurecido.
+
+Esta baseline documental está em **PR próprio, ainda não integrado à `main`** até o merge; nenhum
+deploy, migração ou alteração de código/workflow foi feita nesta tarefa.
