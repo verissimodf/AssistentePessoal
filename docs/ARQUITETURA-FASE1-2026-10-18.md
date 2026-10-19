@@ -127,8 +127,11 @@ catálogo ativo: candidatos vindos de `skills/` são recusados (só quarentena l
   ativação humana, nunca-executa, além de 4 testes de proveniência `source_revision` —
   correta/ausente/malformada/divergente). O verificador de dependências tem 16 testes próprios em
   `tests/verify-skillspector-deps.test.mjs` (parsing estrito, PEP 503, duplicatas, pacote principal
-  e divergências). Verificação real com SkillSpector 2.13.0 em Ubuntu: benigna `passed`, hostil
-  inerte `failed` (SC2/PE3/TM2, score 62).
+  e divergências) e, desde o PR #44, 6 testes de constraints de build em
+  `tests/verify-skillspector-build-constraints.test.mjs` (pins exatos, hashes, duplicatas, linhas
+  não pinadas, ligação do workflow e consistência de commit) — suíte total 522 testes. Verificação
+  real com SkillSpector 2.13.0 em Ubuntu: benigna `passed`, hostil inerte `failed` (SC2/PE3/TM2,
+  score 62).
 - Limitações: o gate não está ligado a nenhuma operação de instalação (não existe instalação de
   Skills nesta fase); a verificação real local depende do scanner instalado. Desde o PR #40
   (merge `6ec1986`), o CI tem o job dedicado `SkillSpector real (v2.13.0 @ 091a509)`, que instala o
@@ -139,9 +142,16 @@ catálogo ativo: candidatos vindos de `skills/` são recusados (só quarentena l
   criptográfica do binário. Desde o PR #42 (merge `03ebb2d`), o job fixa `uv 0.13.1` com checksum,
   instala as dependências por 63 pins exportados do `uv.lock` do scanner e verifica o conjunto
   efetivamente instalado; o verificador tem 16 testes próprios (parsing estrito, PEP 503,
-  duplicatas rejeitadas, `skillspector` obrigatório). Permanecem fora do lock as dependências de
-  build (hatchling e transitivas); hashes não são aplicados pelo `uv tool install` nesse fluxo (ver
-  `docs/CONTINUIDADE.md` §19–§21 e `docs/RELATORIO-P02-2026-10-18.md` §L–§N). Aquisição remota
+  duplicatas rejeitadas, `skillspector` obrigatório). Desde o PR #44 (merge `686dcfd`), o build
+  também está fixado: `.github/skillspector-build-constraints.txt` pin a `hatchling 1.31.0` e as
+  transitivas `packaging 26.2`, `pathspec 1.1.1`, `pluggy 1.6.0` e
+  `trove-classifiers 2026.6.1.19`, com hashes SHA-256; o job usa `--build-constraints` +
+  `--require-build-hashes` e `--no-cache`, falhando se qualquer dependência de build não tiver
+  hash. Permanecem: hashes de runtime não aplicados pelo `uv tool install` 0.13.1 (pins +
+  verificação de conjunto), hashes de build dependentes dos artefatos do PyPI, regeneração de
+  ambos os arquivos ao mudar o commit do scanner, `incomplete` real/Windows sem cobertura e
+  backend de build sem plugins no upstream (se mudar, atualizar arquivo/teste). Ver
+  `docs/CONTINUIDADE.md` §19–§22 e `docs/RELATORIO-P02-2026-10-18.md` §L–§O. Aquisição remota
   (URL/git) e extração de pacotes ficam para trabalho futuro, com os mesmos cuidados de
   zip-bomb/traversal que o scanner impõe internamente.
 
