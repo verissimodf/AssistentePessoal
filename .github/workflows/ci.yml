@@ -36,6 +36,9 @@ jobs:
   # Job dedicado: SkillSpector REAL fixado por commit imutável (não tag móvel) executando os
   # testes reais de contrato do scanner. Independente dos jobs acima (nada aqui muda neles).
   # O teste real (tests/skill-scanner.test.mjs) roda com o binário presente e falha/skip ⇒ job falha.
+  # Ambiente reprodutível: uv fixado por versão + checksum (sem fallback para latest) e
+  # dependências transitivas fixadas por constraints derivadas do uv.lock do próprio commit do
+  # scanner (ver .github/skillspector-constraints.txt e scripts/verify-skillspector-deps.mjs).
   skillspector:
     name: SkillSpector real (v2.13.0 @ 091a509)
     runs-on: ubuntu-latest
@@ -47,10 +50,21 @@ jobs:
         with:
           node-version: 22
       # astral-sh/setup-uv v10.3.0 — SHA imutável do commit, conferido na API do GitHub
-      # (tags + release target apontam para o mesmo commit).
+      # (tags + release target apontam para o mesmo commit). Versão do uv fixada explicitamente
+      # (sem fallback para latest) + checksum sha256 oficial do artefato linux-x86_64 do 0.13.1.
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884
-      - name: Instalar SkillSpector fixado (commit imutável, sem tag móvel)
-        run: uv tool install "git+https://github.com/NVIDIA/SkillSpector.git@091a509b3d6ba8ff5be528966e1f43c2e68cf214"
+        with:
+          version: "0.13.1"
+          checksum: "eadd9d27c134ab5ac1ffd4473b97a741407f3ea238288f03121fc4deddf90220"
+      - name: Verificar versão fixada do uv (sem fallback para latest)
+        run: |
+          v="$(uv --version | awk '{print $2}')"
+          echo "instalado: uv $v"
+          [ "$v" = "0.13.1" ] || { echo "::error::uv inesperado: $v (esperado: 0.13.1)"; exit 1; }
+      - name: Instalar SkillSpector fixado (commit imutável + dependências do lock)
+        run: uv tool install --python 3.12 --constraints .github/skillspector-constraints.txt "git+https://github.com/NVIDIA/SkillSpector.git@091a509b3d6ba8ff5be528966e1f43c2e68cf214"
+      - name: Verificar dependências fixadas (conjunto exato contra o lock)
+        run: node scripts/verify-skillspector-deps.mjs .github/skillspector-constraints.txt "$(uv tool dir)/skillspector/bin/python" 3.12
       - name: Verificar binário e versão exata (binário inesperado ⇒ falha)
         run: |
           export PATH="$HOME/.local/bin:$PATH"
