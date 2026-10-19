@@ -50,6 +50,31 @@ const report = (recommendation = "SAFE", score = 0, extra = {}) => JSON.stringif
   metadata: { skillspector_version: "test" },
   ...extra,
 });
+const PINNED_SKILLSPECTOR_REVISION = "091a509b3d6ba8ff5be528966e1f43c2e68cf214";
+
+// Formato REAL do SkillSpector 2.13.0: a revisão VCS da instalação aparece POR ANALYZER, em
+// metadata.llm_provenance.analyzers[].analyzer_revision.source_revision {value, source} — não há
+// um campo único no topo do relatório. `null` no array omite o source_revision do analyzer
+// (ausência parcial, para os testes de extração conservadora).
+const provenanceReport = (sourceRevisions) => report("SAFE", 0, {
+  metadata: {
+    skillspector_version: "2.13.0",
+    llm_provenance: {
+      schema_version: 1,
+      analyzers: sourceRevisions.map((sourceRevision, index) => ({
+        analyzer_id: `analyzer-${index}`,
+        model: "redacted",
+        model_source: "resolved_configuration",
+        analyzer_revision: {
+          value: "2.13.0",
+          source: "skillspector_package",
+          ...(sourceRevision === null ? {} : { source_revision: sourceRevision }),
+        },
+      })),
+    },
+  },
+});
+
 const fake = (stdout, status = 0) => (_command, args) => {
   assert.ok(args.includes("--no-llm"), "não envia conteúdo para análise semântica externa");
   assert.ok(args.includes("--fail-on-incomplete"), "análise incompleta deve falhar fechada");
@@ -76,6 +101,75 @@ test("contrato das flags: estático, cobertura integral, JSON; sem flags inexist
   assert.ok(args.includes("--no-llm"));
   assert.ok(args.includes("--fail-on-incomplete"));
   assert.equal(args.includes("--min-coverage"), false);
+});
+
+test("source_revision: revisão VCS real é exposta quando todos os analyzers concordam", () => {
+  const root = bundle();
+  try {
+    const r = scanSkillCandidate(root, { runScanner: fake(provenanceReport(
+      Array.from({ length: 5 }, () => ({ value: PINNED_SKILLSPECTOR_REVISION, source: "package_vcs_metadata" })),
+    )) });
+    assert.equal(r.decision, "passed");
+    assert.equal(r.scannerVersion, "2.13.0");
+    assert.equal(r.sourceRevision, PINNED_SKILLSPECTOR_REVISION);
+    assert.equal(r.sourceRevisionSource, "package_vcs_metadata");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("source_revision: ausente ou parcial NÃO é inventado (null explícito)", () => {
+  const root = bundle();
+  try {
+    // relatório sem proveniência nenhuma
+    const sem = scanSkillCandidate(root, { runScanner: fake(report("SAFE")) });
+    assert.equal(sem.sourceRevision, null);
+    assert.equal(sem.sourceRevisionSource, null);
+    // lista vazia de analyzers e analyzer sem source_revision (presença parcial)
+    for (const stdout of [
+      provenanceReport([]),
+      provenanceReport([null, { value: PINNED_SKILLSPECTOR_REVISION, source: "package_vcs_metadata" }]),
+    ]) {
+      const r = scanSkillCandidate(root, { runScanner: fake(stdout) });
+      assert.equal(r.sourceRevision, null);
+      assert.equal(r.sourceRevisionSource, null);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("source_revision: malformado (não-hex, tipo errado, origem vazia/unknown) ⇒ null", () => {
+  const root = bundle();
+  try {
+    for (const bad of [
+      { value: "not-a-commit", source: "package_vcs_metadata" },
+      { value: "091a509zz3d6ba8ff5be528966e1f43c2e68cf214", source: "package_vcs_metadata" },
+      { value: 42, source: "package_vcs_metadata" },
+      { value: PINNED_SKILLSPECTOR_REVISION, source: "" },
+      { value: "unknown", source: "unknown" },
+    ]) {
+      const r = scanSkillCandidate(root, { runScanner: fake(provenanceReport([bad])) });
+      assert.equal(r.sourceRevision, null, JSON.stringify(bad));
+      assert.equal(r.sourceRevisionSource, null);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("source_revision: divergente entre analyzers (valor ou origem) ⇒ null, nunca um valor arbitrário", () => {
+  const root = bundle();
+  try {
+    for (const divergente of [
+      provenanceReport([
+        { value: PINNED_SKILLSPECTOR_REVISION, source: "package_vcs_metadata" },
+        { value: "581a077c154a19247876d8c14adb2e3fbc523301", source: "package_vcs_metadata" },
+      ]),
+      provenanceReport([
+        { value: PINNED_SKILLSPECTOR_REVISION, source: "package_vcs_metadata" },
+        { value: PINNED_SKILLSPECTOR_REVISION, source: "build_environment" },
+      ]),
+    ]) {
+      const r = scanSkillCandidate(root, { runScanner: fake(divergente) });
+      assert.equal(r.sourceRevision, null);
+      assert.equal(r.sourceRevisionSource, null);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test("SAFE com saída zero e análise completa ⇒ passed (mas revisão humana continua obrigatória)", () => {
@@ -324,6 +418,12 @@ test("scanner REAL: benigna ⇒ passed; maliciosa inerte ⇒ failed; conteúdo n
     const boa = scanSkillCandidate(benigna);
     assert.equal(boa.decision, "passed", `benigna devia passar: ${boa.reason}`);
     assert.match(boa.reason, /limitada a este método/);
+    // Versão e revisão VCS são atestadas SEPARADAMENTE: "v2.13.0" sozinho não prova de onde veio
+    // o binário. O gate corre o scanner com ambiente isolado, logo `package_vcs_metadata` é o
+    // commit real registrado no direct_url.json da distribuição instalada (não env injetado).
+    assert.equal(boa.scannerVersion, "2.13.0", `versão declarada no relatório real: ${boa.scannerVersion}`);
+    assert.equal(boa.sourceRevision, PINNED_SKILLSPECTOR_REVISION, `revisão VCS declarada no relatório real: ${boa.sourceRevision}`);
+    assert.equal(boa.sourceRevisionSource, "package_vcs_metadata", `origem declarada da revisão: ${boa.sourceRevisionSource}`);
 
     const má = scanSkillCandidate(hostil);
     assert.equal(má.decision, "failed", `hostil devia falhar: ${má.reason}`);

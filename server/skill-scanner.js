@@ -5,6 +5,9 @@
 //    em skills/ nem em enabled.json; não concede permissões, ativação ou execução.
 //  • Hash sha256 do artefato (ficheiro ou árvore determinística) + versão exata (manifesto ou
 //    scanner) — o veredito fica vinculado ao hash; artefato alterado após a análise ⇒ bloqueado.
+//  • Proveniência da instalação exposta aditivamente (`scannerVersion`, `sourceRevision`,
+//    `sourceRevisionSource`): a revisão VCS declarada no relatório é verificada em separado da
+//    versão; ausente/malformada/divergente ⇒ null (nunca um valor inventado).
 //  • Inspeção estática pelo SkillSpector (NVIDIA) isolado: sem shell, sem credenciais do processo
 //    JARVIS, HOME/TMP temporários, tempo e saída limitados, `--no-llm --fail-on-incomplete`.
 //  • Resultados distintos: passed | failed | incomplete | blocked. Ausência do scanner, falha de
@@ -29,6 +32,8 @@ const MAX_REPORT_BYTES = 5 * 1024 * 1024;
 const MAX_ARTIFACT_BYTES = 100 * 1024 * 1024; // espelha o teto de ingestão do próprio scanner
 const SCAN_TIMEOUT_MS = 120_000;
 const VERDICT_VERSION = 1;
+// Alfabeto de revisão VCS aceito pelo próprio scanner (llm_provenance._SOURCE_REVISION): 7–64 hex.
+const SOURCE_REVISION_RE = /^[0-9a-f]{7,64}$/;
 
 // Diretório ativo de skills do JARVIS: candidato algum pode ser recebido daí dentro
 // (a barreira recebe candidatos em quarentena, nunca o catálogo ativo).
@@ -126,6 +131,32 @@ export function hashArtifact(resolvedPath) {
   return { algorithm: "sha256", digest: hash.digest("hex"), kind: "directory", files, bytes: total };
 }
 
+/**
+ * Revisão VCS da instalação declarada pelo PRÓPRIO relatório do scanner. No SkillSpector 2.13.0
+ * o valor não é único no topo: cada analyzer LLM traz
+ * `metadata.llm_provenance.analyzers[].analyzer_revision.source_revision {value, source}`
+ * (origem `package_vcs_metadata` = `direct_url.json` da distribuição instalada).
+ * Extração conservadora: exige lista não vazia e que TODOS os analyzers declarem a MESMA revisão
+ * hex válida e a MESMA origem; ausência, valor malformado, parcial ou divergente ⇒ null — nunca
+ * escolhe um valor arbitrário (evita atestação falsa de proveniência).
+ */
+function extractSourceRevision(report) {
+  const analyzers = report?.metadata?.llm_provenance?.analyzers;
+  if (!Array.isArray(analyzers) || analyzers.length === 0) return { value: null, source: null };
+  const values = new Set();
+  const sources = new Set();
+  for (const analyzer of analyzers) {
+    const declared = analyzer?.analyzer_revision?.source_revision;
+    const value = typeof declared?.value === "string" ? declared.value.trim() : "";
+    const source = typeof declared?.source === "string" ? declared.source.trim() : "";
+    if (!SOURCE_REVISION_RE.test(value) || !source) return { value: null, source: null };
+    values.add(value.toLowerCase());
+    sources.add(source);
+  }
+  if (values.size !== 1 || sources.size !== 1) return { value: null, source: null };
+  return { value: [...values][0], source: [...sources][0] };
+}
+
 function summarizeReport(report) {
   const assessment = report?.risk_assessment;
   const recommendation = assessment?.recommendation;
@@ -141,6 +172,7 @@ function summarizeReport(report) {
     file: typeof issue.location?.file === "string" ? issue.location.file : null,
     line: Number.isInteger(issue.location?.start_line) ? issue.location.start_line : null,
   })) : [];
+  const sourceRevision = extractSourceRevision(report);
   return {
     recommendation,
     riskScore: Number.isFinite(assessment.score) ? assessment.score : null,
@@ -150,6 +182,8 @@ function summarizeReport(report) {
     analysisComplete: completeness ? completeness.is_complete === true : null,
     coveragePercent: Number.isFinite(completeness?.coverage_percent) ? completeness.coverage_percent : null,
     scannerVersion: typeof report.metadata?.skillspector_version === "string" ? report.metadata.skillspector_version : null,
+    sourceRevision: sourceRevision.value,
+    sourceRevisionSource: sourceRevision.source,
   };
 }
 
