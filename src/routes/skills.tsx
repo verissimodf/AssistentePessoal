@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { ShieldCheck, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/AppShell";
@@ -61,7 +61,6 @@ const errorKey = (e: unknown): TKey => {
 
 export function SkillsPage() {
   const { t } = useI18n();
-  const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [verdict, setVerdict] = useState<SkillVerdict | null>(null);
@@ -113,7 +112,6 @@ export function SkillsPage() {
       <div className="flex flex-wrap items-center gap-3">
         <label className="cursor-pointer">
           <input
-            ref={inputRef}
             type="file"
             accept=".md,text/markdown"
             className="hidden"

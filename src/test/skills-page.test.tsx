@@ -94,6 +94,7 @@ describe("Página Skills (inspeção segura)", () => {
 
   it.each([
     ['400: {"error":"skill_file_required"}', /arquivo ausente ou vazio/i],
+    ['400: {"error":"skill_file_empty"}', /arquivo ausente ou vazio/i],
     ['400: {"error":"skill_manifest_must_be_skill_md"}', /exatamente SKILL\.md/i],
     ['401: {"error":"unauthorized"}', /sessão ausente ou expirada/i],
     ['413: {"error":"payload_too_large"}', /demasiado grande/i],
