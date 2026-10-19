@@ -1,19 +1,23 @@
-# D_REC — Recuperação de acesso, titularidade e expurgo (auditoria técnica e decisão pendente)
+# D_REC — Recuperação de acesso, titularidade e expurgo (auditoria técnica e decisões)
 
-**Status: D_REC-1 (transferência), D_REC-3 (reautenticação), D_REC-4 (triagem) e D_REC-2 (expurgo
-**exclusivamente manual**) implementados.** Nenhuma execução real sobre dados reais; o mecanismo de
-expurgo exige autorização explícita por operação e escopo.
+**Status: D_REC-1 (transferência de recursos), D_REC-1a (transferência explícita de contas de e-mail),
+D_REC-3 (reautenticação), D_REC-4 (triagem) e D_REC-2 (expurgo **exclusivamente manual**) implementados.**
+Nenhuma execução real sobre dados reais; o mecanismo de expurgo e a transferência de conta de e-mail
+exigem autorização explícita por operação e escopo.
 Complementa a política em `docs/RECUPERACAO.md` §D_REC e serve de referência para a Fase 4.
-Base auditada: `main` = `563978f`.
+Base auditada: `main` = `f563af5`; decisão de titularidade de e-mail registrada em 2026-10-19
+(`docs/FASE-4-EMAIL.md` §11.3).
 
 ## 1. Resumo
 
 Recuperação de acesso, transferência de titularidade e expurgo são operações **distintas**.
 Hoje estão implementadas: (a) a recuperação local de credenciais (break-glass), (b) o isolamento
 por titularidade (Fase 2), (c) a reivindicação explícita de recursos **sem dono comprovável**,
-(d) a transferência **explícita** de recursos de administrador desativado (D_REC-1) e
-(e) o expurgo **exclusivamente manual**, em etapas (D_REC-2). Este documento registra o estado real,
-as decisões tomadas e o que permanece pendente.
+(d) a transferência **explícita** de recursos de administrador desativado (D_REC-1),
+(e) o expurgo **exclusivamente manual**, em etapas (D_REC-2), e
+(f) a transferência **explícita, auditada e sem reativação** de contas de e-mail de administrador
+desativado (D_REC-1a, Fase 4). Este documento registra o estado real, as decisões tomadas e o que
+permanece pendente.
 
 ## 2. Evidências da arquitetura (verificadas no código)
 
@@ -28,13 +32,24 @@ as decisões tomadas e o que permanece pendente.
 | Auditoria | `server/db.js`: `sanitizeAudit` com **allowlists fechadas** (`AUDIT_FIELDS`, `AUDIT_REASONS`, `AUDIT_AGENTS`, regex `CODE`); chaves desconhecidas descartadas (`dropped`) |
 | Rotas relevantes | `GET /api/legacy` (metadados), `POST /api/legacy/claim` (`session`), `DELETE /api/auth/admins/:id` (`session`), `GET /api/audit` (`audit:read`) |
 | Recursos base | `memories, agents, bots, runs, approvals, documents` + `ownership` |
-| Testes | `tests/isolation.test.mjs`, `migration-v2.test.mjs`, `auth.test.mjs`, `audit-probe.test.mjs`, `phase2-fixes.test.mjs`, e o novo `tests/d-rec.test.mjs` |
+| Contas de e-mail | `admin_settings` (configuração pessoal cifrada); titularidade implícita pelo `admin_id`; **não** são linhas de `ownership` |
+| Transferência de e-mail (D_REC-1a) | `server/settings.js::transferMailAccount`; rota `POST /api/ownership/mail/transfer` (`session` + reautenticação); `ownership_history` com `resource_type='mail_account'` |
+| Testes | `tests/isolation.test.mjs`, `migration-v2.test.mjs`, `auth.test.mjs`, `audit-probe.test.mjs`, `phase2-fixes.test.mjs`, `tests/d-rec.test.mjs`, `tests/d-rec-transfer.test.mjs`, `tests/d-rec-purge.test.mjs` e `tests/mail-ownership.test.mjs` |
 
 ## 3. Comportamento atual (implementado)
 
 - **Recuperação de credenciais (break-glass local):** `server/recuperar-acesso.js` — exige serviço parado
   e acesso ao host; backup verificado; desativa todos os admins, revoga sessões/tokens e recria o primeiro
-  acesso. **Não** altera `ownership` nem dados de recursos.
+  acesso. **Não** altera `ownership` nem dados de recursos. **Não** altera `admin_settings`: contas de
+  e-mail permanecem com o titular original.
+- **Contas de e-mail — padrão:** após desativação ou recuperação, a conta permanece em `admin_settings`
+  do titular original; outro admin recebe `404 account_not_found`. Não há transferência/reativação
+  automática.
+- **Contas de e-mail — exceção explícita (D_REC-1a):** somente `POST /api/ownership/mail/transfer`
+  (`session` + reautenticação recente + `confirm: "TRANSFERIR CONTA"`), uma conta `gmail`/`outlook`,
+  origem inativa e destino ativo. Move o bloco cifrado, remove da origem e grava a cópia no destino com
+  `enabled=false`/`state="reconnect"`; conflito no destino é recusado; auditoria e histórico só com
+  metadados. **Não** conecta, ativa transporte real ou envia.
 - **Isolamento:** toda consulta/escrita filtra por `principal.adminId`; recursos sem dono ficam invisíveis.
 - **Reivindicação de recursos sem dono:** `POST /api/legacy/claim`, `session`, confirmação `ASSUMIR`,
   **atômica** (todos os ids válidos ou nada), grava `origin='claimed'` e audita `legacy.claimed`;
@@ -61,6 +76,18 @@ as decisões tomadas e o que permanece pendente.
   O admin de origem **não** é reativado; nada é transferido automaticamente; a imutabilidade de
   `ownership` é respeitada (remoção + reinserção com `origin='transferred'`).
 
+**Implementado (2026-10-19) — D_REC-1a (contas de e-mail, Fase 4):**
+- Decisão de produto em `docs/FASE-4-EMAIL.md` §11.3: **Padrão A** (manter com o titular original;
+  sem transferência/reativação automática) + **exceção B** (transferência explícita e auditada).
+- `server/settings.js::transferMailAccount`: transação `BEGIN IMMEDIATE`, escopo de uma conta
+  (`gmail`/`outlook`), origem inativa, destino ativo, conflito no destino recusado (`target_account_exists`),
+  movimento do bloco **cifrado** e remoção da origem no mesmo commit.
+- O destino recebe `enabled=false`/`state="reconnect"`; a operação **não** reativa credenciais nem
+  ativa o transporte. Auditoria `mail.account_transferred` + `ownership_history` com
+  `resource_type='mail_account'`, sem usuário/senha/conteúdo.
+- Testes: `tests/mail-ownership.test.mjs` (7 casos), incluindo desativação, recuperação break-glass,
+  concorrência/repetição, conflito, reautenticação e token de serviço.
+
 **Implementado (2026-10-15) — D_REC-2 (expurgo exclusivamente manual):**
 - Fluxo explícito de solicitação + confirmação (`confirm: "EXPURGAR"`), autorização no servidor
   (`session` + reautenticação recente vinculada à sessão) e validação de escopo (tipo/ids/duplicados).
@@ -76,11 +103,14 @@ as decisões tomadas e o que permanece pendente.
 - **Elegibilidade:** dono **inativo** apenas. **Sem dono/legado → preservado** (titularidade ambígua).
   **Sem** prazos de retenção e **sem** exclusão automática por idade.
 
-**Não implementado (bloqueado até decisão):**
-- Reativação/realocação de credenciais de e-mail ou integrações (Fase 4).
+**Não implementado (fora do escopo desta entrega):**
+- Reativação ou transferência **automática** de credenciais de e-mail/integrações — proibida. A
+  transferência **explícita** de contas de e-mail está implementada (D_REC-1a), mas **não** autoriza
+  operação real, conexão, transporte IMAP/SMTP ou envio.
+- UI dedicada para transferência de conta de e-mail — a API é o contrato; UI é follow-up opcional.
 - Interface (UI) de expurgo — a API é o contrato; a UI é follow-up opcional.
 
-## 5. Decisões pendentes
+## 5. Decisões (histórico e estado)
 
 ### D_REC-1 — Reivindicar recursos de administrador desativado?
 | Alternativa | Prós | Contras | Risco |
@@ -90,6 +120,23 @@ as decisões tomadas e o que permanece pendente.
 | (c) Reativação do admin inativo como atalho | — | confunde recuperação com transferência | **alto (proibido)** |
 
 **Recomendação:** (b), **se e quando** aprovada, com os invariantes da §7 — **nunca** (c).
+
+### D_REC-1a — Contas de e-mail de administrador desativado — **decidida (2026-10-19)**
+
+**Decisão de produto (Fase 4, `docs/FASE-4-EMAIL.md` §11.3):** adotar **Padrão A + exceção B**.
+
+- **A — padrão:** a conta permanece com o titular original após desativação ou recuperação; sem
+  transferência, reivindicação ou reativação automática. `removeAdmin` e `recuperar-acesso.js` não
+  alteram `admin_settings`.
+- **B — exceção:** transferência somente por operação explícita e auditada, com reautenticação recente,
+  validação de titularidade/escopo, sem conflito no destino e proteção contra concorrência/repetição.
+  A conta movida fica **desativada** (`enabled=false`) e exige validação/habilitação explícita do destino.
+- **Escopo da decisão:** mecanismo local para `gmail`/`outlook`; **não** autoriza conta real, conexão,
+  `JARVIS_MAIL_TRANSPORT=imap`, envio, UI dedicada ou ampliação para integrações.
+- **Auditoria:** `mail.account_transferred` + `ownership_history` (`resource_type='mail_account'`) apenas
+  com metadados; nunca usuário, senha, corpo ou conteúdo.
+- **Relação com D_REC-1:** a conta **não** é recurso da tabela `ownership`; a transferência usa o mesmo
+  padrão de autorização/atomicidade, mas um contrato próprio.
 
 ### D_REC-2 — Expurgo
 **Decisão: (b) expurgo em etapas, **exclusivamente manual** — implementado.** Sem prazos de retenção e
@@ -111,7 +158,7 @@ operação) para transferência/expurgo — **não** aceitar indicador enviado p
 ### D_REC-4 — Preservação na triagem
 **Recomendação:** inventários exibem apenas metadados (id, data, tipo); **sem** conteúdo.
 
-## 6. Testes (não destrutivos) — `tests/d-rec.test.mjs`, `d-rec-transfer.test.mjs`, `d-rec-invariants.test.mjs`, `d-rec-purge.test.mjs`
+## 6. Testes (não destrutivos) — `tests/d-rec.test.mjs`, `d-rec-transfer.test.mjs`, `d-rec-invariants.test.mjs`, `d-rec-purge.test.mjs`, `mail-ownership.test.mjs`
 
 Verificam o comportamento **atual** (sem operar sobre dados reais):
 1. Desativação mantém a titularidade (**sem transferência automática**) e revoga sessão e token do admin.
@@ -123,8 +170,13 @@ Verificam o comportamento **atual** (sem operar sobre dados reais):
    quarentena e auditoria **sem conteúdo**; token de serviço recusado (`session`); repetição recusada;
    falha parcial **retomável** e **idempotente**; quarentena **bloqueia transferência** até retomar;
    cancelamento só quando nada foi removido; arquivo de `documents` removido; listagem só com metadados.
+5. `mail-ownership.test.mjs`: desativação e recuperação break-glass **não** transferem a conta; origem
+   ativa/escopo inválido são recusados; reautenticação e confirmação literal são obrigatórias; a
+   transferência move só a conta escolhida, mantém a credencial cifrada, grava `enabled=false` e **não**
+   reativa; conflito no destino não sobrescreve; concorrência/repetição não duplica; token de serviço é
+   recusado; auditoria/histórico não contêm usuário, senha ou conteúdo.
 
-## 7. Critérios de aceite (para quando D_REC for aprovada)
+## 7. Critérios de aceite (mecanismos implementados)
 
 - Recuperar acesso **não** concede titularidade; criar conta **não** transfere recursos.
 - Recursos de admin desativado permanecem bloqueados até procedimento aprovado **e implementado**.
@@ -135,10 +187,15 @@ Verificam o comportamento **atual** (sem operar sobre dados reais):
   idempotente; **sem** apagar arquivos por caminho fornecido pelo cliente.
 - Auditoria sempre sanitizada (sem segredo/conteúdo/caminho).
 - Transferência de recurso de e-mail **não** reativa credenciais/tokens/sessões/aprovações automaticamente.
+- D_REC-1a: conta de e-mail só se move por operação explícita, com reautenticação recente, origem
+  inativa, destino ativo, escopo `gmail`/`outlook`, sem conflito no destino e sem duplicação sob
+  concorrência/repetição; o destino recebe `enabled=false`; resposta/auditoria/histórico só com metadados.
 
 ## 8. Recomendação
 
 **Manter a exigência de autorização explícita por operação** para transferência/expurgo reais. Nesta
-tarefa implementou-se o **mecanismo** (D_REC-2 manual), com testes não destrutivos e especificação —
-**sem** operar sobre dados reais. Qualquer execução real (transferir ou expurgar) continua exigindo
-autorização explícita específica do responsável, com operador e escopo identificados.
+tarefa implementou-se o **mecanismo** (D_REC-2 manual e D_REC-1a de contas de e-mail), com testes não
+destrutivos e especificação — **sem** operar sobre dados reais. Qualquer execução real (transferir uma
+conta ou expurgar) continua exigindo autorização explícita específica do responsável, com operador e
+escopo identificados. A decisão de titularidade **não** autoriza conectar conta, ativar
+`JARVIS_MAIL_TRANSPORT=imap` nem enviar mensagens.

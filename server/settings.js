@@ -9,6 +9,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DATA_DIR, db, now, audit } from "./db.js";
 import { AuthError } from "./auth.js";
+import { ACCOUNT_TYPES } from "./mail.js";
 
 const keyFile = join(DATA_DIR, "master.key");
 function masterKey() {
@@ -387,4 +388,76 @@ export function claimLegacySettings(adminId, confirm) {
     throw e;
   }
   return { ok: true };
+}
+
+// ---------- D_REC-1a: explicit transfer of e-mail accounts (Fase 4) ----------
+// Decision (docs/FASE-4-EMAIL.md §11.3): Pattern A keeps an account with its original owner
+// after deactivation/recovery. Exception B is this explicit, audited operation only. It moves
+// the encrypted settings block between two admins; it never decrypts, reactivates, connects or
+// sends. `enabled` is forced off so the destination must validate/re-enable the account itself.
+const asRecord = (v) => (v && typeof v === "object" && !Array.isArray(v) ? v : {});
+const storedRecord = (row) => (row ? asRecord(JSON.parse(row.data)) : {});
+
+export function transferMailAccount(actorId, { from, to, account, correlationId } = {}) {
+  if (!actorId) throw new AuthError(403, "admin_session_required");
+  if (!ACCOUNT_TYPES.includes(account)) throw new AuthError(400, "invalid_account");
+  if (typeof from !== "string" || typeof to !== "string" || !from || !to || from === to)
+    throw new AuthError(400, "invalid_admins");
+  const corr =
+    String(correlationId || "")
+      .replace(/[^A-Za-z0-9_-]/g, "")
+      .slice(0, 64) || `mail-${Date.now()}`;
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const actor = db.prepare("SELECT id, active FROM admins WHERE id = ?").get(actorId);
+    if (!actor || !actor.active) throw new AuthError(403, "admin_session_required");
+    const src = db.prepare("SELECT id, active FROM admins WHERE id = ?").get(from);
+    if (!src) throw new AuthError(404, "source_not_found");
+    if (src.active) throw new AuthError(409, "source_active");
+    const dst = db.prepare("SELECT id, active FROM admins WHERE id = ?").get(to);
+    if (!dst || !dst.active) throw new AuthError(409, "target_not_active");
+
+    // Ownership is implicit in the per-admin settings record. The account is looked up ONLY in
+    // the source admin's record; a missing/foreign account is indistinguishable from absent.
+    const srcRow = db.prepare("SELECT data FROM admin_settings WHERE admin_id = ?").get(from);
+    const srcData = storedRecord(srcRow);
+    const srcComms = asRecord(srcData.comms);
+    const srcAccount = srcComms[account];
+    if (!srcAccount || typeof srcAccount !== "object" || Array.isArray(srcAccount))
+      throw new AuthError(404, "account_not_found");
+
+    // Never overwrite/merge an existing account at the destination: ownership must be unambiguous.
+    const dstRow = db.prepare("SELECT data FROM admin_settings WHERE admin_id = ?").get(to);
+    const dstData = storedRecord(dstRow);
+    const dstComms = asRecord(dstData.comms);
+    if (Object.hasOwn(dstComms, account)) throw new AuthError(409, "target_account_exists");
+
+    // Move the still-encrypted block. Force disabled/reconnect: a transfer is not a reactivation.
+    const moved = { ...srcAccount, enabled: false, state: "reconnect" };
+    delete srcComms[account];
+    srcData.comms = srcComms;
+    dstData.comms = { ...dstComms, [account]: moved };
+    const at = now();
+    const write = db.prepare(
+      "INSERT INTO admin_settings (admin_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(admin_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
+    );
+    write.run(from, JSON.stringify(srcData), at);
+    write.run(to, JSON.stringify(dstData), at);
+    // Append-only trail and sanitized audit: metadata only, never user/password/content.
+    db.prepare(
+      "INSERT INTO ownership_history (resource_type, resource_id, from_admin_id, to_admin_id, actor_admin_id, action, correlation_id, at) VALUES ('mail_account', ?, ?, ?, ?, 'transfer', ?, ?)",
+    ).run(account, from, to, actorId, corr, at);
+    audit("mail.account_transferred", {
+      by: actorId,
+      fromAdmin: from,
+      toAdmin: to,
+      account,
+      correlation: corr,
+    });
+    db.exec("COMMIT");
+    return { ok: true, account, from, to, correlation: corr };
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
 }

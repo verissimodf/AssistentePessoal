@@ -597,10 +597,11 @@ obteve `# skipped 0` e `# fail 0`. O passo de instalação com `--build-constrai
 
 Continuam abertas e **não foram tocadas**: Fase 4/e-mail (F4.11 aprovada em 2026-10-15 — correção
 de estado em relação às seções históricas, que a registravam como pendente —, mas especificação
-como documento, autorização de implementação, D_REC e autorizações operacionais pendentes),
-política de instalação/ativação de Skills (`enabled.json`), deploy e migração de
-produção (código atual na v12), validação de integrações com credenciais reais, heartbeat/autonomia
-e retenção/expurgo de backups e do ledger.
+como documento e autorização de implementação pendentes; a **titularidade de contas de e-mail** foi
+decidida em 2026-10-19 — `docs/FASE-4-EMAIL.md` §11.3, Padrão A + exceção B, com mecanismo mínimo
+implementado e operação real pendente), política de instalação/ativação de Skills (`enabled.json`),
+deploy e migração de produção (código atual na v12), validação de integrações com credenciais reais,
+heartbeat/autonomia e retenção/expurgo de backups e do ledger.
 
 ### 22.7 Itens não verificados em produção
 
