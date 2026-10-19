@@ -37,8 +37,10 @@ jobs:
   # testes reais de contrato do scanner. Independente dos jobs acima (nada aqui muda neles).
   # O teste real (tests/skill-scanner.test.mjs) roda com o binário presente e falha/skip ⇒ job falha.
   # Ambiente reprodutível: uv fixado por versão + checksum (sem fallback para latest) e
-  # dependências transitivas fixadas por constraints derivadas do uv.lock do próprio commit do
-  # scanner (ver .github/skillspector-constraints.txt e scripts/verify-skillspector-deps.mjs).
+  # dependências de runtime e de build fixadas por constraints derivadas do uv.lock do próprio
+  # commit do scanner. O build exige hash para todas as dependências (ver
+  # .github/skillspector-constraints.txt, .github/skillspector-build-constraints.txt e
+  # scripts/verify-skillspector-deps.mjs).
   skillspector:
     name: SkillSpector real (v2.13.0 @ 091a509)
     runs-on: ubuntu-latest
@@ -61,8 +63,13 @@ jobs:
           v="$(uv --version | awk '{print $2}')"
           echo "instalado: uv $v"
           [ "$v" = "0.13.1" ] || { echo "::error::uv inesperado: $v (esperado: 0.13.1)"; exit 1; }
-      - name: Instalar SkillSpector fixado (commit imutável + dependências do lock)
-        run: uv tool install --python 3.12 --constraints .github/skillspector-constraints.txt "git+https://github.com/NVIDIA/SkillSpector.git@091a509b3d6ba8ff5be528966e1f43c2e68cf214"
+      - name: Instalar SkillSpector fixado (commit imutável + runtime e build fixados)
+        run: |
+          uv tool install --no-cache --python 3.12 \
+            --constraints .github/skillspector-constraints.txt \
+            --build-constraints .github/skillspector-build-constraints.txt \
+            --require-build-hashes \
+            "git+https://github.com/NVIDIA/SkillSpector.git@091a509b3d6ba8ff5be528966e1f43c2e68cf214"
       - name: Verificar dependências fixadas (conjunto exato contra o lock)
         run: node scripts/verify-skillspector-deps.mjs .github/skillspector-constraints.txt "$(uv tool dir)/skillspector/bin/python" 3.12
       - name: Verificar binário e versão exata (binário inesperado ⇒ falha)
