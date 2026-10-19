@@ -111,14 +111,15 @@ test("unit: link simbólico não é seguido (POSIX)", { skip: process.platform =
 
 test("unit: falha de leitura é MARCADA; erro inesperado de programação NÃO é mascarado", async (t) => {
   const { listSkillVerdicts, isVerdictsReadFailure } = await import("../server/skill-scanner.js");
-  if (typeof process.getuid === "function" && process.getuid() === 0) {
-    // sem chmod como root: prova da decisão por unidade (a marca só existe no caminho de leitura)
-    assert.equal(isVerdictsReadFailure(Object.assign(new Error("verdicts_unreadable"), { code: "verdicts_unreadable" })), true);
-    assert.equal(isVerdictsReadFailure(new TypeError("bug de programação")), false);
-    assert.equal(isVerdictsReadFailure("401: x"), false);
-    assert.equal(isVerdictsReadFailure(undefined), false);
-    return;
-  }
+  // A decisão é plataforma-agnóstica: erro de programação ≠ falha de leitura.
+  assert.equal(isVerdictsReadFailure(Object.assign(new Error("verdicts_unreadable"), { code: "verdicts_unreadable" })), true);
+  assert.equal(isVerdictsReadFailure(new TypeError("bug de programação")), false);
+  assert.equal(isVerdictsReadFailure("401: x"), false);
+  assert.equal(isVerdictsReadFailure(undefined), false);
+  // A provocação por chmod só faz sentido em POSIX (no Windows chmod não bloqueia leitura);
+  // como root, chmod também não bloqueia — skip honesto, sem simulação.
+  if (process.platform === "win32") return t.skip("chmod não bloqueia leitura no Windows");
+  if (typeof process.getuid === "function" && process.getuid() === 0) return t.skip("como root, chmod não bloqueia leitura");
   const dir = mkdtempSync(join(tmpdir(), "jarvis-verdicts-deny-"));
   try {
     writeFileSync(join(dir, `${"a".repeat(64)}.verdict.json`), "{}");
@@ -129,9 +130,6 @@ test("unit: falha de leitura é MARCADA; erro inesperado de programação NÃO �
         isVerdictsReadFailure(e) && e.message === "verdicts_unreadable",
       "falha de leitura vem MARCADA (code) — a rota a converte; qualquer outro erro NÃO é mascarado");
     } finally { chmodSync(dir, 0o700); }
-    // e a própria decisão: erro de programação ≠ falha de leitura
-    assert.equal(isVerdictsReadFailure(new TypeError("bug de programação")), false);
-    assert.equal(isVerdictsReadFailure(undefined), false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
