@@ -199,4 +199,21 @@ describe("Página Skills (inspeção segura)", () => {
     await waitFor(() => expect(screen.getByTestId("sk-verdict")).toBeInTheDocument());
     await waitFor(() => expect(screen.getByText("e".repeat(64))).toBeInTheDocument(), );
   });
+
+  it("inspeção concluída + falha na atualização do histórico: veredito permanece, erro explícito, sem falso sucesso", async () => {
+    listSkillVerdicts
+      .mockResolvedValueOnce(historico()) // carga inicial: vazio
+      .mockRejectedValueOnce(new Error("500: internal_error")); // a atualização pós-inspeção falha
+    inspectSkill.mockResolvedValue(verdict("passed"));
+    render(<SkillsPage />);
+    await waitFor(() => expect(screen.getByTestId("sk-hist-empty")).toBeInTheDocument());
+    await escolharEInspeccionar();
+    // o veredito da inspeção permanece visível (a falha do histórico não o derruba)
+    await waitFor(() => expect(screen.getByTestId("sk-verdict")).toBeInTheDocument());
+    expect(screen.getByTestId("sk-decision")).toBeInTheDocument();
+    expect(screen.getByTestId("sk-hash")).toHaveTextContent("a".repeat(64));
+    // e a falha de atualização é dita explicitamente (nada de silêncio nem falso sucesso)
+    await waitFor(() => expect(screen.getByTestId("sk-hist-error")).toBeInTheDocument());
+    expect(screen.getByTestId("sk-hist-error")).toHaveTextContent(/não foi possível carregar/i);
+  });
 });

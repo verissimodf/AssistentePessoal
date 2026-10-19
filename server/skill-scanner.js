@@ -425,7 +425,9 @@ export function listSkillVerdicts(reportsDir, { limit = MAX_VERDICT_LIST } = {})
     entries = readdirSync(reportsDir, { withFileTypes: true });
   } catch (error) {
     if (error?.code === "ENOENT") return { verdicts: [], truncated: false, skipped: 0 }; // inexistente = vazio
-    throw new Error("verdicts_unreadable"); // falha real de leitura — nunca sucesso silencioso
+    // Falha real de leitura: erro MARCADO — e somente ela vira 500 "verdicts_unreadable".
+    // Erros inesperados de programação NÃO recebem esta marca (não são mascarados).
+    throw Object.assign(new Error("verdicts_unreadable"), { code: "verdicts_unreadable" });
   }
   const items = [];
   let skipped = 0;
@@ -456,3 +458,10 @@ export function listSkillVerdicts(reportsDir, { limit = MAX_VERDICT_LIST } = {})
   items.sort((a, b) => Date.parse(b.finishedAt) - Date.parse(a.finishedAt));
   return { verdicts: items.slice(0, limit), truncated: items.length > limit, skipped };
 }
+
+/**
+ * A rota converte em `AuthError(500, "verdicts_unreadable")` APENAS a falha de leitura marcada;
+ * erros inesperados de programação NÃO são mascarados como indisponibilidade de leitura —
+ * propagam ao handler global (500 `internal_error`, sem stack no corpo).
+ */
+export const isVerdictsReadFailure = (e) => e?.code === "verdicts_unreadable";

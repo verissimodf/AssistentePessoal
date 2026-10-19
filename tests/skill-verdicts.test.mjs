@@ -109,17 +109,29 @@ test("unit: link simbólico não é seguido (POSIX)", { skip: process.platform =
   }
 });
 
-test("unit: falha real de leitura do diretório NÃO vira sucesso silencioso", { skip: process.platform === "win32" && "chmod no Windows" }, async (t) => {
-  if (typeof process.getuid === "function" && process.getuid() === 0) return t.skip("como root, chmod não bloqueia leitura");
-  const { listSkillVerdicts } = await import("../server/skill-scanner.js");
+test("unit: falha de leitura é MARCADA; erro inesperado de programação NÃO é mascarado", async (t) => {
+  const { listSkillVerdicts, isVerdictsReadFailure } = await import("../server/skill-scanner.js");
+  if (typeof process.getuid === "function" && process.getuid() === 0) {
+    // sem chmod como root: prova da decisão por unidade (a marca só existe no caminho de leitura)
+    assert.equal(isVerdictsReadFailure(Object.assign(new Error("verdicts_unreadable"), { code: "verdicts_unreadable" })), true);
+    assert.equal(isVerdictsReadFailure(new TypeError("bug de programação")), false);
+    assert.equal(isVerdictsReadFailure("401: x"), false);
+    assert.equal(isVerdictsReadFailure(undefined), false);
+    return;
+  }
   const dir = mkdtempSync(join(tmpdir(), "jarvis-verdicts-deny-"));
   try {
     writeFileSync(join(dir, `${"a".repeat(64)}.verdict.json`), "{}");
     const { chmodSync } = await import("node:fs");
     chmodSync(dir, 0o000); // sem permissão de leitura nem listagem
     try {
-      assert.throws(() => listSkillVerdicts(dir), /verdicts_unreadable/, "erro real é lançado, não silenciado");
+      assert.throws(() => listSkillVerdicts(dir), (e) =>
+        isVerdictsReadFailure(e) && e.message === "verdicts_unreadable",
+      "falha de leitura vem MARCADA (code) — a rota a converte; qualquer outro erro NÃO é mascarado");
     } finally { chmodSync(dir, 0o700); }
+    // e a própria decisão: erro de programação ≠ falha de leitura
+    assert.equal(isVerdictsReadFailure(new TypeError("bug de programação")), false);
+    assert.equal(isVerdictsReadFailure(undefined), false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -201,4 +213,11 @@ test("http: diretório inexistente ⇒ lista vazia (200, não erro)", async () =
   const out = await r.json();
   assert.deepEqual(out.verdicts, []);
   assert.equal(out.truncated, false);
+});
+
+test("http: skill-verdicts como ARQUIVO (ENOTDIR = falha de leitura) ⇒ 500 {error: verdicts_unreadable}", async () => {
+  writeFileSync(join(dir, "skill-verdicts"), "não é diretório");
+  const r = await fetch(base + "/api/skills/verdicts", { headers: { origin: ORIGIN, cookie: session.cookie, "x-jarvis-csrf": session.csrf } });
+  assert.equal(r.status, 500);
+  assert.deepEqual(await r.json(), { error: "verdicts_unreadable" }, "500 estruturado, sem stack/caminhos no corpo");
 });
