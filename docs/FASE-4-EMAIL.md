@@ -1,7 +1,8 @@
 # Fase 4 — E-mail (especificação proposta)
 
-**Status: F4.11 aprovada (2026-10-15, §12).** A especificação como documento, D7 e as autorizações
-operacionais (§13, §14) seguem pendentes. Deriva do Plano Mestre §6
+**Status: F4.11 aprovada (2026-10-15, §12); titularidade de contas de e-mail decidida
+(2026-10-19, §11.3).** A especificação como documento, D7 e as autorizações operacionais (§13, §14)
+seguem pendentes. Deriva do Plano Mestre §6
 (Fase 4) e da matriz de rastreabilidade F4.1–F4.11 em `docs/CONTINUIDADE.md`. As partes **independentes**
 já iniciadas — **núcleo de e-mail**, **rotas/ferramentas com transporte mockado**, **adaptador IMAP/SMTP
 injetável (tecnicamente pronto, não ativado)**, **rascunho para aprovação humana** e **tela de rascunhos
@@ -141,12 +142,14 @@ confirmação para efeito documental. O que permanece **pendente**:
 | 1 | Aprovação da especificação como documento | pendente | **Sim** |
 | 2 | Autorização explícita para iniciar a implementação | pendente | **Sim** |
 | 3 | F4.11 — pastas, filtros, limites e retenção (§3.1) | **Aprovada** (2026-10-15) — §12 | Não |
-| 4 | D_REC — reivindicação de recursos de administrador desativado (`docs/RECUPERACAO.md` §D_REC) | pendente | **Sim** (gestão de contas após recuperação) |
+| 4 | D_REC — titularidade de contas de e-mail após desativação/recuperação (`docs/D_REC.md`, §11.3) | **Decidida** (2026-10-19) — Padrão A + exceção B | Não (este item); o mecanismo mínimo está implementado |
 | 5 | Conta dedicada para testes reais (D10) | a preparar pelo responsável | Não (só testes reais) |
 | 6 | Controles de conteúdo não confiável (§6.1) | definidos como critérios de aceite | Não (são a própria implementação) |
 
-**Bloqueio remanescente:** os itens **1, 2 e 4**. A aprovação de F4.11 (item 3) **não** autoriza nenhuma
-operação real — as autorizações operacionais são **separadas** e continuam pendentes (§13, §14).
+**Bloqueio remanescente:** os itens **1 e 2**. A decisão do item 4 (§11.3) autoriza apenas o mecanismo
+mínimo de transferência explícita de contas de e-mail; **não** aprova a especificação como um todo nem
+autoriza operações reais. A aprovação de F4.11 (item 3) **não** autoriza nenhuma operação real — as
+autorizações operacionais são **separadas** e continuam pendentes (§13, §14).
 
 ## 10. Implementação incremental (partes que NÃO dependem das decisões pendentes)
 
@@ -255,6 +258,11 @@ corpo.
 **Estado (2026-10-15):** o envio por **agente/bot** passou de "recusado" para **rascunho para aprovação
 humana**, sem persistir o corpo. Contas permanecem vinculadas ao titular original.
 
+> **Atualização 2026-10-19 — decisão de titularidade:** o Padrão A e a exceção B foram decididos em
+> **§11.3**. A descrição de 2026-10-15 abaixo permanece como registro histórico do estado anterior; a
+> regra padrão continua sendo **não transferir automaticamente**, e a transferência explícita agora tem
+> um mecanismo mínimo implementado.
+
 **a) Rascunho em memória (o "canal temporário seguro").** `server/mail-drafts.js` guarda o rascunho
 **somente na memória do processo** (um `Map`) — **nunca** em banco, disco, auditoria ou log. Propriedades:
 
@@ -279,14 +287,18 @@ recursos da tabela `ownership`. Portanto:
   titular original**.
 - Uma transferência de conta, se necessária, seria uma decisão nova (§11.3) — **não** é feita por
   inferência nem reutilizando `ownership` (que não modela contas de e-mail).
+  **Atualização 2026-10-19:** a decisão foi tomada em §11.3; a transferência passou a ser uma operação
+  explícita (`POST /api/ownership/mail/transfer`), nunca automática, e move a configuração cifrada para
+  o destino **desativada** (`enabled=false`, `state="reconnect"`).
 
 Testes: `tests/mail-drafts.test.mjs` (8 casos) — store (dono, uso único, expiração, capacidade),
 rascunho pelo agente sem envio, entrada inválida, revisão só por sessão, confirmação explícita, uso
 único, isolamento entre admins, corpo **não** persistido em nenhuma tabela, e titularidade (conta fica
 com o dono após desativação).
 
-**Ainda dependente de decisão:** política de retomada após falha (§11.5); ativar o transporte real (D7);
-transferência de conta (§11.3). F4.11 está **aprovada** (§12).
+**Ainda dependente de decisão:** política de retomada após falha (§11.5); ativar o transporte real (D7).
+A transferência de conta foi decidida (§11.3) e tem mecanismo mínimo testado; a operação real e uma UI
+dedicada continuam fora desta entrega. F4.11 está **aprovada** (§12).
 
 ### 10.4 Incremento 4 — interface do painel para rascunhos
 
@@ -332,7 +344,8 @@ titularidade, cancelamento, expiração, CSRF, **falha ambígua → `unknown` se
 determinística → `failed`**, **envio nunca repetido**, ausência de vazamento.
 
 **Ainda dependente de decisão:** política de retenção para retomada após falha (§11.5); TTL/capacidade
-definitivos; ativar o transporte real (D7); transferência de conta (§11.3). F4.11 está **aprovada** (§12).
+definitivos; ativar o transporte real (D7). A transferência de conta está decidida (§11.3) e tem API
+mínima; uma UI dedicada para essa operação é follow-up opcional. F4.11 está **aprovada** (§12).
 
 ## 11. Decisões de produto e autorizações operacionais (separadas)
 
@@ -348,11 +361,14 @@ seção). Aprovar uma decisão de produto **não** concede nenhuma autorização
    ferramentas (com mocks) sem credenciais reais? (a) Sim, com mocks; (b) sim, incluindo o adaptador de
    transporte real (mas ainda sem conta real); (c) não. *Consequência:* define se o próximo incremento
    liga o núcleo às rotas/ferramentas.
-3. **Titularidade das contas após recuperação de acesso (D_REC cat. 3 / §8).** Quando um admin é
-   recuperado, as **contas de e-mail** dele: (a) seguem o dono atual (nada muda); (b) podem ser
-   **transferidas** explicitamente (como recursos D_REC-1); (c) são **expurgadas** manualmente (D_REC-2).
-   *Consequência:* a resposta usa os mecanismos já implementados de transferência/expurgo; a conta é
-   tratada como recurso com titularidade, **nunca** reativada por inferência.
+3. **Titularidade das contas após recuperação de acesso (D_REC cat. 3 / §8) — DECIDIDA
+   (2026-10-19).** Quando um admin é recuperado, as **contas de e-mail** dele: (a) seguem o dono atual
+   (nada muda); (b) podem ser **transferidas** explicitamente (como recursos D_REC-1); (c) são
+   **expurgadas** manualmente (D_REC-2). *Consequência:* a resposta usa os mecanismos já implementados
+   de transferência/expurgo; a conta é tratada como recurso com titularidade, **nunca** reativada por
+   inferência. **Decisão:** adotar **(a) como padrão** e **(b) como exceção** — detalhes, escopo e
+   limites em **§11.3**. A decisão é de produto; **não** autoriza conta real, transporte IMAP/SMTP nem
+   envio real.
 4. **Autenticação (D7).** Confirmar **IMAP/SMTP + senha de aplicativo** (OAuth fora do escopo inicial)?
    (a) Confirmar; (b) reavaliar OAuth antes. *Consequência:* define o adaptador de transporte real e os
    campos de credencial; **não** afeta o núcleo atual (que é agnóstico de transporte).
@@ -368,6 +384,46 @@ seção). Aprovar uma decisão de produto **não** concede nenhuma autorização
    revisar/confirmar/cancelar. **Pendente:** a política de **retomada após falha** (hoje: no máximo uma
    tentativa por rascunho, sem reter o corpo). (b) continua fora do escopo por exigir
    decisão de retenção.
+
+### 11.3 Titularidade das contas de e-mail — **decidida (2026-10-19)**
+
+**Decisão de produto.** Aplica-se a contas de e-mail (Gmail/Outlook) armazenadas em `admin_settings`.
+Não altera as decisões de D7, F4.11 nem as autorizações operacionais. **Autorização desta entrega:** o
+responsável autorizou explicitamente a implementação e os testes **deste item** (2026-10-19); isso não
+concede a autorização geral do item 2 nem qualquer autorização operacional.
+
+**A — padrão (manter com o titular original).** Após desativação ou recuperação de acesso, a conta
+permanece vinculada ao administrador original. **Não** há transferência, reivindicação, reativação ou
+redistribuição automática:
+
+- a desativação (`removeAdmin`) não altera `admin_settings`;
+- a recuperação break-glass (`server/recuperar-acesso.js`) não altera `admin_settings`;
+- outro administrador continua vendo `404 account_not_found` (conta alheia e inexistente são
+  indistinguíveis).
+
+**B — exceção (transferência explícita e auditada).** Uma conta pode ser movida somente por operação
+explícita, com todos os controles abaixo:
+
+| Controle | Regra implementada |
+|---|---|
+| Autorização | Rota `session` (token de serviço recusado) + **reautenticação recente** vinculada à sessão (D_REC-3) + confirmação literal `TRANSFERIR CONTA` |
+| Escopo | **Uma** conta por operação, limitada a `gmail` ou `outlook`; origem **inativa**, destino **ativo** e distinto |
+| Titularidade | A conta é procurada **somente** no `admin_settings` da origem; se não existir, `404 account_not_found` |
+| Conflito | Se o destino já possui a mesma conta, `409 target_account_exists`; **não** há sobrescrita nem merge |
+| Atomicidade/concorrência | `BEGIN IMMEDIATE`: mover a configuração cifrada e removê-la da origem no mesmo commit; repetição concorrente não duplica |
+| Auditoria | `audit('mail.account_transferred')` + trilha append-only `ownership_history` (`resource_type='mail_account'`) com `account`, `fromAdmin`, `toAdmin`, `by` e `correlation`; **nunca** usuário, senha, corpo ou conteúdo |
+| Não reativação | A cópia no destino é gravada com `enabled=false` e `state="reconnect"`; o destino precisa validar/habilitar explicitamente |
+
+**Contrato:** `POST /api/ownership/mail/transfer` com
+`{ from, to, account, confirm: "TRANSFERIR CONTA" }`. A resposta contém apenas `ok`, `account`, `from`,
+`to` e `correlation`. A implementação está em `server/settings.js::transferMailAccount` e em
+`server/index.js`; os testes estão em `tests/mail-ownership.test.mjs`.
+
+**Limites e follow-ups:** a API é o contrato; **não** há UI dedicada. A transferência move a configuração
+cifrada, mas **não** conecta a conta, **não** ativa `JARVIS_MAIL_TRANSPORT=imap`, **não** envia mensagens
+e **não** reativa credenciais. Qualquer operação sobre conta real continua dependendo das autorizações
+O1–O4 (§13, §14). A descoberta de contas de administradores inativos para uma UI é follow-up; o inventário
+`GET /api/ownership/inactive` continua restrito aos tipos de `ownership`.
 
 **A autorização para implementar código não autoriza** acesso a contas reais, uso de credenciais, envio
 de mensagens nem alteração de dados reais — essas operações exigem autorização explícita específica.

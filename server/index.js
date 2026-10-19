@@ -29,6 +29,7 @@ import {
   legacySettingsInventory,
   claimLegacySettings,
   settingsProvenance,
+  transferMailAccount,
 } from "./settings.js";
 import { getSessionFocus, updateSessionFocus } from "./session-focus.js";
 import { createHeartbeat, heartbeatEnabled } from "./heartbeat.js";
@@ -647,6 +648,13 @@ route("POST", "/api/ownership/transfer", "session", ({ body, principal }) => {
     if (e instanceof ClaimError) throw new AuthError(e.status, e.code);
     throw e;
   }
+});
+// D_REC-1a/Fase 4: a deactivated admin's e-mail account may move only by this explicit,
+// reauthenticated, audited operation. Pattern A (keep with the original owner) remains the default.
+route("POST", "/api/ownership/mail/transfer", "session", ({ body, principal }) => {
+  if (!auth.hasRecentReauth(principal)) throw new AuthError(403, "reauth_required");
+  if (body.confirm !== "TRANSFERIR CONTA") throw new AuthError(400, "confirmation_required");
+  return transferMailAccount(principal.adminId, body);
 });
 // D_REC-2: MANUAL-ONLY purge (no retention deadlines). Reauth + explicit confirmation required.
 route("GET", "/api/ownership/purge", "session", () => listPurgeJobs());
