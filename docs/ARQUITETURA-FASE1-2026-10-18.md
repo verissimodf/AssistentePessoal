@@ -122,14 +122,28 @@ catálogo ativo: candidatos vindos de `skills/` são recusados (só quarentena l
   não autoriza execução. `verifyArtifactAgainstVerdict` bloqueia instalação se o hash mudou após a
   análise. Revisão humana independente (PR + `enabled.json`) continua obrigatória — scanner SAFE
   sem lista humana de ativação não ativa nada.
-- Cobertura: `tests/skill-scanner.test.mjs` (15 testes: fixtures inerte benigna/hostil, injeção,
+- Cobertura: `tests/skill-scanner.test.mjs` (19 testes: fixtures inerte benigna/hostil, injeção,
   exfiltração, segredo canário, scanner ausente/timeout/crash/malformado, mudança de hash,
-  ativação humana, nunca-executa). Verificação real com SkillSpector 2.13.0 em Ubuntu: benigna
-  `passed`, hostil inerte `failed` (SC2/PE3/TM2, score 62).
+  ativação humana, nunca-executa, além de 4 testes de proveniência `source_revision` —
+  correta/ausente/malformada/divergente). O verificador de dependências tem 16 testes próprios em
+  `tests/verify-skillspector-deps.test.mjs` (parsing estrito, PEP 503, duplicatas, pacote principal
+  e divergências). Verificação real com SkillSpector 2.13.0 em Ubuntu: benigna `passed`, hostil
+  inerte `failed` (SC2/PE3/TM2, score 62).
 - Limitações: o gate não está ligado a nenhuma operação de instalação (não existe instalação de
-  Skills nesta fase); a verificação real depende do scanner instalado localmente (no CI corre só o
-  contrato com stubs); aquisição remota (URL/git) e extração de pacotes ficam para trabalho futuro,
-  com os mesmos cuidados de zip-bomb/traversal que o scanner impõe internamente.
+  Skills nesta fase); a verificação real local depende do scanner instalado. Desde o PR #40
+  (merge `6ec1986`), o CI tem o job dedicado `SkillSpector real (v2.13.0 @ 091a509)`, que instala o
+  scanner pelo commit imutável `091a509b3d6ba8ff5be528966e1f43c2e68cf214` e executa os testes
+  reais; ausência, erro ou skip falham o job. Desde o PR #41 (merge `71c0832`), o teste real também
+  atesta a proveniência declarada — revisão VCS `091a509…` com origem `package_vcs_metadata`,
+  separada da versão `2.13.0`; a atestação verifica a **consistência declarada**, não a integridade
+  criptográfica do binário. Desde o PR #42 (merge `03ebb2d`), o job fixa `uv 0.13.1` com checksum,
+  instala as dependências por 63 pins exportados do `uv.lock` do scanner e verifica o conjunto
+  efetivamente instalado; o verificador tem 16 testes próprios (parsing estrito, PEP 503,
+  duplicatas rejeitadas, `skillspector` obrigatório). Permanecem fora do lock as dependências de
+  build (hatchling e transitivas); hashes não são aplicados pelo `uv tool install` nesse fluxo (ver
+  `docs/CONTINUIDADE.md` §19–§21 e `docs/RELATORIO-P02-2026-10-18.md` §L–§N). Aquisição remota
+  (URL/git) e extração de pacotes ficam para trabalho futuro, com os mesmos cuidados de
+  zip-bomb/traversal que o scanner impõe internamente.
 
 ## Fase F — Gateway de MCPs e plugins (DESENHO — nada conectado)
 
