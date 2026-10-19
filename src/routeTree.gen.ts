@@ -17,6 +17,7 @@ import { Route as DocumentosRouteImport } from './routes/documentos'
 import { Route as ExecucoesRouteImport } from './routes/execucoes'
 import { Route as MemoriaRouteImport } from './routes/memoria'
 import { Route as RascunhosRouteImport } from './routes/rascunhos'
+import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as VisaoGeralRouteImport } from './routes/visao-geral'
 
 const IndexRoute = IndexRouteImport.update({
@@ -59,6 +60,11 @@ const RascunhosRoute = RascunhosRouteImport.update({
   path: '/rascunhos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SkillsRoute = SkillsRouteImport.update({
+  id: '/skills',
+  path: '/skills',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VisaoGeralRoute = VisaoGeralRouteImport.update({
   id: '/visao-geral',
   path: '/visao-geral',
@@ -74,6 +80,7 @@ export interface FileRoutesByFullPath {
   '/execucoes': typeof ExecucoesRoute
   '/memoria': typeof MemoriaRoute
   '/rascunhos': typeof RascunhosRoute
+  '/skills': typeof SkillsRoute
   '/visao-geral': typeof VisaoGeralRoute
 }
 export interface FileRoutesByTo {
@@ -85,6 +92,7 @@ export interface FileRoutesByTo {
   '/execucoes': typeof ExecucoesRoute
   '/memoria': typeof MemoriaRoute
   '/rascunhos': typeof RascunhosRoute
+  '/skills': typeof SkillsRoute
   '/visao-geral': typeof VisaoGeralRoute
 }
 export interface FileRoutesById {
@@ -97,6 +105,7 @@ export interface FileRoutesById {
   '/execucoes': typeof ExecucoesRoute
   '/memoria': typeof MemoriaRoute
   '/rascunhos': typeof RascunhosRoute
+  '/skills': typeof SkillsRoute
   '/visao-geral': typeof VisaoGeralRoute
 }
 export interface FileRouteTypes {
@@ -110,6 +119,7 @@ export interface FileRouteTypes {
     | '/execucoes'
     | '/memoria'
     | '/rascunhos'
+    | '/skills'
     | '/visao-geral'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -121,6 +131,7 @@ export interface FileRouteTypes {
     | '/execucoes'
     | '/memoria'
     | '/rascunhos'
+    | '/skills'
     | '/visao-geral'
   id:
     | '__root__'
@@ -132,6 +143,7 @@ export interface FileRouteTypes {
     | '/execucoes'
     | '/memoria'
     | '/rascunhos'
+    | '/skills'
     | '/visao-geral'
   fileRoutesById: FileRoutesById
 }
@@ -144,6 +156,7 @@ export interface RootRouteChildren {
   ExecucoesRoute: typeof ExecucoesRoute
   MemoriaRoute: typeof MemoriaRoute
   RascunhosRoute: typeof RascunhosRoute
+  SkillsRoute: typeof SkillsRoute
   VisaoGeralRoute: typeof VisaoGeralRoute
 }
 
@@ -205,6 +218,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RascunhosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/skills': {
+      id: '/skills'
+      path: '/skills'
+      fullPath: '/skills'
+      preLoaderRoute: typeof SkillsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/visao-geral': {
       id: '/visao-geral'
       path: '/visao-geral'
@@ -224,6 +244,7 @@ const rootRouteChildren: RootRouteChildren = {
   ExecucoesRoute: ExecucoesRoute,
   MemoriaRoute: MemoriaRoute,
   RascunhosRoute: RascunhosRoute,
+  SkillsRoute: SkillsRoute,
   VisaoGeralRoute: VisaoGeralRoute,
 }
 export const routeTree = rootRouteImport

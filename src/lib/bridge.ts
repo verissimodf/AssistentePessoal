@@ -368,3 +368,50 @@ export async function loadAudit(): Promise<AuditRow[] | null> {
   if (!(await ping())) return null;
   try { return await api<AuditRow[]>("/api/audit"); } catch { return null; }
 }
+
+// ---------- Fase Skills: inspeção pré-instalação (barreira de segurança, sem fallback demo) ----------
+// Contrato = POST /api/skills/inspect (session, multipart, campo único "file" chamado SKILL.md).
+// A inspeção NUNCA instala, ativa, executa ou concede permissões — ver `server/skill-scanner.js`.
+// NÃO há histórico consultável de vereditos (nenhum endpoint GET) e NÃO se simula um: esta
+// chamada falha explicitamente quando o serviço está indisponível (sem localStorage).
+export type SkillVerdict = {
+  verdictVersion: number;
+  finishedAt: string;
+  artifact: {
+    hash: { algorithm: string; digest: string | null } | null;
+    kind: string | null;
+    manifest: { id: string; version: string } | null;
+  };
+  scan: {
+    scanner: string;
+    version: string | null;
+    mode: string;
+    flags: string[];
+    exitCode: number | null;
+    coveragePercent: number | null;
+    analysisComplete: boolean | null;
+  } | null;
+  result: {
+    decision: "passed" | "failed" | "incomplete" | "blocked";
+    safeToInstall: boolean;
+    reviewRequired: boolean;
+    reason: string;
+    issueCount: number;
+  };
+  constraints: {
+    grantsPermissions: boolean;
+    grantsActivation: boolean;
+    allowsExecution: boolean;
+    requiresHumanReview: boolean;
+    boundToArtifactHash: string | null;
+    validity: string;
+  };
+};
+
+/** Inspeciona um SKILL.md candidata. Lança `bridge_offline` (serviço indisponível) ou o erro HTTP (`<status>: <corpo>`). */
+export async function inspectSkill(file: File): Promise<SkillVerdict> {
+  if (!(await ping())) throw new Error("bridge_offline");
+  const fd = new FormData();
+  fd.append("file", file, file.name);
+  return api<SkillVerdict>("/api/skills/inspect", { method: "POST", body: fd });
+}

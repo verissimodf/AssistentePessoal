@@ -1,5 +1,5 @@
 import { Link, Outlet } from "@tanstack/react-router";
-import { Activity, Bot, Brain, FileText, LayoutDashboard, LogOut, Mail, MessageSquare, Settings, Users } from "lucide-react";
+import { Activity, Bot, Brain, FileText, LayoutDashboard, LogOut, Mail, MessageSquare, Settings, ShieldCheck, Users } from "lucide-react";
 import { logout, useAuthState, useBridgeStatus } from "@/lib/bridge";
 import { AuthGate, useAuthText } from "@/components/AuthGate";
 import { LANGS, useI18n, type Lang } from "@/lib/i18n";
@@ -18,6 +18,7 @@ export function AppShell() {
     { to: "/rascunhos", label: "E-mail", icon: Mail },
     { to: "/agentes", label: t("nav_agents"), icon: Users },
     { to: "/bots", label: t("nav_bots"), icon: Bot },
+    { to: "/skills", label: t("nav_skills"), icon: ShieldCheck },
     { to: "/configuracoes", label: t("nav_settings"), icon: Settings },
   ] as const;
   return (
