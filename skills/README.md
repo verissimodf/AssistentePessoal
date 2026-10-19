@@ -87,6 +87,12 @@ qualquer mecanismo ativo. Candidatos dentro do catálogo ativo são recusados (s
   (não há instalação de Skills nesta fase), e a análise semântica por LLM do SkillSpector fica
   desligada por padrão. Não ativar Skills externas até a integração estar ligada e testada.
 
+### Recepção HTTP em quarentena (primeira integração)
+
+A rota administrativa `POST /api/skills/inspect` recebe um único campo multipart `file` cujo nome deve ser `SKILL.md`. Exige sessão administrativa verificada e CSRF; o tamanho é limitado por `JARVIS_MAX_UPLOAD`. O ficheiro é gravado com permissões restritas numa pasta temporária sob o diretório de dados, analisado e removido em `finally`.
+
+A rota devolve apenas um resumo do veredito e regista metadados mínimos na auditoria. O veredito estruturado é preservado em `data/skill-verdicts/` quando possível. A rota **não instala, não copia para `skills/`, não altera `enabled.json` e nunca autoriza execução**. `passed` significa apenas que a análise estática passou; revisão humana e ativação explícita continuam separadas. Aquisição remota, extração de pacotes e UI continuam fora do escopo.
+
 ## Por que é seguro por omissão
 
 - Um manifesto **não pode** declarar ferramenta inexistente, permissão fora da allowlist,
