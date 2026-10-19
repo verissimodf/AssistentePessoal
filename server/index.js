@@ -74,7 +74,7 @@ import { getMailService, setMailTransport } from "./mail-service.js";
 import { redactAccount, ACCOUNT_TYPES } from "./mail.js";
 import { getDraftStore, setDraftStore } from "./mail-drafts.js";
 import { APP_VERSION, GIT_COMMIT, BUILD_TIME, BUILD_MODE } from "./build-info.js";
-import { inspectCandidate, listSkillVerdicts } from "./skill-scanner.js";
+import { inspectCandidate, listSkillVerdicts, isVerdictsReadFailure } from "./skill-scanner.js";
 
 // Identidade da ÁRVORE construída (injetada no build por `scripts/write-build-info.mjs`).
 // `APP_VERSION` é o manifesto do repositório; o commit vem SÓ do `--build-arg GIT_SHA` e pode
@@ -814,8 +814,11 @@ route("POST", "/api/skills/inspect", "session", async ({ form, principal }) => {
 route("GET", "/api/skills/verdicts", "session", () => {
   try {
     return listSkillVerdicts(join(DATA_DIR, "skill-verdicts"));
-  } catch {
-    throw new AuthError(500, "verdicts_unreadable");
+  } catch (e) {
+    // Só a falha de leitura marcada vira 500 "verdicts_unreadable"; erro inesperado de
+    // programação propaga ao handler global (500 internal_error) — nunca mascarado.
+    if (isVerdictsReadFailure(e)) throw new AuthError(500, "verdicts_unreadable");
+    throw e;
   }
 });
 
