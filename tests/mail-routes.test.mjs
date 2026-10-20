@@ -26,10 +26,17 @@ const A = {},
 const tstate = {
   mode: "ok",
   failNext: 0,
-  calls: { list: 0, read: 0, search: 0, send: 0 },
+  calls: { testConnection: 0, list: 0, read: 0, search: 0, send: 0 },
   sent: [],
 };
 const transport = {
+  async testConnection(_a) {
+    tstate.calls.testConnection += 1;
+    if (tstate.mode === "fail" || tstate.mode === "auth")
+      throw Object.assign(new Error(`provider failure ${SECRET}`), { code: "EAUTH" });
+    if (tstate.mode === "hang") return new Promise(() => {});
+    return { ok: true };
+  },
   async list(_a, page) {
     tstate.calls.list += 1;
     if (tstate.failNext > 0) {
@@ -160,6 +167,30 @@ test("mail: unauthenticated access is refused", async () => {
     ).status,
     401,
   );
+});
+
+test("mail: connection test requires session, enforces account ownership and never sends", async () => {
+  assert.equal((await req("/api/mail/gmail/test-connection", { method: "POST" })).status, 401);
+  const ok = await json(await req("/api/mail/gmail/test-connection", { method: "POST", s: A }));
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.body, { ok: true, connected: true });
+  assert.equal(tstate.calls.testConnection, 1);
+  assert.equal(tstate.calls.list, 0);
+  assert.equal(tstate.calls.read, 0);
+  assert.equal(tstate.calls.search, 0);
+  assert.equal(tstate.calls.send, 0);
+  assert.equal((await req("/api/mail/outlook/test-connection", { method: "POST", s: A })).status, 404);
+  assert.equal((await req("/api/mail/gmail/test-connection", { method: "POST", s: B })).status, 404);
+  assert.equal(auditText().includes(SECRET), false);
+});
+
+test("mail: connection test provider errors are generic and audited without secrets", async () => {
+  tstate.mode = "auth";
+  const r = await json(await req("/api/mail/gmail/test-connection", { method: "POST", s: A }));
+  assert.equal(r.status, 502);
+  assert.deepEqual(r.body, { error: "provider_error" });
+  assert.equal(auditText().includes(SECRET), false);
+  tstate.mode = "ok";
 });
 
 test("mail: accounts are listed per admin, credentials redacted", async () => {

@@ -697,6 +697,9 @@ route("GET", "/api/mail/accounts", "comms:read", ({ principal }) => {
   const comms = getSettings(principal.adminId)?.comms || {};
   return ACCOUNT_TYPES.filter((t) => comms[t]).map((t) => redactAccount({ ...comms[t], type: t }));
 });
+route("POST", "/api/mail/:account/test-connection", "session", ({ params, principal }) =>
+  getMailService().testConnection(principal.adminId, params.account),
+);
 route("GET", "/api/mail/:account/messages", "comms:read", ({ params, query, principal }) =>
   getMailService().list(principal.adminId, params.account, {
     limit: numParam(query.get("limit")),
