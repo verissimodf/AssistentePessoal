@@ -192,6 +192,40 @@ export function classifyConnectionError(err) {
   if (TRANSIENT_HINT.test(text)) return { state: "error", retryable: true };
   return { state: "error", retryable: false };
 }
+/**
+ * Safe diagnostic metadata for provider failures. Never return provider messages because
+ * they may contain addresses, server responses, or credential material.
+ */
+const DIAGNOSTIC_CODES = new Set([
+  "EAUTH",
+  "AUTHENTICATIONFAILED",
+  "ETIMEDOUT",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "EHOSTUNREACH",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ENETUNREACH",
+  "ESOCKET",
+  "ECONNECTION",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "CERT_HAS_EXPIRED",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+]);
+
+export function classifyConnectionDiagnostic(err) {
+  const rawCode = typeof err?.code === "string" ? err.code.toUpperCase() : "";
+  const code = DIAGNOSTIC_CODES.has(rawCode) ? rawCode : null;
+  const text = rawCode + " " + (typeof err?.message === "string" ? err.message : "");
+
+  let category = "unknown";
+  if (AUTH_HINT.test(text) || rawCode === "AUTHENTICATIONFAILED") category = "auth";
+  else if (/tls|ssl|certificate|cert_|self[- ]signed|hostname mismatch/i.test(text)) category = "tls";
+  else if (/timeout|timed out|etimedout/i.test(text)) category = "timeout";
+  else if (TRANSIENT_HINT.test(text) || /ECONNECTION|ESOCKET/i.test(text)) category = "network";
+
+  return { category, code };
+}
 
 /**
  * Errors that can ONLY happen before the message is handed to the SMTP server (DNS, connection,
@@ -416,7 +450,14 @@ export function createMailService({
       return await withRetry(() => fn(account), cfg);
     } catch (err) {
       const { state } = classifyConnectionError(err);
-      audit("mail.provider_error", { admin: adminId, account: accountId, status: state });
+      const diagnostic = classifyConnectionDiagnostic(err);
+      audit("mail.provider_error", {
+        admin: adminId,
+        account: accountId,
+        status: state,
+        category: diagnostic.category,
+        providerCode: diagnostic.code,
+      });
       throw new MailError(502, "provider_error");
     }
   };
