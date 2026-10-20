@@ -76,19 +76,24 @@ function InboxPage() {
     }
   }, [account]);
 
-  const loadMessages = useCallback(async (nextOffset = 0) => {
+  const loadMessages = useCallback(async (nextOffset = 0, filters?: { from: string; subject: string; since: string; before: string }) => {
+    const activeFrom = filters?.from ?? from;
+    const activeSubject = filters?.subject ?? subject;
+    const activeSince = filters?.since ?? since;
+    const activeBefore = filters?.before ?? before;
+    const searchActive = !!(activeFrom.trim() || activeSubject.trim() || activeSince || activeBefore);
     setLoadingMessages(true);
     setError("");
     setNotice("");
     try {
       const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(nextOffset) });
       let path = `/api/mail/${account}/messages?${params.toString()}`;
-      if (hasSearch) {
+      if (searchActive) {
         const criteria = new URLSearchParams(params);
-        if (from.trim()) criteria.set("from", from.trim());
-        if (subject.trim()) criteria.set("subject", subject.trim());
-        if (since) criteria.set("since", since);
-        if (before) criteria.set("before", before);
+        if (activeFrom.trim()) criteria.set("from", activeFrom.trim());
+        if (activeSubject.trim()) criteria.set("subject", activeSubject.trim());
+        if (activeSince) criteria.set("since", activeSince);
+        if (activeBefore) criteria.set("before", activeBefore);
         path = `/api/mail/${account}/search?${criteria.toString()}`;
       }
       const result = await api<MessagePage>(path);
@@ -113,7 +118,9 @@ function InboxPage() {
   useEffect(() => {
     if (available.some((item) => item.type === account)) loadMessages(0);
     else { setMessages([]); setTotal(0); }
-  }, [account, available.length]); // account switch only; filter submission is explicit
+    // Filters are submitted explicitly; changing each field must not trigger a request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, available.length]);
 
   const openMessage = async (item: MessageMeta) => {
     setLoadingMessages(true);
@@ -128,14 +135,14 @@ function InboxPage() {
     }
   };
 
-  const resetSearch = () => {
+  const resetSearch = async () => {
     setFrom("");
     setSubject("");
     setSince("");
     setBefore("");
     setOffset(0);
     setNotice("");
-    setTimeout(() => loadMessages(0), 0);
+    await loadMessages(0, { from: "", subject: "", since: "", before: "" });
   };
 
   const runSearch = async (event: React.FormEvent<HTMLFormElement>) => {
