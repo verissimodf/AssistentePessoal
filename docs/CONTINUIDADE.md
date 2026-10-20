@@ -732,3 +732,27 @@ exercitar `incomplete` real/Windows do SkillSpector; ele não substitui a valida
 **Riscos/rollback:** o teste usa apenas conta dedicada; em caso de erro, remover
 `JARVIS_MAIL_TRANSPORT`, reiniciar o serviço, revogar a senha de aplicativo no provedor e apagar o
 campo cifrado. Nenhuma credencial deve ser registrada no repositório, terminal ou relatório.
+
+### 23.6 Bloqueador de deploy — a imagem construída a partir da `main` não arranca
+
+**Descoberto na validação operacional O1/O2 (2026-10-19).** O estágio de runtime do `Dockerfile`
+copia `server/`, `.output` e `scripts/`, mas **não** copia o diretório de topo `skills/`. Como
+`server/skill-scanner.js` resolve `../skills/` (→ `/app/skills`) no **topo do módulo**, e
+`server/index.js` importa esse módulo, o contentor morre no arranque com
+`ENOENT ... lstat '/app/skills'` e nunca fica healthy.
+
+| Item | Estado |
+|---|---|
+| Container em produção | **intacto** — a imagem em uso (`assistente-pessoal:1.2.2-pr31-e9a5e53`, commit `e9a5e53`) é **anterior** ao commit que introduziu o scanner (`bf9b1cd`) e por isso não é afetada |
+| CI | **não deteta** — `ci.yml` tem apenas `testes` (ubuntu/windows) e `skillspector`; **nenhum job constrói a imagem**, logo a imagem quebrada passa com CI verde |
+| Correção | `COPY skills/ ./skills/` no estágio de runtime, com teste de contrato estático `tests/dockerfile-runtime-assets.test.mjs` que falha na imagem quebrada pelo motivo certo (asset em falta) |
+
+**Consequência:** qualquer *deploy* construído a partir da `main` atual sobe um contentor que não
+arranca. Isto tem de ser resolvido **antes** de qualquer promoção de release. O teste é estático de
+propósito (sem build de imagem no CI) e o bug de classe mais ampla — "imagem que não arranca sem
+nenhum job que o arranque" — fica registado como follow-up.
+
+**Nota de escopo (O1/O2):** a validação operacional correu sobre a imagem construída a partir de
+`0fbdc6c` com `skills/` montado **somente-leitura** no contentor descartável, por causa deste
+bloqueador. A imagem em si não foi alterada pela validação; o texto acima descreve o defeito
+encontrado, e a correção vive em PR própria e revisável.
