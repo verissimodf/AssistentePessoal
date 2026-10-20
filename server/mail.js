@@ -437,6 +437,15 @@ export function createMailService({
   };
 
   return {
+    async testConnection(adminId, accountId) {
+      const account = requireAccount(adminId, accountId);
+      if (typeof transport.testConnection !== "function")
+        throw new MailError(503, "connection_test_unavailable");
+      await call(adminId, accountId, account, (a) => transport.testConnection(a));
+      audit("mail.connection_test_succeeded", { admin: adminId, account: accountId });
+      return { ok: true, connected: true };
+    },
+
     async list(adminId, accountId, { limit, offset } = {}) {
       const account = requireAccount(adminId, accountId);
       enforceRate(adminId, accountId, "read");
