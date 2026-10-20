@@ -459,7 +459,7 @@ test("service: provider failure becomes a generic 502 and is audited without sec
   assert.equal(String(err.message).includes(SECRET), false);
   assert.equal(JSON.stringify(audits).includes(SECRET), false);
   const logged = audits.find((a) => a.kind === "mail.provider_error");
-  assert.deepEqual(Object.keys(logged.detail).sort(), ["account", "admin", "status"]);
+  assert.deepEqual(Object.keys(logged.detail).sort(), ["account", "admin", "category", "providerCode", "status"]);
 });
 
 test("settingsAccountResolver: keeps accounts isolated per admin", () => {
