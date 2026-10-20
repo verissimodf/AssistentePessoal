@@ -8,6 +8,7 @@ import {
   validateSearch,
   clampPage,
   classifyConnectionError,
+  classifyConnectionDiagnostic,
   classifySendError,
   createRateLimiter,
   redactAccount,
@@ -148,6 +149,44 @@ test("classifyConnectionError: auth fails fast, transient retries", () => {
     state: "error",
     retryable: false,
   });
+});
+test("classifyConnectionDiagnostic: classifies failures without exposing provider messages", () => {
+  assert.deepEqual(
+    classifyConnectionDiagnostic(Object.assign(new Error("Invalid login for user with secret " + SECRET), { code: "EAUTH" })),
+    { category: "auth", code: "EAUTH" },
+  );
+  assert.deepEqual(
+    classifyConnectionDiagnostic(Object.assign(new Error("certificate verify failed"), { code: "ESOCKET" })),
+    { category: "tls", code: "ESOCKET" },
+  );
+  assert.deepEqual(
+    classifyConnectionDiagnostic(Object.assign(new Error("provider timeout"), { code: "ETIMEDOUT" })),
+    { category: "timeout", code: "ETIMEDOUT" },
+  );
+  assert.deepEqual(
+    classifyConnectionDiagnostic(Object.assign(new Error("socket reset"), { code: "ECONNRESET" })),
+    { category: "network", code: "ECONNRESET" },
+  );
+  assert.deepEqual(
+    classifyConnectionDiagnostic(Object.assign(new Error("server said " + SECRET), { code: "SENSITIVE-CODE " + SECRET })),
+    { category: "unknown", code: null },
+  );
+});
+
+test("service: provider audit contains safe diagnostic fields, never provider error text", async () => {
+  const { transport } = mockTransport({
+    async testConnection() {
+      throw Object.assign(new Error("Invalid login; secret " + SECRET), { code: "EAUTH" });
+    },
+  });
+  const { svc, audits } = makeService({ transport });
+  const err = await catchErr(svc.testConnection("A", "gmail"));
+  assert.equal(err.status, 502);
+  const event = audits.find((a) => a.kind === "mail.provider_error");
+  assert.equal(event.detail.category, "auth");
+  assert.equal(event.detail.providerCode, "EAUTH");
+  assert.equal(JSON.stringify(event).includes(SECRET), false);
+  assert.equal(JSON.stringify(event).includes("Invalid login"), false);
 });
 
 test("classifySendError: only pre-transmission errors are a clean failure", () => {
