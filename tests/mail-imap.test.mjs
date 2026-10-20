@@ -139,6 +139,18 @@ test("d7: IMAPS 993 + app-password auth; lock released and client logged out", a
   assert.equal(JSON.stringify(page).includes(SECRET), false, "credentials never in the result");
 });
 
+test("d7: connection test authenticates and logs out without locking or reading INBOX", async () => {
+  const { rec, createImapClient, createSmtpTransport } = fakes();
+  const t = createImapSmtpTransport({ createImapClient, createSmtpTransport });
+  assert.deepEqual(await t.testConnection(ACCOUNT), { ok: true });
+  assert.equal(rec.connected, true);
+  assert.equal(rec.loggedOut, true);
+  assert.equal(rec.mailbox, null, "connection test never opens/locks a mailbox");
+  assert.equal(rec.fetched, null, "connection test never fetches messages");
+  assert.equal(rec.searched, null, "connection test never searches messages");
+  assert.equal(rec.smtp, null, "connection test never touches SMTP");
+});
+
 test("d7: list computes the sequence window from the mailbox size", async () => {
   const messages = Array.from({ length: 3 }, (_, i) => ({
     uid: i + 1,
