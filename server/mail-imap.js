@@ -79,6 +79,32 @@ export function createImapSmtpTransport({
     return h;
   };
 
+  const testConnection = async (account) => {
+    const h = endpoint(account);
+    const client = await imapFactory({
+      host: h.imap,
+      port: imapPort,
+      secure: true,
+      tls: TLS_OPTIONS,
+      auth: { user: account.user, pass: account.appPassword },
+      logger,
+    });
+    try {
+      await client.connect();
+      return { ok: true };
+    } finally {
+      try {
+        await client.logout();
+      } catch {
+        try {
+          client.close?.();
+        } catch {
+          /* best effort */
+        }
+      }
+    }
+  };
+
   const withMailbox = async (account, fn) => {
     const h = endpoint(account);
     const client = await imapFactory({
@@ -120,6 +146,7 @@ export function createImapSmtpTransport({
   };
 
   return {
+    testConnection,
     async list(account, { limit, offset }) {
       return withMailbox(account, async (client) => {
         const total = client.mailbox?.exists ?? 0;
