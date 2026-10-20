@@ -92,6 +92,11 @@ COPY --from=build /app/.output ./.output
 # Entrada do container + ponte de voz.
 COPY scripts/container-entrypoint.sh scripts/voice-adapter.mjs ./scripts/
 RUN chmod +x scripts/container-entrypoint.sh
+# Catálogo de Skills — NECESSÁRIO em runtime: `server/skill-scanner.js` resolve
+# `../skills/` (=> /app/skills) no topo do módulo, e o import de `server/index.js`
+# morre com ENOENT se a pasta não existir. Sem esta COPY a imagem não arranca.
+# O conteúdo é somente-leitura em runtime (uid 1000) — nada é escrito em skills/.
+COPY skills/ ./skills/
 
 # Não-root por construção: vale mesmo fora do Compose (sem `--user`).
 # O uid/gid 1000 casa com o dono de `data/` no host, preservando SQLite/WAL.
