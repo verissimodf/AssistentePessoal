@@ -37,6 +37,7 @@ function SettingsPage() {
   const a = useAuthText();
   const [s, setS] = useState<Settings | null>(DEFAULT_SETTINGS);
   const [bridge, setBridge] = useState(DEFAULT_BRIDGE);
+  const [testingMail, setTestingMail] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => { loadSettings().then(setS); setBridge(bridgeUrl()); }, []);
   if (!s) return null;
@@ -56,6 +57,36 @@ function SettingsPage() {
     try { const r = await api<{ ok: boolean; detail: string }>(`/api/providers/${id}/test`, { method: "POST" }); r.ok ? toast.success(r.detail) : toast.error(r.detail); }
     catch (e) { toast.error(String((e as Error).message)); }
   };
+  const testMailConnection = async (id: string, name: string) => {
+    const account = s.comms?.[id] || {};
+    if (!account.enabled) { toast.error(`Ative ${name} antes de testar.`); return; }
+    if (!account.user || (!account.appPassword && !account.hasKey)) {
+      toast.error(`Preencha o usuário e a senha de aplicativo de ${name} antes de testar.`);
+      return;
+    }
+    if (!(await ping())) { toast.error(t("demo_hint")); return; }
+    setTestingMail(id);
+    try {
+      // Save first so the API tests the exact encrypted credentials currently shown in the form.
+      localStorage.setItem("jarvis.bridge", bridge);
+      await saveSettings(s);
+      const result = await api<{ ok: boolean; connected: boolean }>(`/api/mail/${id}/test-connection`, { method: "POST", body: "{}" });
+      if (result.ok && result.connected) toast.success(`${name}: conexão IMAP autenticada com sucesso.`);
+      else toast.error(`${name}: não foi possível confirmar a conexão.`);
+    } catch (e) {
+      const message = String((e as Error).message || e);
+      if (message.includes("provider_error")) {
+        toast.error(`${name}: falha na conexão/autenticação. Verifique o usuário, a senha de aplicativo e os registros de diagnóstico.`);
+      } else if (message.includes("connection_test_unavailable")) {
+        toast.error(`${name}: o transporte real não está ativado neste serviço.`);
+      } else {
+        toast.error(`${name}: teste de conexão falhou (${message.slice(0, 180)}).`);
+      }
+    } finally {
+      setTestingMail(null);
+    }
+  };
+
   const uploadVoice = async (f: File) => {
     if (!(await ping())) { toast.info(t("demo_hint")); return; }
     const fd = new FormData();
@@ -152,6 +183,14 @@ function SettingsPage() {
                 {c.fields.map((f) => (
                   <Field key={f} label={f}><Input type={/token|password/i.test(f) ? "password" : "text"} value={v[f] || ""} onChange={(e) => setNested("comms", c.id, f, e.target.value)} /></Field>
                 ))}
+                {(c.id === "gmail" || c.id === "outlook") && (
+                  <div className="space-y-2 border-t border-border pt-3">
+                    <p className="text-xs text-muted-foreground">O teste conecta ao servidor IMAP e valida a autenticação. Não lê mensagens nem envia e-mails.</p>
+                    <Button size="sm" variant="outline" disabled={testingMail !== null} onClick={() => testMailConnection(c.id, c.name)}>
+                      {testingMail === c.id ? "Testando conexão…" : "Testar conexão IMAP"}
+                    </Button>
+                  </div>
+                )}
               </div>
             );
           })}
