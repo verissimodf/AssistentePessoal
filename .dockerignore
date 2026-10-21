@@ -1,0 +1,25 @@
+# Nunca levar para a imagem: estado local, segredos e artefatos de build.
+node_modules
+**/node_modules
+.output
+data
+.env
+.env.*
+!.env.example
+.wrangler
+.git
+.github
+tests
+docs
+docs_arquive
+brain
+graphify-out
+*.log
+*.tgz
+Dockerfile
+.dockerignore
+docker-compose*.yml
+# NOTA (P0.2 — metadados de build): `server/build-info.json` e `.app-version` NÃO estão nesta
+# lista de propósito. Ambos são gerados DURANTE o build (pelo `scripts/write-build-info.mjs` e
+# pela extração do package.json), então excluí-los daqui não teria efeito — e o serviço precisa
+# ler `server/build-info.json` na imagem. Ambos estão no `.gitignore` para não virarem fonte.

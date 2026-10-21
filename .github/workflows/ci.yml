@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  testes:
+    name: Testes (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm ci
+        working-directory: server
+      - name: Testes do painel
+        run: npx vitest run
+      - name: Testes do serviço local
+        run: node --no-warnings --test tests/*.test.mjs
+      - name: Serviço sobe e responde
+        shell: bash
+        run: |
+          (cd server && node --no-warnings index.js &) ; sleep 3
+          curl -sf http://127.0.0.1:7777/api/health

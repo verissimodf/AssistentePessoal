@@ -1,0 +1,12 @@
+## Jarvis structure
+- `server/` is a standalone Node 22 service (node:sqlite, no native deps); the panel in `src/` only talks to it over HTTP via `src/lib/bridge.ts`, with a localStorage demo fallback — keeps everything local and the preview usable.
+- Host command safety lives only in `server/hostpolicy.js` and must stay unit-tested in `tests/`.
+- No Lovable Cloud: user requires all data to stay on their machine.
+- Every service route declares its access ("public" | "session" | scope) in `server/index.js`; the public list stays minimal and is asserted by `tests/http-auth.test.mjs` — single choke point for authn/authz.
+- Auth rules live in `server/auth.js` (pure, clock-injectable) and tool scopes are re-checked in `callTool` at execution time — so indirect paths (MCP, bots, Telegram) cannot bypass route checks.
+- Schema changes only via versioned entries in `server/migrations.js` (verified backup + single transaction + preserved-row check) — never edit a migration already released.
+- Legacy records are never auto-assigned an owner; ownership is explicit — avoids silent privilege transfer.
+- Admin powers (wildcard, admin-only scopes, `session` routes) require `isVerifiedAdmin()` from `server/auth.js` — only principals issued by `validateSession()` are registered, so forged objects get nothing.
+- Resource ownership lives only in the `ownership` table (immutable rows); every route, tool, scheduler and channel filters by `principal.adminId`, and unowned rows are invisible — prevents cross-admin and legacy leaks.
+- Settings split: personal per admin (`admin_settings`), global policy (`global_settings`: host, integrations, localVoiceUrl) writable only by a verified admin — a personal value can never weaken the global policy.
+- Development is risk-based (see `CONTRIBUTING.md` §"Política de desenvolvimento por risco"): routine work (docs, tests, small fixes) lands via the normal flow with a concise summary; independent review, multiple approvals and long reports are NOT universal requirements. High-risk changes (auth/authz/isolation/migrations/ownership) need targeted tests and recovery planning; irreversible operations on real data require explicit confirmation first.
