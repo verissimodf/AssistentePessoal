@@ -39,6 +39,7 @@ if (migration.backup) console.log(`[db] schema v${migration.from} → v${migrati
 export const schema = {
   approvalCorrelation: detectApprovalCorrelation(db),
   executionEvidence: !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='execution_evidence'").get(),
+  documentChunks: !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='document_chunks'").get(),
 };
 
 export const now = () => new Date().toISOString();

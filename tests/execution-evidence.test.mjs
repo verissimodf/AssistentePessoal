@@ -219,7 +219,7 @@ test("migração v10: tabela execution_evidence + índices, integridade ok, sem 
   assert.ok(
     t.prepare("SELECT 1 FROM sqlite_master WHERE name='idx_execution_evidence_correlation'").get(),
   );
-  assert.equal(t.prepare("PRAGMA user_version").get().user_version, 11);
+  assert.ok(t.prepare("PRAGMA user_version").get().user_version >= 11);
   assert.equal(t.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   assert.ok(
     t.prepare("SELECT 1 FROM sqlite_master WHERE name='idx_approval_actions_correlation'").get(),

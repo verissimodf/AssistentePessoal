@@ -330,6 +330,59 @@ CREATE TABLE IF NOT EXISTS session_focus (
       },
     ],
   },
+  {
+    version: 12,
+    name: "document_chunks: semantic RAG chunks and embeddings per owner (Roadmap v1.1)",
+    // Roadmap v1.1 — Fase 1: RAG Semântico Híbrido com chunks indexados por documento e por admin.
+    // Adiciona colunas aditivas em `documents` e cria a tabela `document_chunks` vinculada com
+    // ON DELETE CASCADE ao documento pai. Isolamento multi-tenant garantido pela coluna `admin_id`.
+    sql: (db) => {
+      const hasDocs = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='documents'").get();
+      const docCols = hasDocs ? db.prepare("PRAGMA table_info(documents)").all().map((c) => c.name) : [];
+      const addChunkCount = hasDocs && !docCols.includes("chunk_count")
+        ? "ALTER TABLE documents ADD COLUMN chunk_count INTEGER DEFAULT 0;"
+        : "";
+      const addRagStatus = hasDocs && !docCols.includes("rag_status")
+        ? "ALTER TABLE documents ADD COLUMN rag_status TEXT DEFAULT 'lexical';"
+        : "";
+      return `
+${addChunkCount}
+${addRagStatus}
+CREATE TABLE IF NOT EXISTS document_chunks (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL,
+  admin_id TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  token_estimate INTEGER NOT NULL DEFAULT 0,
+  embedding_json TEXT,
+  embedding_model TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_doc_chunks_doc_id ON document_chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_doc_chunks_admin_id ON document_chunks(admin_id);
+`;
+    },
+    expect: [
+      {
+        table: "document_chunks",
+        type: "table",
+        columns: [
+          "id",
+          "document_id",
+          "admin_id",
+          "chunk_index",
+          "content",
+          "token_estimate",
+          "embedding_json",
+          "embedding_model",
+          "created_at",
+        ],
+        primaryKey: ["id"],
+      },
+    ],
+  },
 ];
 
 const tableExists = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);

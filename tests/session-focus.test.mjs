@@ -78,7 +78,7 @@ before(async () => {
 after(() => server.close());
 
 test("migração v11 aplicada: session_focus existe e o esquema é 11", () => {
-  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 11);
+  assert.ok(db.prepare("PRAGMA user_version").get().user_version >= 11);
   assert.ok(
     db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_focus'").get(),
     "tabela criada",

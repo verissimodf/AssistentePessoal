@@ -53,6 +53,7 @@ import { remember, recall, resolveApproval } from "./tools.js";
 import {
   listDocuments,
   getDocument,
+  listDocumentChunks,
   saveDocument,
   searchDocuments,
   deleteDocument,
@@ -431,7 +432,7 @@ route("DELETE", "/api/memories/:id", "memories:write", ({ params, principal }) =
 
 // ---------- documents (Phase 3: private local document store, TXT first) ----------
 route("GET", "/api/documents", "documents:read", ({ principal }) => listDocuments(me(principal)));
-route("GET", "/api/documents/search", "documents:read", ({ query, principal }) =>
+route("GET", "/api/documents/search", "documents:read", async ({ query, principal }) =>
   searchDocuments(me(principal), query.get("q") || ""),
 );
 route("GET", "/api/documents/:id", "documents:read", ({ params, principal }) => {
@@ -443,9 +444,14 @@ route("GET", "/api/documents/:id", "documents:read", ({ params, principal }) => 
     mime: d.mime,
     size: d.size,
     created_at: d.created_at,
+    chunk_count: d.chunk_count ?? 0,
+    rag_status: d.rag_status ?? "lexical",
     content: d.content_text,
   };
 });
+route("GET", "/api/documents/:id/chunks", "documents:read", ({ params, principal }) =>
+  listDocumentChunks(me(principal), params.id),
+);
 route("POST", "/api/documents", "documents:write", async ({ body, form, principal }) => {
   const owner = me(principal);
   if (form) {
@@ -458,10 +464,11 @@ route("POST", "/api/documents", "documents:write", async ({ body, form, principa
       buffer: buf,
     });
   }
+  const encoding = body?.encoding === "base64" ? "base64" : "utf8";
   return saveDocument(owner, {
     name: String(body.name ?? ""),
     mime: String(body.mime || "text/plain"),
-    buffer: Buffer.from(String(body.content ?? ""), "utf8"),
+    buffer: Buffer.from(String(body.content ?? ""), encoding),
   });
 });
 route("DELETE", "/api/documents/:id", "documents:write", ({ params, principal }) => {

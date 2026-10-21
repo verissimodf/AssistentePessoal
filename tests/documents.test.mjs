@@ -68,7 +68,8 @@ test("documents: owner stores and reads their own; the other admin sees nothing"
 
 test("documents: invalid inputs are rejected (type, empty, oversize, binary, name)", async () => {
   const post = (body) => req("/api/documents", { method: "POST", body, s: A });
-  assert.equal((await post({ name: "x.pdf", mime: "application/pdf", content: "%PDF" })).status, 415);
+  assert.equal((await post({ name: "x.png", mime: "image/png", content: "png" })).status, 415);
+  assert.equal((await post({ name: "x.pdf", mime: "application/pdf", content: "%PDF" })).status, 400); // invalid signature
   assert.equal((await post({ name: "v.txt", mime: "text/plain", content: "" })).status, 400);
   assert.equal((await post({ name: "g.txt", mime: "text/plain", content: "a".repeat(2000) })).status, 413);
   assert.equal((await post({ name: "b.txt", mime: "text/plain", content: "abc\u0000def" })).status, 400);
