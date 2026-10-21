@@ -87,21 +87,24 @@ async function readLimitedForm(req, url, max) {
   let n = 0,
     over = false;
   const stream = new ReadableStream({
-    async start(c) {
-      try {
-        for await (const chunk of req) {
-          n += chunk.length;
-          if (n > max) {
+    start(c) {
+      req.on("data", (chunk) => {
+        n += chunk.length;
+        if (n > max) {
+          if (!over) {
             over = true;
             c.error(new AuthError(413, "payload_too_large"));
-            return;
           }
-          c.enqueue(chunk);
+          return;
         }
-        c.close();
-      } catch (e) {
-        c.error(e);
-      }
+        c.enqueue(chunk);
+      });
+      req.on("end", () => {
+        if (!over) c.close();
+      });
+      req.on("error", (e) => {
+        if (!over) c.error(e);
+      });
     },
   });
   const headers = Object.fromEntries(
@@ -789,7 +792,10 @@ export function createApp(opts = {}) {
         e instanceof AuthError ||
         (e && typeof e.status === "number" && typeof e.code === "string")
       ) {
-        if (e.status === 413) res.setHeader("connection", "close"); // unread body: never reuse this socket
+        if (e.status === 413) {
+          res.setHeader("connection", "close"); // unread body: never reuse this socket
+          try { req.resume(); } catch {}
+        }
         const extra = e.retryAfter ? { "retry-after": String(e.retryAfter) } : undefined;
         return send(
           res,

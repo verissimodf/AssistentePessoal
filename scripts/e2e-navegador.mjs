@@ -67,8 +67,12 @@ async function navigate(url) {
 }
 const screenshot = async (name) => {
   const { data } = await send("Page.captureScreenshot", { format: "png" });
-  const { writeFileSync } = await import("node:fs");
-  writeFileSync(`/tmp/opencode/e2e-${name}.png`, Buffer.from(data, "base64"));
+  const { writeFileSync, mkdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const outDir = join(tmpdir(), "jarvis-e2e");
+  mkdirSync(outDir, { recursive: true });
+  writeFileSync(join(outDir, `e2e-${name}.png`), Buffer.from(data, "base64"));
 };
 // Preencher inputs controlados por React (setter nativo + evento input).
 const setInputs = (pairs) => {

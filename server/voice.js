@@ -24,12 +24,33 @@ export async function tts(text, lang, adminId) {
   }
   // local engines
   const url = v.localVoiceUrl || "http://127.0.0.1:7778";
-  const r = await fetch(`${url}/tts`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text, lang: (lang || "pt-BR").slice(0, 2), engine: v.tts, speaker_wav: v.clonedEngine === "xtts" ? v.clonedVoiceId : null }),
-  });
-  if (!r.ok) throw new Error(`Serviço de voz local ${r.status}: ${await r.text()}`);
-  return { type: "audio/wav", data: Buffer.from(await r.arrayBuffer()) };
+  try {
+    const r = await fetch(`${url}/tts`, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text, lang: (lang || "pt-BR").slice(0, 2), engine: v.tts, speaker_wav: v.clonedEngine === "xtts" ? v.clonedVoiceId : null }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!r.ok) {
+      const errText = await r.text().catch(() => "");
+      throw new Error(`Serviço de voz local ${r.status}: ${errText}`);
+    }
+    return { type: "audio/wav", data: Buffer.from(await r.arrayBuffer()) };
+  } catch (err) {
+    if (err.cause?.code === "ECONNREFUSED" || err.message?.includes("fetch failed") || err.name === "TimeoutError") {
+      throw new Error(`Serviço de voz local indisponível em ${url} (${err.cause?.code || err.name || "conexão recusada"}). Verifique se scripts/voz/voice_service.py está rodando.`);
+    }
+    throw err;
+  }
+}
+
+/** Verifica se o serviço de voz local está online e respondendo na URL informada. */
+export async function checkVoiceService(url = "http://127.0.0.1:7778") {
+  try {
+    const r = await fetch(`${url}/health`, { signal: AbortSignal.timeout(3000) });
+    return { ok: r.ok, status: r.status };
+  } catch (err) {
+    return { ok: false, error: err.cause?.code || err.message };
+  }
 }
 
 /** Saves the sample locally; with ElevenLabs it also creates a cloned voice there. */

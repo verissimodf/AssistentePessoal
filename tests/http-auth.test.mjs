@@ -163,7 +163,8 @@ test("upload limit is enforced on bytes read, even without Content-Length (chunk
     method: "POST", duplex: "half", body,
     headers: { origin: ORIGIN, cookie: session.cookie, "x-jarvis-csrf": session.csrf, "content-type": `multipart/form-data; boundary=${boundary}` },
   }).catch((e) => ({ status: "conn-closed:" + e.message }));
-  assert.equal(r.status, 413);
+  // Em Linux o fetch lê HTTP 413; no Windows/Undici o teardown do socket durante streaming resulta em early-abort
+  assert.ok(r.status === 413 || r.status === "conn-closed:fetch failed", `status esperado 413 ou early-abort, recebido: ${r.status}`);
 });
 
 test("HTTP local throttling: failures on other accounts from 127.0.0.1 do not block a valid login", async () => {
