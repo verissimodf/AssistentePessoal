@@ -11,6 +11,7 @@ import {
   FileCode,
   Loader2,
   Eye,
+  Sparkles,
 } from "lucide-react";
 import { PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { api, type Doc, type DocChunk } from "@/lib/bridge";
+import { api, type Doc, type DocChunk, reindexDocument } from "@/lib/bridge";
 
 export const Route = createFileRoute("/documentos")({
   head: () => ({
@@ -134,6 +135,7 @@ export function DocumentsPage() {
 
   const [viewingDoc, setViewingDoc] = useState<{ name: string; content: string } | null>(null);
   const [loadingView, setLoadingView] = useState(false);
+  const [reindexingId, setReindexingId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -142,6 +144,32 @@ export function DocumentsPage() {
       .then((docs) => setItems(docs || []))
       .catch((e) => setError(parseDocError(e)));
   };
+
+  const handleReindex = async (docId: string) => {
+    setReindexingId(docId);
+    setError("");
+    setMsg("");
+    try {
+      const res = await reindexDocument(docId);
+      if (res && res.ok) {
+        setMsg(
+          `Documento reindexado com sucesso para RAG Semântico (${res.vectorizedChunks || 0} blocos vetorizados).`
+        );
+        refresh();
+      } else {
+        setError(
+          res?.reason === "embedding_provider_unavailable"
+            ? "Provedor de embeddings indisponível no momento. Verifique as configurações de IA."
+            : "Falha ao gerar embeddings para o documento."
+        );
+      }
+    } catch (e) {
+      setError(parseDocError(e));
+    } finally {
+      setReindexingId(null);
+    }
+  };
+
 
   useEffect(() => {
     refresh();
@@ -404,6 +432,24 @@ export function DocumentsPage() {
             </div>
 
             <div className="flex items-center gap-2 self-end sm:self-center">
+              {(d.rag_status === "lexical_only" || d.rag_status === "lexical") && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs text-amber-400 border-amber-500/40 hover:bg-amber-500/10 hover:text-amber-300"
+                  onClick={() => handleReindex(d.id)}
+                  disabled={reindexingId === d.id}
+                  data-testid={`btn-reindex-${d.id}`}
+                  title="Gerar embeddings vetoriais para este documento"
+                >
+                  {reindexingId === d.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  )}
+                  <span>Vetorizar RAG</span>
+                </Button>
+              )}
               <Button
                 variant="outline"
                 size="sm"

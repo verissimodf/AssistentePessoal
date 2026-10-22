@@ -570,3 +570,78 @@ export const documentCount = (ownerId) =>
     ? db.prepare(`SELECT COUNT(*) n FROM documents d
         JOIN ownership o ON o.resource_type = 'document' AND o.resource_id = d.id AND o.owner_admin_id = ?`).get(ownerId).n
     : 0;
+
+/**
+ * Reindexação Vetorial Sob Demanda (Roadmap v1.3.0).
+ * Regenera embeddings para os chunks de um documento cujo provedor de embeddings
+ * esteve indisponível na ingestão inicial, promovendo de lexical_only para hybrid.
+ */
+export async function reindexDocument(ownerId, id, { embedFn = embed } = {}) {
+  if (!ownerId || !owns(ownerId, "document", id)) return null;
+
+  const doc = db.prepare("SELECT id, name, rag_status FROM documents WHERE id = ?").get(id);
+  if (!doc) return null;
+
+  const chunks = db.prepare(
+    "SELECT id, content, embedding_json FROM document_chunks WHERE document_id = ? AND admin_id = ? ORDER BY chunk_index ASC"
+  ).all(id, ownerId);
+
+  if (!chunks.length) {
+    return { ok: false, reason: "no_chunks_found", id, rag_status: doc.rag_status, vectorizedChunks: 0 };
+  }
+
+  let vectorizedCount = 0;
+  const updates = [];
+
+  for (const c of chunks) {
+    let emb = null;
+    try {
+      const res = await embedFn(c.content, ownerId);
+      if (Array.isArray(res) && res.length > 0) {
+        emb = res;
+      }
+    } catch {
+      emb = null;
+    }
+
+    if (emb) {
+      updates.push({
+        id: c.id,
+        embedding_json: JSON.stringify(emb),
+        embedding_model: "embeddings",
+      });
+      vectorizedCount++;
+    }
+  }
+
+  // Se nenhum vetor pôde ser gerado (provedor continua indisponível)
+  if (vectorizedCount === 0) {
+    return {
+      ok: false,
+      reason: "embedding_provider_unavailable",
+      id,
+      rag_status: doc.rag_status || "lexical_only",
+      vectorizedChunks: 0,
+    };
+  }
+
+  tx(() => {
+    const updChunk = db.prepare(
+      "UPDATE document_chunks SET embedding_json = ?, embedding_model = ? WHERE id = ?"
+    );
+    for (const u of updates) {
+      updChunk.run(u.embedding_json, u.embedding_model, u.id);
+    }
+    db.prepare("UPDATE documents SET rag_status = 'hybrid' WHERE id = ?").run(id);
+  });
+
+  audit("document.reindexed", { admin: ownerId, id, vectorizedChunks: vectorizedCount });
+
+  return {
+    ok: true,
+    id,
+    rag_status: "hybrid",
+    vectorizedChunks: vectorizedCount,
+  };
+}
+

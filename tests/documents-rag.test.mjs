@@ -22,6 +22,7 @@ const {
   searchDocuments,
   listDocumentChunks,
   deleteDocument,
+  reindexDocument,
   DocError,
 } = await import("../server/documents.js");
 
@@ -356,3 +357,72 @@ test("ferramenta document_search: aplica sanitização e delimitadores anti-prom
   assert.match(toolOut, /\[system-data\]/);
   assert.doesNotMatch(toolOut, /```bash/); // blocos ``` são neutralizados
 });
+
+// ----------------------------------------------------------------------------
+// 9. Reindexação Vetorial Sob Demanda (v1.3.0)
+// ----------------------------------------------------------------------------
+
+test("reindexDocument promove documento de lexical_only para hybrid quando embeddings estão disponíveis", async () => {
+  const offlineEmbed = async () => null;
+  const activeEmbed = async () => [0.12, 0.34, 0.56, 0.78];
+
+  const doc = await saveDocument(A.id, {
+    name: "arquitetura_cloud.txt",
+    mime: "text/plain",
+    buffer: Buffer.from("Arquitetura de microsserviços distribuídos com alta disponibilidade.", "utf8"),
+  }, { embedFn: offlineEmbed });
+
+  assert.equal(doc.rag_status, "lexical_only");
+
+  // Reindexação sem provedor: continua lexical_only
+  const failReindex = await reindexDocument(A.id, doc.id, { embedFn: offlineEmbed });
+  assert.equal(failReindex.ok, false);
+  assert.equal(failReindex.reason, "embedding_provider_unavailable");
+  assert.equal(failReindex.rag_status, "lexical_only");
+
+  // Reindexação com provedor ativo: promove para hybrid
+  const okReindex = await reindexDocument(A.id, doc.id, { embedFn: activeEmbed });
+  assert.equal(okReindex.ok, true);
+  assert.equal(okReindex.rag_status, "hybrid");
+  assert.ok(okReindex.vectorizedChunks > 0);
+
+  // Verifica no banco se rag_status e embedding_json foram gravados
+  const dbDoc = db.prepare("SELECT rag_status FROM documents WHERE id = ?").get(doc.id);
+  assert.equal(dbDoc.rag_status, "hybrid");
+
+  const chunks = db.prepare("SELECT embedding_json, embedding_model FROM document_chunks WHERE document_id = ?").all(doc.id);
+  assert.ok(chunks.length > 0);
+  assert.ok(chunks.every((c) => c.embedding_json !== null && c.embedding_model === "embeddings"));
+});
+
+test("POST /api/documents/:id/reindex: autenticação, isolamento multi-admin e barreira CSRF", async () => {
+  // Cria documento para o Admin A com lexical_only
+  const doc = await saveDocument(A.id, {
+    name: "segredo_admin_a.txt",
+    mime: "text/plain",
+    buffer: Buffer.from("Relatório estritamente confidencial do administrador A.", "utf8"),
+  }, { embedFn: async () => null });
+
+  // 1. Anônimo recebe 401
+  const anon = await req(`/api/documents/${doc.id}/reindex`, { method: "POST" });
+  assert.equal(anon.status, 401);
+
+  // 2. Sem CSRF recebe 403
+  const noCsrf = await fetch(`${base}/api/documents/${doc.id}/reindex`, {
+    method: "POST",
+    headers: { origin: ORIGIN, cookie: A.cookie },
+  });
+  assert.equal(noCsrf.status, 403);
+
+  // 3. Admin B tentando reindexar documento do Admin A recebe 404
+  const foreign = await req(`/api/documents/${doc.id}/reindex`, { method: "POST", s: B });
+  assert.equal(foreign.status, 404);
+
+  // 4. Admin A reindexando seu próprio documento recebe 200
+  const own = await req(`/api/documents/${doc.id}/reindex`, { method: "POST", s: A });
+  assert.equal(own.status, 200);
+  const ownRes = await own.json();
+  assert.equal(ownRes.id, doc.id);
+  assert.ok(["hybrid", "lexical_only"].includes(ownRes.rag_status));
+});
+

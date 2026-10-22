@@ -3,11 +3,14 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { DocumentsPage, parseDocError, RagBadge } from "@/routes/documentos";
 
 const mockApi = vi.fn();
+const mockReindexDocument = vi.fn();
 vi.mock("@/lib/bridge", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/bridge")>();
   return {
     ...original,
     api: (...args: unknown[]) => mockApi(...args),
+    reindexDocument: (...args: unknown[]) => mockReindexDocument(...args),
+    ping: () => Promise.resolve(true),
     useAuthState: () => "ok",
     useBridgeStatus: () => true,
   };
@@ -199,4 +202,48 @@ describe("DocumentsPage — RAG Semântico Híbrido & Ingestão Multiformato", (
       });
     });
   });
+
+  describe("Reindexação Vetorial Sob Demanda (Vetorizar RAG)", () => {
+    it("exibe botão Vetorizar RAG em documentos lexical_only e promove para hybrid ao clicar", async () => {
+      let isHybrid = false;
+      mockApi.mockImplementation(async (path: string) => {
+        if (path === "/api/documents") {
+          return [
+            {
+              id: "doc-offline",
+              name: "guia_servidores.txt",
+              mime: "text/plain",
+              size: 1024,
+              created_at: "2026-10-22T04:00:00Z",
+              chunk_count: 3,
+              rag_status: isHybrid ? "hybrid" : "lexical_only",
+            },
+          ];
+        }
+        return [];
+      });
+
+      mockReindexDocument.mockImplementation(async (id: string) => {
+        isHybrid = true;
+        return { ok: true, id, rag_status: "hybrid", vectorizedChunks: 3 };
+      });
+
+      render(<DocumentsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText("guia_servidores.txt")).toBeInTheDocument();
+      });
+
+      const reindexBtn = screen.getByTestId("btn-reindex-doc-offline");
+      expect(reindexBtn).toBeInTheDocument();
+      expect(screen.getByText("Vetorizar RAG")).toBeInTheDocument();
+
+      fireEvent.click(reindexBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText("RAG Semântico Ativo")).toBeInTheDocument();
+      });
+    });
+  });
 });
+

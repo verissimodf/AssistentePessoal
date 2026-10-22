@@ -58,6 +58,7 @@ import {
   saveDocument,
   searchDocuments,
   deleteDocument,
+  reindexDocument,
 } from "./documents.js";
 import {
   createConversation,
@@ -476,6 +477,12 @@ route("DELETE", "/api/documents/:id", "documents:write", ({ params, principal })
   if (!deleteDocument(me(principal), params.id).ok) notFound();
   return { ok: true };
 });
+route("POST", "/api/documents/:id/reindex", "documents:write", async ({ params, principal }) => {
+  const r = await reindexDocument(me(principal), params.id);
+  if (!r) notFound();
+  return r;
+});
+
 
 // ---------- skills (Hub Global de Skills: catalog, search & injection) ----------
 route("GET", "/api/skills", "skills:read", ({ query, principal }) => {

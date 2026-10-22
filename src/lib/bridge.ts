@@ -153,6 +153,26 @@ export async function getDocumentChunks(id: string): Promise<DocChunk[]> {
   return [];
 }
 
+export type ReindexResult = {
+  ok: boolean;
+  id: string;
+  rag_status: string;
+  vectorizedChunks?: number | undefined;
+  reason?: string | undefined;
+};
+
+export async function reindexDocument(id: string): Promise<ReindexResult | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<ReindexResult>(`/api/documents/${encodeURIComponent(id)}/reindex`, {
+      method: "POST",
+    });
+  } catch {
+    return null;
+  }
+}
+
+
 // ---------- generic collections (server first, demo fallback) ----------
 export type Memory = { id: string; content: string; tags: string; created_at: string };
 export type Agent = {
