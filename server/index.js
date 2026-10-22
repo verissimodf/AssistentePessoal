@@ -59,6 +59,7 @@ import {
   searchDocuments,
   deleteDocument,
   reindexDocument,
+  reindexPendingDocuments,
 } from "./documents.js";
 import {
   createConversation,
@@ -476,6 +477,9 @@ route("POST", "/api/documents", "documents:write", async ({ body, form, principa
 route("DELETE", "/api/documents/:id", "documents:write", ({ params, principal }) => {
   if (!deleteDocument(me(principal), params.id).ok) notFound();
   return { ok: true };
+});
+route("POST", "/api/documents/reindex-pending", "documents:write", async ({ principal }) => {
+  return reindexPendingDocuments(me(principal));
 });
 route("POST", "/api/documents/:id/reindex", "documents:write", async ({ params, principal }) => {
   const r = await reindexDocument(me(principal), params.id);

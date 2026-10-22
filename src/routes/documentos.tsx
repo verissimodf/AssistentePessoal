@@ -24,7 +24,13 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { api, type Doc, type DocChunk, reindexDocument } from "@/lib/bridge";
+import {
+  api,
+  type Doc,
+  type DocChunk,
+  reindexDocument,
+  reindexAllPendingDocuments,
+} from "@/lib/bridge";
 
 export const Route = createFileRoute("/documentos")({
   head: () => ({
@@ -136,6 +142,7 @@ export function DocumentsPage() {
   const [viewingDoc, setViewingDoc] = useState<{ name: string; content: string } | null>(null);
   const [loadingView, setLoadingView] = useState(false);
   const [reindexingId, setReindexingId] = useState<string | null>(null);
+  const [reindexingAll, setReindexingAll] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -167,6 +174,31 @@ export function DocumentsPage() {
       setError(parseDocError(e));
     } finally {
       setReindexingId(null);
+    }
+  };
+
+  const handleReindexAll = async () => {
+    setReindexingAll(true);
+    setError("");
+    setMsg("");
+    try {
+      const res = await reindexAllPendingDocuments();
+      if (res && res.ok) {
+        setMsg(
+          `Sincronização concluída: ${res.upgraded || 0} documento(s) promovido(s) para RAG Semântico.`
+        );
+        refresh();
+      } else {
+        setError(
+          res?.reason === "embedding_provider_unavailable"
+            ? "Provedor de embeddings indisponível no momento. Verifique as configurações de IA."
+            : "Falha ao sincronizar documentos pendentes."
+        );
+      }
+    } catch (e) {
+      setError(parseDocError(e));
+    } finally {
+      setReindexingAll(false);
     }
   };
 
@@ -307,6 +339,11 @@ export function DocumentsPage() {
     }
   };
 
+  const pendingDocs = items.filter(
+    (d) => d.rag_status === "lexical_only" || d.rag_status === "lexical"
+  );
+  const pendingCount = pendingDocs.length;
+
   return (
     <div className="h-screen overflow-y-auto p-6 md:p-10">
       <PageHeader
@@ -327,6 +364,41 @@ export function DocumentsPage() {
           </Button>
         </div>
       </PageHeader>
+
+      {/* Banner Auto-Healer RAG para Documentos Pendentes */}
+      {pendingCount > 0 && (
+        <div
+          className="hud-panel mb-6 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between border-amber-500/30 bg-amber-500/10"
+          data-testid="banner-reindex-pending"
+        >
+          <div className="flex items-center gap-3">
+            <Sparkles className="h-5 w-5 text-amber-400 shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-amber-200">
+                {pendingCount} documento(s) em modo offline / busca lexical
+              </p>
+              <p className="text-xs text-amber-300/80">
+                Vetorize para habilitar o RAG Semântico Híbrido com alta precisão contextual.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 border-amber-500/50 bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 hover:text-white"
+            onClick={handleReindexAll}
+            disabled={reindexingAll}
+            data-testid="btn-reindex-all"
+          >
+            {reindexingAll ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            <span>Sincronizar Todos os Vetores Pendentes ({pendingCount})</span>
+          </Button>
+        </div>
+      )}
 
       {/* Painel de Upload e Criação */}
       <div className="hud-panel mb-6 flex flex-col gap-4 p-5">

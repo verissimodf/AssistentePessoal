@@ -172,6 +172,25 @@ export async function reindexDocument(id: string): Promise<ReindexResult | null>
   }
 }
 
+export type ReindexPendingResult = {
+  ok: boolean;
+  processed: number;
+  upgraded: number;
+  ids?: string[];
+  reason?: string;
+};
+
+export async function reindexAllPendingDocuments(): Promise<ReindexPendingResult | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<ReindexPendingResult>("/api/documents/reindex-pending", {
+      method: "POST",
+    });
+  } catch {
+    return null;
+  }
+}
+
 
 // ---------- generic collections (server first, demo fallback) ----------
 export type Memory = { id: string; content: string; tags: string; created_at: string };

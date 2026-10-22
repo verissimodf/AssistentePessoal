@@ -4,12 +4,14 @@ import { DocumentsPage, parseDocError, RagBadge } from "@/routes/documentos";
 
 const mockApi = vi.fn();
 const mockReindexDocument = vi.fn();
+const mockReindexAllPendingDocuments = vi.fn();
 vi.mock("@/lib/bridge", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/bridge")>();
   return {
     ...original,
     api: (...args: unknown[]) => mockApi(...args),
     reindexDocument: (...args: unknown[]) => mockReindexDocument(...args),
+    reindexAllPendingDocuments: (...args: unknown[]) => mockReindexAllPendingDocuments(...args),
     ping: () => Promise.resolve(true),
     useAuthState: () => "ok",
     useBridgeStatus: () => true,
@@ -242,6 +244,55 @@ describe("DocumentsPage — RAG Semântico Híbrido & Ingestão Multiformato", (
 
       await waitFor(() => {
         expect(screen.getByText("RAG Semântico Ativo")).toBeInTheDocument();
+      });
+    });
+
+    it("exibe banner e botão para sincronizar todos os vetores pendentes em lote", async () => {
+      let allUpgraded = false;
+      mockApi.mockImplementation(async (path: string) => {
+        if (path === "/api/documents") {
+          return [
+            {
+              id: "doc-pending-1",
+              name: "manual_infra.pdf",
+              mime: "application/pdf",
+              size: 2048,
+              created_at: "2026-10-22T04:10:00Z",
+              chunk_count: 5,
+              rag_status: allUpgraded ? "hybrid" : "lexical_only",
+            },
+            {
+              id: "doc-pending-2",
+              name: "regras_negocio.docx",
+              mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+              size: 4096,
+              created_at: "2026-10-22T04:15:00Z",
+              chunk_count: 8,
+              rag_status: allUpgraded ? "hybrid" : "lexical_only",
+            },
+          ];
+        }
+        return [];
+      });
+
+      mockReindexAllPendingDocuments.mockImplementation(async () => {
+        allUpgraded = true;
+        return { ok: true, processed: 2, upgraded: 2, ids: ["doc-pending-1", "doc-pending-2"] };
+      });
+
+      render(<DocumentsPage />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("banner-reindex-pending")).toBeInTheDocument();
+        expect(screen.getByTestId("btn-reindex-all")).toBeInTheDocument();
+      });
+
+      expect(screen.getByText("Sincronizar Todos os Vetores Pendentes (2)")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByTestId("btn-reindex-all"));
+
+      await waitFor(() => {
+        expect(mockReindexAllPendingDocuments).toHaveBeenCalledTimes(1);
       });
     });
   });

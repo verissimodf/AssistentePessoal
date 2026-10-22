@@ -156,3 +156,48 @@ Todos os itens abaixo foram formalmente testados e aprovados:
 O projeto **J.A.R.V.I.S. (Assistente Pessoal)** atendeu plenamente a **100% dos requisitos arquiteturais, de segurança, de desempenho e de testes automatizados** para o lançamento da **Versão v1.1.0**.
 
 Com **483 testes automatizados verdes** (417 backend + 66 frontend), suporte nativo a documentos PDF/DOCX sem dependências de compilação C++, banco de dados com Migração v12 integrada e interface web reativa com suporte a inspeção de chunks e badges RAG, o sistema está **HOMOLOGADO PARA OPERAÇÃO EM PRODUÇÃO**.
+
+---
+
+# 🚀 Release v1.4.0 — Autonomia Proativa (Auto-Healer RAG) & Interoperabilidade MCP
+**Data da Homologação:** 22 de Outubro de 2026  
+**Status do Release:** ✅ **HOMOLOGADO PARA PRODUÇÃO (100% Testes Verdes — 516 Testes)**  
+**Versão:** `1.4.0`
+
+### 1. Entregas Arquiteturais da Release v1.4.0
+
+1. **Auto-Healer RAG para Documentos Ingeridos Offline (`server/documents.js` & `server/bots.js`):**
+   - Função `reindexPendingDocuments(adminId, { limit = 5, embedFn })`:
+     - Varredura de documentos em `lexical_only` com isolamento estrito de proprietário (`owns()`).
+     - Circuit-breaker imediato que interrompe a execução caso o provedor de embeddings esteja offline, prevenindo I/O desnecessário e chamadas repetidas.
+     - Gravação de logs de auditoria atômicos e retorno tipado `{ ok, processed, upgraded, ids }`.
+   - Agendador em segundo plano (`startScheduler` em `server/bots.js`) com rotina periódica de autocura para administradores ativos.
+   - Endpoint protegido `POST /api/documents/reindex-pending` (autenticação de admin, CSRF e escopo `"documents:write"`).
+   - Banner inteligente e botão **"Sincronizar Todos os Vetores Pendentes (N)"** em `src/routes/documentos.tsx` e método `reindexAllPendingDocuments()` no bridge.
+
+2. **Paridade Completa no Servidor Model Context Protocol (`server/mcp.js`):**
+   - Protocolo JSON-RPC 2.0 padrão MCP (stdio) operando com tokens de serviço (`jst_...`) de privilégio mínimo.
+   - **Ferramentas Expostas:**
+     - `document_search`: busca híbrida semântico-lexical (escopo `documents:read`).
+     - `reindex_document`: reindexação vetorial sob demanda (escopo `documents:write`).
+     - `load_skill`: carregamento de diretrizes especializadas do Hub Global (escopo `skills:read`).
+     - `list_skills`: listagem e busca no catálogo de skills (escopo `skills:read`).
+     - `jarvis_ask`, `jarvis_remember`, `jarvis_recall`.
+   - **Recursos Expostos (`resources/list`, `resources/read`):**
+     - `jarvis://router/status`: telemetria do Multi-Provider Router.
+     - `jarvis://documents/indexed`: inventário de documentos e status RAG do administrador autenticado.
+   - **Prompts Expostos (`prompts/list`, `prompts/get`):**
+     - `jarvis_context`: template contextual pronto para agentes MCP (Claude Code, Goose, OpenCode, Antigravity).
+
+3. **Assistente de Conexão MCP na Interface Web (`src/routes/agentes.tsx`):**
+   - Card interativo **"Conectar Agentes Externos (MCP: Claude / Goose / IDE)"** com snippet JSON pronto para uso e botão de cópia com 1 clique (`data-testid="btn-copy-mcp"`).
+
+### 2. Resultados dos Testes de Homologação (v1.4.0)
+
+| Suíte de Testes | Pass | Fail | Skipped | Total | Status |
+|---|---|---|---|---|---|
+| **Node.js Test Runner (Backend)** | **440** | 0 | 18 | 458 | ✅ 100% Green |
+| **Vitest (Frontend / JSDOM)** | **76** | 0 | 0 | 76 | ✅ 100% Green |
+| **Total Global** | **516** | **0** | **18** | **534** | ✅ **APROVADO** |
+| **Vite Production Build** | — | — | — | — | ✅ **Zero Erros** |
+

@@ -12,6 +12,7 @@ import {
   Sparkles,
   Layers,
   ArrowRight,
+  Terminal,
 } from "lucide-react";
 import { PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -95,7 +96,7 @@ export function getOriginBadge(skill: SkillSummary): { label: string; className:
   return { label: skill.category || "comunidade", className: "bg-muted text-muted-foreground border-border" };
 }
 
-function AgentsPage() {
+export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = {}) {
   const { t } = useI18n();
 
   // Estados dos Agentes
@@ -103,7 +104,7 @@ function AgentsPage() {
   const [edit, setEdit] = useState<Partial<Agent>>(blank);
 
   // Estados das Skills & Router
-  const [activeTab, setActiveTab] = useState<string>("skills");
+  const [activeTab, setActiveTab] = useState<string>(defaultTab);
   const [skillsData, setSkillsData] = useState<SkillsResponse | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
@@ -111,6 +112,35 @@ function AgentsPage() {
   const [loadingSkill, setLoadingSkill] = useState(false);
   const [copied, setCopied] = useState(false);
   const [loadingList, setLoadingList] = useState(false);
+  const [mcpCopied, setMcpCopied] = useState(false);
+
+  const mcpConfigSnippet = JSON.stringify(
+    {
+      mcpServers: {
+        jarvis: {
+          command: "node",
+          args: ["<caminho_do_projeto>/server/mcp.js"],
+          env: {
+            JARVIS_URL: "http://127.0.0.1:7777",
+            JARVIS_SERVICE_TOKEN: "jst_seu_service_token_aqui",
+            JARVIS_DATA_DIR: "./data",
+          },
+        },
+      },
+    },
+    null,
+    2
+  );
+
+  const handleCopyMcp = async () => {
+    try {
+      await navigator.clipboard.writeText(mcpConfigSnippet);
+      setMcpCopied(true);
+      setTimeout(() => setMcpCopied(false), 2000);
+    } catch {
+      // fallback
+    }
+  };
 
   const refreshAgents = () => store.list().then(setItems);
 
@@ -382,7 +412,59 @@ function AgentsPage() {
         </TabsContent>
 
         {/* ================= ABA DE AGENTES PESSOAIS ================= */}
-        <TabsContent value="agents" className="focus-visible:outline-none">
+        <TabsContent value="agents" className="focus-visible:outline-none space-y-6">
+          {/* Card: Conectar Agentes Externos (MCP: Claude / Goose / IDE) */}
+          <div
+            className="hud-panel p-5 bg-gradient-to-r from-secondary/40 via-background to-secondary/20 border border-emerald-500/30"
+            data-testid="card-mcp-connect"
+          >
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Terminal className="h-5 w-5 text-emerald-400" />
+                  <span className="font-display font-semibold text-base text-foreground">
+                    Conectar Agentes Externos (MCP: Claude / Goose / IDE)
+                  </span>
+                  <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-xs">
+                    JSON-RPC 2.0
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Integre o Claude Desktop, Claude Code, Goose, OpenCode ou IDEs diretamente à memória, RAG e ferramentas do J.A.R.V.I.S.
+                </p>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopyMcp}
+                className="gap-2 text-xs border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/20 hover:text-white shrink-0"
+                data-testid="btn-copy-mcp"
+              >
+                {mcpCopied ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>Configuração Copiada!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5" />
+                    <span>Copiar Configuração MCP</span>
+                  </>
+                )}
+              </Button>
+            </div>
+
+            <div className="mt-4 rounded-md bg-secondary/60 p-3.5 border border-border">
+              <pre className="overflow-x-auto font-mono text-xs text-muted-foreground leading-relaxed selection:bg-primary selection:text-primary-foreground">
+                {mcpConfigSnippet}
+              </pre>
+            </div>
+            <p className="mt-2 text-[11px] text-muted-foreground/80">
+              * Gere seu Service Token em <strong>Configurações → Segurança</strong> com os escopos mínimos necessários (<code>skills:read</code>, <code>documents:read</code>, <code>documents:write</code>, <code>memories:read</code>).
+            </p>
+          </div>
+
           <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
             <div className="space-y-3">
               {items.map((a) => (

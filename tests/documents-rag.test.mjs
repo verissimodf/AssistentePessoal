@@ -23,6 +23,7 @@ const {
   listDocumentChunks,
   deleteDocument,
   reindexDocument,
+  reindexPendingDocuments,
   DocError,
 } = await import("../server/documents.js");
 
@@ -425,4 +426,108 @@ test("POST /api/documents/:id/reindex: autenticação, isolamento multi-admin e 
   assert.equal(ownRes.id, doc.id);
   assert.ok(["hybrid", "lexical_only"].includes(ownRes.rag_status));
 });
+
+// ----------------------------------------------------------------------------
+// 10. Auto-Healer RAG para Documentos lexical_only em Lote (v1.4.0)
+// ----------------------------------------------------------------------------
+
+test("reindexPendingDocuments processa múltiplos documentos lexical_only com estrito isolamento entre admins", async () => {
+  const activeEmbed = async () => [0.2, 0.4, 0.6, 0.8];
+  const offlineEmbed = async () => null;
+
+  // Cria 2 documentos lexical_only para Admin A
+  const docA1 = await saveDocument(A.id, {
+    name: "doc_a1.txt",
+    mime: "text/plain",
+    buffer: Buffer.from("Conteúdo do primeiro documento do administrador A.", "utf8"),
+  }, { embedFn: offlineEmbed });
+
+  const docA2 = await saveDocument(A.id, {
+    name: "doc_a2.txt",
+    mime: "text/plain",
+    buffer: Buffer.from("Conteúdo do segundo documento do administrador A.", "utf8"),
+  }, { embedFn: offlineEmbed });
+
+  // Cria 1 documento lexical_only para Admin B
+  const docB1 = await saveDocument(B.id, {
+    name: "doc_b1.txt",
+    mime: "text/plain",
+    buffer: Buffer.from("Conteúdo do documento exclusivo do administrador B.", "utf8"),
+  }, { embedFn: offlineEmbed });
+
+  assert.equal(docA1.rag_status, "lexical_only");
+  assert.equal(docA2.rag_status, "lexical_only");
+  assert.equal(docB1.rag_status, "lexical_only");
+
+  // Admin A executa reindexPendingDocuments
+  const resA = await reindexPendingDocuments(A.id, { limit: 10, embedFn: activeEmbed });
+  assert.equal(resA.ok, true);
+  assert.ok(resA.processed >= 2);
+  assert.ok(resA.upgraded >= 2);
+  assert.ok(resA.ids.includes(docA1.id));
+  assert.ok(resA.ids.includes(docA2.id));
+  assert.equal(resA.ids.includes(docB1.id), false, "Documento do Admin B não pode ser processado pelo Admin A");
+
+  // Verifica que docs do Admin A foram para hybrid
+  const checkA1 = db.prepare("SELECT rag_status FROM documents WHERE id = ?").get(docA1.id);
+  const checkA2 = db.prepare("SELECT rag_status FROM documents WHERE id = ?").get(docA2.id);
+  assert.equal(checkA1.rag_status, "hybrid");
+  assert.equal(checkA2.rag_status, "hybrid");
+
+  // Documento do Admin B permaneceu intacto como lexical_only
+  const checkB1 = db.prepare("SELECT rag_status FROM documents WHERE id = ?").get(docB1.id);
+  assert.equal(checkB1.rag_status, "lexical_only");
+});
+
+test("circuit-breaker de reindexPendingDocuments para na primeira falha quando provedor está offline", async () => {
+  const offlineEmbed = async () => null;
+
+  // Cria 3 documentos lexical_only para Admin B
+  const doc1 = await saveDocument(B.id, {
+    name: "offline_b1.txt",
+    mime: "text/plain",
+    buffer: Buffer.from("Texto 1 para teste de circuit breaker offline.", "utf8"),
+  }, { embedFn: offlineEmbed });
+
+  const doc2 = await saveDocument(B.id, {
+    name: "offline_b2.txt",
+    mime: "text/plain",
+    buffer: Buffer.from("Texto 2 para teste de circuit breaker offline.", "utf8"),
+  }, { embedFn: offlineEmbed });
+
+  let calls = 0;
+  const countedOfflineEmbed = async () => {
+    calls++;
+    return null;
+  };
+
+  const res = await reindexPendingDocuments(B.id, { limit: 10, embedFn: countedOfflineEmbed });
+  assert.equal(res.ok, false);
+  assert.equal(res.reason, "embedding_provider_unavailable");
+  assert.equal(res.upgraded, 0);
+  assert.ok(calls <= 5, "Circuit breaker deve interromper o loop rapidamente");
+});
+
+test("POST /api/documents/reindex-pending: barreira CSRF, autenticação e execução em lote", async () => {
+  // 1. Anônimo retorna 401
+  const anon = await req("/api/documents/reindex-pending", { method: "POST" });
+  assert.equal(anon.status, 401);
+
+  // 2. Cookie sem CSRF retorna 403
+  const noCsrf = await fetch(`${base}/api/documents/reindex-pending`, {
+    method: "POST",
+    headers: { origin: ORIGIN, cookie: A.cookie },
+  });
+  assert.equal(noCsrf.status, 403);
+
+  // 3. Com sessão válida e CSRF executa e retorna 200
+  const ok = await req("/api/documents/reindex-pending", { method: "POST", s: A });
+  assert.equal(ok.status, 200);
+  const body = await ok.json();
+  assert.ok(typeof body.ok === "boolean");
+  assert.ok(typeof body.processed === "number");
+  assert.ok(typeof body.upgraded === "number");
+  assert.ok(Array.isArray(body.ids));
+});
+
 

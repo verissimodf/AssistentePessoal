@@ -645,3 +645,71 @@ export async function reindexDocument(ownerId, id, { embedFn = embed } = {}) {
   };
 }
 
+/**
+ * Auto-Healer RAG para Documentos lexical_only (Roadmap v1.4.0).
+ * Vetoriza em lote os documentos pendentes de um administrador que foram ingeridos offline.
+ * Possui circuit-breaker imediato caso o provedor de embeddings esteja offline.
+ */
+export async function reindexPendingDocuments(adminId, { limit = 5, embedFn } = {}) {
+  if (!adminId) return { ok: false, reason: "unauthorized", processed: 0, upgraded: 0, ids: [] };
+
+  const maxLimit = Math.max(1, Number(limit) || 5);
+  const pendingDocs = db.prepare(`
+    SELECT d.id, d.name, d.rag_status
+    FROM documents d
+    JOIN ownership o ON o.resource_type = 'document' AND o.resource_id = d.id AND o.owner_admin_id = ?
+    WHERE d.rag_status IN ('lexical_only', 'lexical')
+    ORDER BY d.created_at ASC
+    LIMIT ?
+  `).all(adminId, maxLimit);
+
+  if (!pendingDocs.length) {
+    return { ok: true, processed: 0, upgraded: 0, ids: [] };
+  }
+
+  let processed = 0;
+  let upgraded = 0;
+  const upgradedIds = [];
+
+  for (let i = 0; i < pendingDocs.length; i++) {
+    const doc = pendingDocs[i];
+    const res = await reindexDocument(adminId, doc.id, { embedFn });
+
+    if (res && res.reason === "embedding_provider_unavailable") {
+      audit("documents.reindex_pending_halted", {
+        admin: adminId,
+        reason: "embedding_provider_unavailable",
+        processed,
+      });
+      return {
+        ok: false,
+        reason: "embedding_provider_unavailable",
+        processed: processed,
+        upgraded,
+        ids: upgradedIds,
+      };
+    }
+
+    processed++;
+    if (res && res.ok) {
+      upgraded++;
+      upgradedIds.push(doc.id);
+    }
+  }
+
+  audit("documents.reindex_pending_completed", {
+    admin: adminId,
+    processed,
+    upgraded,
+    count: upgradedIds.length,
+  });
+
+  return {
+    ok: true,
+    processed,
+    upgraded,
+    ids: upgradedIds,
+  };
+}
+
+

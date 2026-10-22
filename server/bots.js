@@ -4,6 +4,7 @@ import { bots, db, now, uid, audit } from "./db.js";
 import { runAgent } from "./llm.js";
 import { resolveBotScopes } from "./auth.js";
 import { ownerOf, assignNew, tx } from "./ownership.js";
+import { reindexPendingDocuments } from "./documents.js";
 
 /**
  * Identity of a bot run: the bot itself, on behalf of its owner admin. Ownership comes only from
@@ -73,6 +74,7 @@ export const listRuns = (botId, adminId) =>
 const watchers = new Map();
 const lastDaily = new Map();
 const lastInterval = new Map();
+let lastAutoHeal = 0;
 
 function syncWatchers() {
   const fileBots = bots.list().filter((b) => b.enabled && b.trigger_type === "file" && b.trigger_value && botPrincipal(b));
@@ -106,6 +108,15 @@ export function startScheduler() {
         }
       }
       syncWatchers();
+
+      // Auto-Healer RAG em segundo plano (v1.4.0): periodicamente verifica documentos em lexical_only
+      if (Date.now() - lastAutoHeal >= 5 * 60 * 1000) {
+        lastAutoHeal = Date.now();
+        const activeAdmins = db.prepare("SELECT id FROM admins WHERE active = 1").all();
+        for (const a of activeAdmins) {
+          reindexPendingDocuments(a.id, { limit: 5 }).catch(() => {});
+        }
+      }
     } catch (e) {
       // Nunca deixe uma exceção do agendador derrubar o serviço inteiro.
       console.warn(`[bots] scheduler: ${e.message}`);

@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getOriginBadge } from "@/routes/agentes";
+import { getOriginBadge, AgentsPage } from "@/routes/agentes";
 import { listSkills, getSkillDetail, type SkillSummary } from "@/lib/bridge";
 
 describe("Skills Hub — Origin Badges", () => {
@@ -83,5 +83,38 @@ describe("Skills Hub — Client Bridge", () => {
     );
     expect(await listSkills()).toBeNull();
     expect(await getSkillDetail("any-id")).toBeNull();
+  });
+});
+
+describe("AgentsPage — MCP Connection Assistant", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("renderiza o card de conexão MCP e permite copiar o snippet de configuração", async () => {
+    // Mock navigator.clipboard
+    const mockWriteText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: mockWriteText,
+      },
+    });
+
+    render(<AgentsPage defaultTab="agents" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-mcp-connect")).toBeInTheDocument();
+      expect(screen.getByTestId("btn-copy-mcp")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Conectar Agentes Externos (MCP: Claude / Goose / IDE)")).toBeInTheDocument();
+    expect(screen.getByText(/jarvis_service_token/i)).toBeInTheDocument();
+
+    const copyBtn = screen.getByTestId("btn-copy-mcp");
+    fireEvent.click(copyBtn);
+
+    expect(mockWriteText).toHaveBeenCalledTimes(1);
+    const copiedText = mockWriteText.mock.calls[0][0];
+    expect(copiedText).toContain("mcpServers");
+    expect(copiedText).toContain("jarvis");
+    expect(copiedText).toContain("JARVIS_SERVICE_TOKEN");
   });
 });
