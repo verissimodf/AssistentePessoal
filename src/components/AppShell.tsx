@@ -1,5 +1,5 @@
 import { Link, Outlet } from "@tanstack/react-router";
-import { Activity, Bot, Brain, FileText, LayoutDashboard, LogOut, Mail, MessageSquare, Settings, Users } from "lucide-react";
+import { Activity, Bot, Brain, FileText, LayoutDashboard, LogOut, Mail, MessageSquare, Settings, Users, Search } from "lucide-react";
 import { logout, useAuthState, useBridgeStatus } from "@/lib/bridge";
 import { AuthGate, useAuthText } from "@/components/AuthGate";
 import { LANGS, useI18n, type Lang } from "@/lib/i18n";
@@ -27,6 +27,21 @@ export function AppShell() {
           <div className="font-display text-xl font-bold text-primary text-glow">J.A.R.V.I.S.</div>
           <div className="hud-label hidden md:block">local assistant</div>
         </div>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent("open-command-palette"))}
+          className="hidden md:flex items-center justify-between mb-4 rounded-md border border-border/80 bg-secondary/50 px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-all cursor-pointer"
+          data-testid="btn-open-command-palette"
+          title="Abrir Command Palette (Ctrl+K)"
+        >
+          <span className="flex items-center gap-2">
+            <Search className="h-3.5 w-3.5" />
+            <span>Comandos...</span>
+          </span>
+          <kbd className="pointer-events-none rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-mono font-medium text-muted-foreground">
+            Ctrl K
+          </kbd>
+        </button>
         <nav className="flex flex-1 flex-row gap-1 overflow-x-auto md:flex-col">
           {nav.map(({ to, label, icon: Icon }) => (
             <Link

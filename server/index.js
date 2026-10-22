@@ -46,7 +46,14 @@ import {
   cancelPurge,
   listPurgeJobs,
 } from "./ownership.js";
-import { runAgent, testProvider, cancelRun, getRouterStatus } from "./llm.js";
+import {
+  runAgent,
+  testProvider,
+  cancelRun,
+  getRouterStatus,
+  classifyTaskIntent,
+  ROUTING_PROFILES,
+} from "./llm.js";
 import { getCatalog, listSkills, matchSkillsForPrompt, loadSkill } from "./skills.js";
 import { collectDiagnostics } from "./diagnostics.js";
 import { callTool, reaSlashCommand } from "./tools.js";
@@ -567,6 +574,18 @@ route("GET", "/api/skills/:id", "skills:read", ({ params }) => {
     }
     throw err;
   }
+});
+
+route("GET", "/api/router/classify", "skills:read", ({ query }) => {
+  const q = (query.get("q") || "").trim();
+  const isVoice = query.get("voice") === "true" || query.get("voice") === "1";
+  const hasTools = query.get("tools") === "true" || query.get("tools") === "1";
+  const profile = classifyTaskIntent(q, { isVoice, hasTools });
+  return {
+    query: q,
+    profile,
+    profiles: ROUTING_PROFILES,
+  };
 });
 
 

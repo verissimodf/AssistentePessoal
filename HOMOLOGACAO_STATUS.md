@@ -201,3 +201,41 @@ Com **483 testes automatizados verdes** (417 backend + 66 frontend), suporte nat
 | **Total Global** | **516** | **0** | **18** | **534** | ✅ **APROVADO** |
 | **Vite Production Build** | — | — | — | — | ✅ **Zero Erros** |
 
+---
+
+# ⚡ Release v1.5.0 — Task-Aware Routing & Command Palette Global (Ctrl+K)
+**Data da Homologação:** 22 de Outubro de 2026  
+**Status do Release:** ✅ **HOMOLOGADO PARA PRODUÇÃO (100% Testes Verdes — 522 Testes)**  
+**Versão:** `1.5.0`
+
+### 1. Entregas Arquiteturais da Release v1.5.0
+
+1. **Task-Aware Multi-Provider Routing (`server/llm.js`, `server/skills.js`, `server/index.js`):**
+   - Função pura e determinística `classifyTaskIntent(prompt, { hasTools, isVoice })` sem latência adicional.
+   - Classificação em 4 perfis de tarefa:
+     - `realtime_voice`: chamadas de voz ou saudações rápidas com foco em latência mínima.
+     - `code_engineering`: solicitações técnicas envolvendo código, SQL, frameworks (React, Three.js, Docker, K8s).
+     - `rag_knowledge`: análises documentais profundas, PDFs, DOCXs, contratos e relatórios.
+     - `general`: fallback para conhecimentos gerais e interações abertas.
+   - Atualização de `getRouterStatus(adminId)` expondo os perfis suportados (`profiles: ['realtime_voice', 'code_engineering', 'rag_knowledge', 'general']`).
+   - Novo endpoint de inspeção `GET /api/router/classify?q=...` protegido por `skills:read`.
+
+2. **Command Palette Global (`Ctrl+K` / `Cmd+K`) no Painel Web (`src/components/CommandPalette.tsx`):**
+   - Modal instantâneo acionado globalmente via teclado (`Ctrl+K` ou `Cmd+K`) e botão na barra lateral (`data-testid="btn-open-command-palette"`).
+   - Busca em tempo real (`data-testid="input-command-palette"`) e navegação completa por teclado (`ArrowUp`, `ArrowDown`, `Enter`, `Escape`).
+   - Categorias integradas:
+     - **Navegação Rápida:** Rotas para Conversa (`/`), Visão Geral (`/visao-geral`), Documentos RAG (`/documentos`), Agentes & Skills (`/agentes`), Bots (`/bots`), Memória (`/memoria`), Execuções (`/execucoes`), Configurações (`/configuracoes`).
+     - **Ações Rápidas:** "Sincronizar Vetores RAG Pendentes" (chama `reindexAllPendingDocuments()`), "Inspecionar Status do Router Multi-Provider".
+     - **Busca Dinâmica de Skills (258):** Consulta assíncrona ao catálogo com filtro e atalho direto para o painel de agentes.
+   - Montagem global em `src/routes/__root.tsx` operando em 100% das páginas.
+
+### 2. Resultados dos Testes de Homologação (v1.5.0)
+
+| Suíte de Testes | Pass | Fail | Skipped | Total | Status |
+|---|---|---|---|---|---|
+| **Node.js Test Runner (Backend)** | **441** | 0 | 18 | 459 | ✅ 100% Green |
+| **Vitest (Frontend / JSDOM)** | **81** | 0 | 0 | 81 | ✅ 100% Green |
+| **Total Global** | **522** | **0** | **18** | **540** | ✅ **APROVADO** |
+| **Vite + Nitro Production Build** | — | — | — | — | ✅ **Zero Erros** |
+
+

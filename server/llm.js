@@ -268,6 +268,53 @@ export async function testProvider(id, adminId) {
   }
 }
 
+export const ROUTING_PROFILES = [
+  "realtime_voice",
+  "code_engineering",
+  "rag_knowledge",
+  "general",
+];
+
+/**
+ * Classificação determinística de intenção de tarefa sem latência adicional (v1.5.0).
+ * Avalia o perfil ideal da requisição para otimização de custo, latência e especialização.
+ */
+export function classifyTaskIntent(prompt, { hasTools = false, isVoice = false } = {}) {
+  if (isVoice) return "realtime_voice";
+
+  const p = String(prompt || "").trim();
+  if (!p) return "general";
+
+  // Padrões de código, arquitetura e engenharia
+  const codeRegex =
+    /\b(function|const|let|var|class|import|export|def|return|async|await|sql|select|insert|update|delete\s+from|join|table|docker|dockerfile|kubernetes|k8s|react|component|hook|usestate|useeffect|three\.?js|webgl|shader|glsl|debug|bug|refactor|refatorar|código|codigo|script|api|endpoint|json|yaml|regex|test|teste|git|commit|pull\s*request|github)\b|```|`[^`]+`/i;
+
+  if (codeRegex.test(p)) {
+    return "code_engineering";
+  }
+
+  // Padrões de RAG e análise de documentos
+  const ragRegex =
+    /\b(documento|documentos|pdf|docx|contrato|relatório|relatorio|artigo|manual|resumo|resumir|extrair\s+texto|base\s+de\s+conhecimento|rag|chunks?|trecho|cláusula|clausula)\b/i;
+
+  if (ragRegex.test(p)) {
+    return "rag_knowledge";
+  }
+
+  // Mensagens conversacionais curtas (conversação rápida ou saudações)
+  const isShortGreeting =
+    p.length <= 40 &&
+    /^(ol[aá]|oi|bom\s+dia|boa\s+tarde|boa\s+noite|tudo\s+bem|como\s+vai|que\s+horas\s+s[aã]o|obrigad[oa]|valeu|tchau|at[eé]\s+logo|quem\s+[eé]\s+voc[eê])\b/i.test(
+      p
+    );
+
+  if (isShortGreeting) {
+    return "realtime_voice";
+  }
+
+  return "general";
+}
+
 /**
  * Status do Multi-Provider Router e sua cadeia de contingência.
  */
@@ -302,6 +349,7 @@ export function getRouterStatus(adminId = null) {
     fallbacks,
     totalProviders: 1 + fallbacks.length,
     resilientFallbackEnabled: true,
+    profiles: ROUTING_PROFILES,
   };
 }
 

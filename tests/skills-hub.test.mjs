@@ -17,6 +17,8 @@ import {
   GLOBAL_SKILLS_DIR,
   sanitizeSkillFrontmatter,
   getRouterStatus,
+  classifyTaskIntent,
+  ROUTING_PROFILES,
 } from "../server/skills.js";
 import { routeTable, createApp } from "../server/index.js";
 import { AuthError } from "../server/auth.js";
@@ -304,6 +306,64 @@ test("multi-provider router: getRouterStatus reporta primário e contingências 
   assert.ok(Array.isArray(status.fallbacks), "Deve listar fallbacks");
   assert.equal(typeof status.totalProviders, "number");
   assert.equal(status.resilientFallbackEnabled, true);
+  assert.ok(Array.isArray(status.profiles), "Deve incluir os perfis de roteamento suportados");
+  assert.deepEqual(status.profiles, ["realtime_voice", "code_engineering", "rag_knowledge", "general"]);
+});
+
+test("task-aware routing: classifyTaskIntent categoriza deterministicamente os 4 perfis de tarefa", () => {
+  // 1. realtime_voice (via isVoice ou saudação rápida)
+  assert.equal(
+    classifyTaskIntent("Qual é o status da missão?", { isVoice: true }),
+    "realtime_voice",
+    "Flag isVoice deve priorizar realtime_voice"
+  );
+  assert.equal(
+    classifyTaskIntent("Oi, tudo bem?"),
+    "realtime_voice",
+    "Saudação curta sem código deve classificar como realtime_voice"
+  );
+  assert.equal(
+    classifyTaskIntent("Bom dia!"),
+    "realtime_voice"
+  );
+
+  // 2. code_engineering (código, frameworks, sql, debug)
+  assert.equal(
+    classifyTaskIntent("Crie um componente React com Three.js e shaders GLSL"),
+    "code_engineering"
+  );
+  assert.equal(
+    classifyTaskIntent("Escreva uma query SQL com join para buscar usuários"),
+    "code_engineering"
+  );
+  assert.equal(
+    classifyTaskIntent("Como fazer debug deste bug no dockerfile?"),
+    "code_engineering"
+  );
+  assert.equal(
+    classifyTaskIntent("Analise este trecho:\n```js\nconst x = 10;\n```"),
+    "code_engineering"
+  );
+
+  // 3. rag_knowledge (documentos, pdf, docx, contratos, resumos de arquivos)
+  assert.equal(
+    classifyTaskIntent("Faça um resumo dos documentos PDF e contratos anexados"),
+    "rag_knowledge"
+  );
+  assert.equal(
+    classifyTaskIntent("Extrair texto dos relatórios da base de conhecimento RAG"),
+    "rag_knowledge"
+  );
+
+  // 4. general (perguntas conceituais amplas, conhecimentos gerais)
+  assert.equal(
+    classifyTaskIntent("Explique a teoria da relatividade geral de Einstein com metáforas do cotidiano"),
+    "general"
+  );
+  assert.equal(
+    classifyTaskIntent("Quais são as principais capitais históricas da Europa Central?"),
+    "general"
+  );
 });
 
 test("rotas de api /api/skills: inventário, buscas, filtros e proteção de caminho", async () => {
@@ -387,6 +447,14 @@ test("rotas de api /api/skills: inventário, buscas, filtros e proteção de cam
     assert.equal(traversalResp.status, 400);
     const traversalJson = await traversalResp.json();
     assert.equal(traversalJson.error, "invalid_skill_path");
+
+    // 6. Rota GET /api/router/classify classifica intenção de tarefa
+    const classifyResp = await apiReq("/api/router/classify?q=docker+compose+e+debug+de+container");
+    assert.equal(classifyResp.status, 200);
+    const classifyJson = await classifyResp.json();
+    assert.equal(classifyJson.profile, "code_engineering");
+    assert.ok(Array.isArray(classifyJson.profiles));
+    assert.deepEqual(classifyJson.profiles, ["realtime_voice", "code_engineering", "rag_knowledge", "general"]);
   } finally {
     await new Promise((r) => server.close(r));
   }

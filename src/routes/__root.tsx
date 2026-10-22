@@ -15,6 +15,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { I18nProvider } from "../lib/i18n";
 import { AppShell } from "../components/AppShell";
 import { Toaster } from "../components/ui/sonner";
+import { CommandPalette } from "../components/CommandPalette";
 
 function NotFoundComponent() {
   return (
@@ -124,6 +125,7 @@ function RootComponent() {
       {/* AppShell renders <Outlet /> for nested routes. */}
       <I18nProvider>
         <AppShell />
+        <CommandPalette />
         <Toaster />
       </I18nProvider>
     </QueryClientProvider>
