@@ -161,6 +161,13 @@ export const TOOL_META = {
     limites: ["Deduplicação e fila de revisão são da própria Gigabrain; nenhum dado sai da máquina."],
     testes: ["tests/gigabrain.test.mjs"],
   },
+  load_skill: {
+    nome: "Carregar skill especializada",
+    portao: "Escopo skills:read; leitura segura do Hub Global de Skills (%USERPROFILE%\\.agent-skills).",
+    deps: "Catálogo local de skills (.agent-skills/catalog.json).",
+    limites: ["Somente leitura; restrito estritamente ao diretório do Hub de Skills."],
+    testes: ["tests/skills-hub.test.mjs"],
+  },
 };
 
 const PROVIDER_NOMES = {

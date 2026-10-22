@@ -15,6 +15,7 @@ import { safeFetch } from "./urlpolicy.js";
 import { getMailService } from "./mail-service.js";
 import { getDraftStore } from "./mail-drafts.js";
 import { MailError, validateOutgoing } from "./mail.js";
+import { loadSkill, matchSkillsForPrompt } from "./skills.js";
 
 export const TOOL_DEFS = {
   web_search: { description: "Search the internet. Returns titles, links and snippets.", params: { query: "string" } },
@@ -34,6 +35,7 @@ export const TOOL_DEFS = {
   rea_analyze: { description: "Static analysis (REA) of a JavaScript/Electron/ASAR app directory: investigation graph, imports, and IPC boundaries with Evidence. Saves the full result in data/rea/.", params: { path: "string" } },
   gigabrain_recall: { description: "Search the persistent shared local memory (Gigabrain) for prior decisions, context or preferences. Return candidate evidence, cite source.", params: { query: "string", target: "string", limit: "number" } },
   gigabrain_remember: { description: "Save an explicit durable fact in the shared local memory (Gigabrain). Only when the user clearly asks to remember.", params: { content: "string", target: "string", type: "string", durability: "string" } },
+  load_skill: { description: "Carrega instruções e diretrizes especializadas de uma skill do Hub Global (.agent-skills) sob demanda.", params: { skill: "string" } },
 };
 // Alias exposed in the panel
 TOOL_DEFS.read_calendar.params = {};
@@ -667,6 +669,28 @@ export async function callTool(name, input, ctx) {
       const gi = await gbRun("gigabrain_remember", args, s);
       if (typeof gi === "string") return gi;
       return `Gigabrain: memória registrada — ${gbShort(gi.out)}.`;
+    }
+    case "load_skill": {
+      const skillQuery = String(input.skill || "").trim();
+      if (!skillQuery) return "Identificador da skill é obrigatório.";
+      try {
+        const loaded = loadSkill(skillQuery);
+        audit("skill_loaded", { skillId: loaded.id, name: loaded.name, adminId });
+        return `[SKILL ESPECIALIZADA: ${loaded.name}]\n\n${loaded.content}`;
+      } catch (e) {
+        if (e.message === "skill_not_found") {
+          const suggestions = matchSkillsForPrompt(skillQuery, 3);
+          const sugText = suggestions.length
+            ? ` Sugestões disponíveis: ${suggestions.map((s) => s.id).join(", ")}`
+            : "";
+          return `Skill "${skillQuery}" não encontrada no Hub Global.${sugText}`;
+        }
+        if (e.message === "path_traversal_detected") {
+          audit("security_warning", { reason: "path_traversal_attempt_in_skill", query: skillQuery, adminId });
+          return "Erro de segurança: tentativa de acesso fora do diretório de skills bloqueada.";
+        }
+        return `Erro ao carregar skill: ${e.message}`;
+      }
     }
     default: return `Ferramenta desconhecida: ${name}`;
   }

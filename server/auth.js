@@ -15,7 +15,7 @@ export const MIN_PASSWORD = 12;
 export const SCOPES = [
   "chat", "memories:read", "memories:write", "agents:read", "agents:write", "bots:read", "bots:write",
   "bots:run", "settings:read", "settings:write", "voice", "web", "host:run", "comms:read", "comms:send", "audit:read",
-  "documents:read", "documents:write",
+  "documents:read", "documents:write", "skills:read",
 ];
 /** Scopes reserved for a human admin session — never grantable to a token. */
 export const ADMIN_ONLY = ["approvals:resolve", "admins:manage", "sessions:manage", "tokens:manage"];
@@ -34,13 +34,15 @@ export const TOOL_SCOPES = {
   // Gigabrain: memória local persistente própria — mesma classe de leitura/escrita das
   // memórias nativas do JARVIS (sem shell; argv fixo; a store é do próprio admin).
   gigabrain_recall: "memories:read", gigabrain_remember: "memories:write",
+  // Hub Global de Skills (v1.2): carrega instruções e regras especializadas sob demanda.
+  load_skill: "skills:read",
 };
 
 /** Loopback sources (all local processes look identical here). */
 export const isLoopback = (ip = "") => /^(127\.|::1$|::ffff:127\.)/.test(String(ip)) || ip === "localhost";
 
 /** Scopes a bot may be granted explicitly (least privilege; never admin-only ones). */
-export const BOT_SCOPES = ["web", "memories:read", "memories:write", "host:run", "comms:read", "comms:send"];
+export const BOT_SCOPES = ["web", "memories:read", "memories:write", "host:run", "comms:read", "comms:send", "skills:read"];
 /** Documented compatibility policy for legacy bots (no owner, no explicit scopes): read-only. */
 export const LEGACY_BOT_SCOPES = ["web", "memories:read"];
 /** Default for a bot that has no explicit list: nothing beyond reading the web and memory. */

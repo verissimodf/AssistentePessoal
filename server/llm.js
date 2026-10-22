@@ -1,7 +1,7 @@
 // Model access for every provider plus the agent tool loop.
 // Anthropic uses its native Messages API; all other providers use the OpenAI-compatible API.
 import { getSettings } from "./settings.js";
-import { agents, uid } from "./db.js";
+import { agents, uid, audit } from "./db.js";
 import { ownedIds, owns } from "./ownership.js";
 
 /** Built-in template used when the admin has no agent of their own (not a stored resource). */
@@ -141,21 +141,71 @@ export async function runAgent({
     extraSystem,
   ].filter(Boolean).join("\n\n");
   const tools = toolSchemas(agent.tools || [], TOOL_DEFS);
-  const isAnthropic = agent.provider === "anthropic";
   const convo = messages.map((m) => ({ role: m.role, content: m.content }));
   const used = [], pending = [], reasoning = [];
   const ctx = { autonomy, pending, principal, correlation: runId || uid() };
   let toolCalls = 0;
   const seen = new Map();
 
+  // Smart Multi-Provider Router with resilient fallback
+  const candidateProviders = [{ id: agent.provider, cfg, model }];
+  const otherProviders = Object.keys(s.providers || {}).filter(
+    (pId) => pId !== agent.provider && (s.providers[pId]?.enabled || s.providers[pId]?.apiKey)
+  );
+  if (agent.provider !== "ollama" && !otherProviders.includes("ollama")) {
+    otherProviders.push("ollama");
+  }
+  for (const fbId of otherProviders) {
+    const fbCfg = providerConfig(fbId, adminId);
+    candidateProviders.push({
+      id: fbId,
+      cfg: fbCfg,
+      model: fbCfg.model || (fbId === "ollama" ? "llama3.1" : ""),
+    });
+  }
+
+  async function callModel(currentConvo) {
+    let lastError = null;
+    for (let i = 0; i < candidateProviders.length; i++) {
+      const { id: provId, cfg: provCfg, model: provModel } = candidateProviders[i];
+      const provIsAnthropic = provId === "anthropic";
+      try {
+        const out = provIsAnthropic
+          ? await callAnthropic(provCfg, provModel, system, currentConvo, tools)
+          : await callOpenAI(provCfg, provModel, system, currentConvo, tools);
+
+        if (i > 0) {
+          audit("provider_fallback_success", {
+            from: agent.provider,
+            to: provId,
+            model: provModel,
+            adminId,
+          });
+        }
+        return { out, isAnthropic: provIsAnthropic };
+      } catch (err) {
+        lastError = err;
+        audit("provider_fallback_attempt", {
+          failedProvider: provId,
+          reason: err.message,
+          adminId,
+        });
+        if (i === candidateProviders.length - 1) {
+          throw err;
+        }
+      }
+    }
+    throw lastError;
+  }
+
   for (let step = 0; step < maxSteps; step++) {
     if (state.cancelled) return stop("Execução cancelada pelo usuário.");
     if (Date.now() - startedAt > deadlineMs) return stop("Limite de tempo da execução atingido.");
     if (toolCalls >= maxToolCalls) return stop("Limite de chamadas de ferramenta atingido.");
-    const out = isAnthropic ? await callAnthropic(cfg, model, system, convo, tools) : await callOpenAI(cfg, model, system, convo, tools);
+    const { out, isAnthropic: activeIsAnthropic } = await callModel(convo);
     if (out.reasoning) reasoning.push(out.reasoning);
     if (!out.calls.length) return stop(out.text);
-    if (isAnthropic) convo.push({ role: "assistant", content: out.raw.content });
+    if (activeIsAnthropic) convo.push({ role: "assistant", content: out.raw.content });
     else convo.push(out.raw);
     const results = [];
     for (const c of out.calls) {
@@ -173,7 +223,7 @@ export async function runAgent({
       used.push({ name: c.name, input: c.input, output });
       results.push({ c, output });
     }
-    if (isAnthropic) convo.push({ role: "user", content: results.map(({ c, output }) => ({ type: "tool_result", tool_use_id: c.id, content: output })) });
+    if (activeIsAnthropic) convo.push({ role: "user", content: results.map(({ c, output }) => ({ type: "tool_result", tool_use_id: c.id, content: output })) });
     else results.forEach(({ c, output }) => convo.push({ role: "tool", tool_call_id: c.id, content: output }));
   }
   return stop("Limite de passos atingido.");
