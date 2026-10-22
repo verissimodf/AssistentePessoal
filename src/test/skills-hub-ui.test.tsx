@@ -118,3 +118,96 @@ describe("AgentsPage — MCP Connection Assistant", () => {
     expect(copiedText).toContain("JARVIS_SERVICE_TOKEN");
   });
 });
+
+describe("AgentsPage — Multi-Provider Router & Telemetry (v1.6.0)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("renderiza o card do router com perfis de roteamento ativos e métricas operacionais", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : (input as Request).url;
+        if (url.includes("/api/skills")) {
+          return new Response(
+            JSON.stringify({
+              total: 1,
+              totalCatalog: 258,
+              categories: ["graphics"],
+              skills: [
+                {
+                  id: "threejs-expert",
+                  name: "Three.js 3D Expert",
+                  description: "Criação de cenas 3D",
+                  tags: ["threejs"],
+                  category: "graphics",
+                },
+              ],
+              routerStatus: {
+                activeAgent: "Jarvis Principal",
+                primary: {
+                  provider: "ollama",
+                  model: "llama3.1",
+                  baseUrl: "http://ollama-llm:11434/v1",
+                },
+                fallbacks: [{ provider: "anthropic", model: "claude-3-5-sonnet" }],
+                totalProviders: 2,
+                resilientFallbackEnabled: true,
+                profiles: ["realtime_voice", "code_engineering", "rag_knowledge", "general"],
+                telemetry: {
+                  providers: {
+                    ollama: {
+                      calls: 10,
+                      successes: 9,
+                      failures: 1,
+                      fallbacksTriggered: 1,
+                      totalLatencyMs: 1500,
+                      avgLatencyMs: 150,
+                      totalEstimatedTokens: 4500,
+                    },
+                  },
+                  profiles: {
+                    realtime_voice: 3,
+                    code_engineering: 5,
+                    rag_knowledge: 2,
+                    general: 0,
+                  },
+                  totalCalls: 10,
+                  totalFallbacks: 1,
+                },
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } }
+          );
+        }
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      })
+    );
+
+    render(<AgentsPage defaultTab="skills" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("card-router-status")).toBeInTheDocument();
+      expect(screen.getByTestId("router-profiles")).toBeInTheDocument();
+      expect(screen.getByTestId("router-telemetry")).toBeInTheDocument();
+    });
+
+    // Valida os badges dos perfis
+    expect(screen.getByText("Voz Tempo Real")).toBeInTheDocument();
+    expect(screen.getByText("Engenharia de Código")).toBeInTheDocument();
+    expect(screen.getByText("RAG Documental")).toBeInTheDocument();
+    expect(screen.getByText("Geral")).toBeInTheDocument();
+
+    // Valida as métricas de telemetria
+    const telemetrySection = screen.getByTestId("router-telemetry");
+    expect(telemetrySection).toHaveTextContent("Chamadas:");
+    expect(telemetrySection).toHaveTextContent("10");
+    expect(telemetrySection).toHaveTextContent("Latência Média:");
+    expect(telemetrySection).toHaveTextContent("150ms");
+    expect(telemetrySection).toHaveTextContent("Fallbacks:");
+    expect(telemetrySection).toHaveTextContent("1 acionado(s)");
+  });
+});
+

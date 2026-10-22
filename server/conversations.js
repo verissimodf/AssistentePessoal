@@ -223,7 +223,8 @@ export async function chatExchange(ownerId, { conversationId, message, clientMsg
     }
   }
 
-  const messages = buildContext(conv.id);
+  const rawMessages = buildContext(conv.id);
+  const { messages } = compactConversationContext(rawMessages);
   // Agente fixado na conversa (só se ainda pertencer ao dono); caso contrário, o padrão do
   // administrador. Uma conversa existente nunca muda de agente por causa de um pedido avulso.
   const pinned = conv.agent_id && owns(ownerId, "agent", conv.agent_id) ? conv.agent_id : null;
@@ -283,4 +284,113 @@ export function deleteConversation(ownerId, id) {
     audit("conversation.deleted", { admin: ownerId, ids: [String(id)], count });
     return { ok: true, deletedMessages: count };
   });
+}
+
+/**
+ * Smart Context Compaction (Roadmap v1.6.0).
+ * Otimização inteligente da janela de contexto para diálogos extensos sem perda de
+ * fatos críticos, sintetizando turnos antigos no meio e preservando as últimas mensagens intactas.
+ */
+export function compactConversationContext(
+  messages,
+  { maxMessages = 16, maxChars = 24000, preserveTail = 6 } = {}
+) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return {
+      messages: [],
+      compacted: false,
+      savedChars: 0,
+      originalCount: 0,
+      compactedCount: 0,
+    };
+  }
+
+  const originalCount = messages.length;
+  const originalChars = messages.reduce((acc, m) => acc + (m.content ? String(m.content).length : 0), 0);
+
+  // Se estiver dentro dos tetos estabelecidos, preserva integralmente
+  if (originalCount <= maxMessages && originalChars <= maxChars) {
+    return {
+      messages,
+      compacted: false,
+      savedChars: 0,
+      originalCount,
+      compactedCount: originalCount,
+    };
+  }
+
+  // 1. Isola mensagens de system no início (instruções primárias do assistente)
+  const systemMessages = [];
+  let startIdx = 0;
+  while (startIdx < messages.length && messages[startIdx].role === "system") {
+    systemMessages.push(messages[startIdx]);
+    startIdx++;
+  }
+
+  const conversationTurns = messages.slice(startIdx);
+  const tailCount = Math.min(preserveTail, conversationTurns.length);
+  const headAndMiddle = conversationTurns.slice(0, conversationTurns.length - tailCount);
+  const tail = conversationTurns.slice(conversationTurns.length - tailCount);
+
+  // Se não há mensagens anteriores no meio para compactar
+  if (headAndMiddle.length === 0) {
+    return {
+      messages,
+      compacted: false,
+      savedChars: 0,
+      originalCount,
+      compactedCount: originalCount,
+    };
+  }
+
+  // 2. Sintetiza turnos do meio em bloco estruturado de resumo contextual
+  const summaryLines = headAndMiddle.map((m) => {
+    const roleLabel = m.role === "user" ? "Usuário" : "Assistente";
+    const clean = String(m.content || "").replace(/\s+/g, " ").trim();
+    const snippet = clean.length > 140 ? clean.slice(0, 137) + "..." : clean;
+    return `- ${roleLabel}: ${snippet}`;
+  });
+
+  let summaryBlock = `[Resumo de Contexto Anterior Compactado: ${headAndMiddle.length} mensagens]\n${summaryLines.join("\n")}`;
+
+  let compactedMessages = [
+    ...systemMessages,
+    { role: "system", content: summaryBlock },
+    ...tail,
+  ];
+
+  let compactedChars = compactedMessages.reduce(
+    (acc, m) => acc + (m.content ? String(m.content).length : 0),
+    0
+  );
+
+  // Se mesmo compactado ainda ultrapassar maxChars, ajusta o bloco de resumo
+  if (compactedChars > maxChars) {
+    const sysTailChars =
+      systemMessages.reduce((acc, m) => acc + String(m.content || "").length, 0) +
+      tail.reduce((acc, m) => acc + String(m.content || "").length, 0);
+    const summaryBudget = Math.max(100, maxChars - sysTailChars);
+    if (summaryBlock.length > summaryBudget) {
+      summaryBlock = summaryBlock.slice(0, summaryBudget - 3) + "...";
+      compactedMessages = [
+        ...systemMessages,
+        { role: "system", content: summaryBlock },
+        ...tail,
+      ];
+    }
+  }
+
+  const finalChars = compactedMessages.reduce(
+    (acc, m) => acc + (m.content ? String(m.content).length : 0),
+    0
+  );
+  const savedChars = Math.max(0, originalChars - finalChars);
+
+  return {
+    messages: compactedMessages,
+    compacted: true,
+    originalCount,
+    compactedCount: compactedMessages.length,
+    savedChars,
+  };
 }

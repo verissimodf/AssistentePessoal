@@ -451,6 +451,29 @@ export type SkillSummary = {
   score?: number;
 };
 
+export type ProviderTelemetry = {
+  providers: Record<
+    string,
+    {
+      calls: number;
+      successes: number;
+      failures: number;
+      fallbacksTriggered: number;
+      totalLatencyMs: number;
+      avgLatencyMs: number;
+      totalEstimatedTokens: number;
+    }
+  >;
+  profiles: {
+    realtime_voice: number;
+    code_engineering: number;
+    rag_knowledge: number;
+    general: number;
+  };
+  totalCalls: number;
+  totalFallbacks: number;
+};
+
 export type RouterStatus = {
   activeAgent: string;
   primary: {
@@ -464,6 +487,8 @@ export type RouterStatus = {
   }>;
   totalProviders: number;
   resilientFallbackEnabled: boolean;
+  profiles?: string[];
+  telemetry?: ProviderTelemetry;
 };
 
 export type SkillsResponse = {
@@ -510,4 +535,14 @@ export async function getSkillDetail(id: string): Promise<SkillDetail | null> {
     return null;
   }
 }
+
+export async function getRouterTelemetry(): Promise<ProviderTelemetry | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<ProviderTelemetry>("/api/router/telemetry");
+  } catch {
+    return null;
+  }
+}
+
 

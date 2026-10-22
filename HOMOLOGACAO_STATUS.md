@@ -238,4 +238,42 @@ Com **483 testes automatizados verdes** (417 backend + 66 frontend), suporte nat
 | **Total Global** | **522** | **0** | **18** | **540** | ✅ **APROVADO** |
 | **Vite + Nitro Production Build** | — | — | — | — | ✅ **Zero Erros** |
 
+---
+
+# 🧠 Release v1.6.0 — Smart Context Compaction & Provider Telemetry
+**Data da Homologação:** 22 de Outubro de 2026  
+**Status do Release:** ✅ **HOMOLOGADO PARA PRODUÇÃO (100% Testes Verdes — 527 Testes)**  
+**Versão:** `1.6.0`
+
+### 1. Entregas Arquiteturais da Release v1.6.0
+
+1. **Smart Context Compaction (`server/conversations.js`, `server/llm.js`, `server/skills.js`):**
+   - Função pura e determinística `compactConversationContext(messages, { maxMessages, maxChars, preserveTail })`:
+     - Preserva mensagens de `system` no topo (instruções primárias do assistente) e as últimas `preserveTail` mensagens no final (coerência imediata do diálogo).
+     - Sintetiza turnos antigos no meio em bloco estruturado `[Resumo de Contexto Anterior Compactado: N mensagens]`, truncando trechos extensos e respeitando estritamente o limite `maxChars`.
+     - Retorna `{ messages, compacted, originalCount, compactedCount, savedChars }` com redução significativa de consumo de contexto em conversas longas.
+     - Integrado de forma transparente em `chatExchange` antes do disparo para o modelo.
+
+2. **Provider Telemetry & Health Metrics (`server/llm.js`, `server/index.js`, `server/skills.js`):**
+   - Coletor leve em memória com zero overhead de I/O (`recordProviderMetric`, `getProviderTelemetry`, `resetProviderTelemetry`).
+   - Métricas rastreadas por provedor: `calls`, `successes`, `failures`, `fallbacksTriggered`, `totalLatencyMs`, `avgLatencyMs` e `totalEstimatedTokens`.
+   - Distribuição de volume por perfil de tarefa (`realtime_voice`, `code_engineering`, `rag_knowledge`, `general`).
+   - Telemetria integrada diretamente na resposta de `getRouterStatus(adminId)` e exposta no endpoint autenticado `GET /api/router/telemetry` (escopo `skills:read`).
+
+3. **Visualização de Telemetria e Perfis no Painel Web (`src/routes/agentes.tsx`, `src/lib/bridge.ts`):**
+   - Card do Multi-Provider Router enriquecido na aba do Hub Global de Skills:
+     - Badges com contadores em tempo real para os 4 perfis de roteamento: `Voz Tempo Real`, `Engenharia de Código`, `RAG Documental` e `Geral`.
+     - Indicadores de telemetria operacional com design HUD: Total de Chamadas, Latência Média ponderada (ms) e Status de Fallbacks.
+   - Atualização da tipagem TypeScript em `src/lib/bridge.ts` (`ProviderTelemetry`, `RouterStatus`) e novo método cliente `getRouterTelemetry()`.
+
+### 2. Resultados dos Testes de Homologação (v1.6.0)
+
+| Suíte de Testes | Pass | Fail | Skipped | Total | Status |
+|---|---|---|---|---|---|
+| **Node.js Test Runner (Backend)** | **445** | 0 | 18 | 463 | ✅ 100% Green |
+| **Vitest (Frontend / JSDOM)** | **82** | 0 | 0 | 82 | ✅ 100% Green |
+| **Total Global** | **527** | **0** | **18** | **545** | ✅ **APROVADO** |
+| **Vite + Nitro Production Build** | — | — | — | — | ✅ **Zero Erros** |
+
+
 

@@ -19,6 +19,9 @@ import {
   getRouterStatus,
   classifyTaskIntent,
   ROUTING_PROFILES,
+  recordProviderMetric,
+  getProviderTelemetry,
+  resetProviderTelemetry,
 } from "../server/skills.js";
 import { routeTable, createApp } from "../server/index.js";
 import { AuthError } from "../server/auth.js";
@@ -455,9 +458,71 @@ test("rotas de api /api/skills: inventário, buscas, filtros e proteção de cam
     assert.equal(classifyJson.profile, "code_engineering");
     assert.ok(Array.isArray(classifyJson.profiles));
     assert.deepEqual(classifyJson.profiles, ["realtime_voice", "code_engineering", "rag_knowledge", "general"]);
+
+    // 7. Rota GET /api/router/telemetry retorna telemetria operacional
+    const telemResp = await apiReq("/api/router/telemetry");
+    assert.equal(telemResp.status, 200);
+    const telemJson = await telemResp.json();
+    assert.ok(typeof telemJson.totalCalls === "number");
+    assert.ok(typeof telemJson.totalFallbacks === "number");
+    assert.ok(telemJson.profiles);
+    assert.ok(telemJson.providers);
   } finally {
     await new Promise((r) => server.close(r));
   }
+});
+
+test("telemetria de provedores: recordProviderMetric e getProviderTelemetry calculam métricas e fallbacks", () => {
+  resetProviderTelemetry();
+
+  recordProviderMetric("ollama", {
+    latencyMs: 120,
+    success: true,
+    isFallback: false,
+    taskProfile: "code_engineering",
+    estimatedTokens: 350,
+  });
+
+  recordProviderMetric("ollama", {
+    latencyMs: 180,
+    success: true,
+    isFallback: false,
+    taskProfile: "code_engineering",
+    estimatedTokens: 450,
+  });
+
+  recordProviderMetric("anthropic", {
+    latencyMs: 300,
+    success: false,
+    isFallback: true,
+    taskProfile: "rag_knowledge",
+    estimatedTokens: 200,
+  });
+
+  const telem = getProviderTelemetry();
+  assert.equal(telem.totalCalls, 3);
+  assert.equal(telem.totalFallbacks, 1);
+  assert.equal(telem.profiles.code_engineering, 2);
+  assert.equal(telem.profiles.rag_knowledge, 1);
+  assert.equal(telem.profiles.realtime_voice, 0);
+
+  const ollama = telem.providers.ollama;
+  assert.equal(ollama.calls, 2);
+  assert.equal(ollama.successes, 2);
+  assert.equal(ollama.failures, 0);
+  assert.equal(ollama.avgLatencyMs, 150);
+  assert.equal(ollama.totalEstimatedTokens, 800);
+
+  const anthropic = telem.providers.anthropic;
+  assert.equal(anthropic.calls, 1);
+  assert.equal(anthropic.failures, 1);
+  assert.equal(anthropic.fallbacksTriggered, 1);
+  assert.equal(anthropic.avgLatencyMs, 300);
+
+  // Status do router também inclui a telemetria
+  const status = getRouterStatus();
+  assert.ok(status.telemetry);
+  assert.equal(status.telemetry.totalCalls, 3);
 });
 
 

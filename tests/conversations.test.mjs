@@ -18,6 +18,7 @@ process.env.JARVIS_NO_LISTEN = "1";
 const { auth, db } = await import("../server/db.js");
 const { updateSettings } = await import("../server/settings.js");
 const { createApp } = await import("../server/index.js");
+const { compactConversationContext } = await import("../server/conversations.js");
 
 const PW = "senha-muito-forte-1";
 const ORIGIN = "http://localhost:8080";
@@ -397,3 +398,70 @@ test("caminho legado (MCP/scripts) continua funcionando e não persiste nada", a
 
 // ---------- interface (regra de seleção) ----------
 // A regra de seleção após recarga é testada no frontend: src/test/conversations.test.ts.
+
+// ---------- smart context compaction (v1.6.0) ----------
+
+test("compactConversationContext: histórico dentro dos limites não é alterado", () => {
+  const shortHistory = [
+    { role: "system", content: "Instruções do sistema." },
+    { role: "user", content: "Olá Jarvis" },
+    { role: "assistant", content: "Olá! Como posso ajudar hoje?" },
+  ];
+
+  const result = compactConversationContext(shortHistory, { maxMessages: 16, maxChars: 24000, preserveTail: 6 });
+  assert.equal(result.compacted, false);
+  assert.equal(result.savedChars, 0);
+  assert.equal(result.compactedCount, 3);
+  assert.deepEqual(result.messages, shortHistory);
+});
+
+test("compactConversationContext: histórico longo sintetiza o meio, preserva system e últimas mensagens", () => {
+  const longHistory = [
+    { role: "system", content: "Instruções mestras imutáveis." },
+  ];
+
+  for (let i = 1; i <= 20; i++) {
+    longHistory.push({
+      role: "user",
+      content: `Pergunta detalhada ${i}: ` + "Discutindo arquitetura de microserviços, fallback resiliente e RAG semântico. ".repeat(4),
+    });
+    longHistory.push({
+      role: "assistant",
+      content: `Resposta aprofundada ${i}: ` + "Aqui está o detalhamento completo dos requisitos, contratos de API e logs operacionais. ".repeat(4),
+    });
+  }
+
+  const preserveTail = 6;
+  const result = compactConversationContext(longHistory, { maxMessages: 10, maxChars: 5000, preserveTail });
+
+  assert.equal(result.compacted, true);
+  assert.ok(result.savedChars > 0, "deve economizar caracteres");
+  assert.equal(result.originalCount, 41);
+  assert.equal(result.messages[0].role, "system");
+  assert.equal(result.messages[0].content, "Instruções mestras imutáveis.");
+  assert.equal(result.messages[1].role, "system");
+  assert.match(result.messages[1].content, /\[Resumo de Contexto Anterior Compactado: \d+ mensagens\]/);
+
+  // As últimas preserveTail mensagens são preservadas intactas
+  const tailExtracted = result.messages.slice(-preserveTail);
+  const originalTail = longHistory.slice(-preserveTail);
+  assert.deepEqual(tailExtracted, originalTail);
+});
+
+test("compactConversationContext: entradas nulas ou vazias", () => {
+  assert.deepEqual(compactConversationContext([]), {
+    messages: [],
+    compacted: false,
+    savedChars: 0,
+    originalCount: 0,
+    compactedCount: 0,
+  });
+  assert.deepEqual(compactConversationContext(null), {
+    messages: [],
+    compacted: false,
+    savedChars: 0,
+    originalCount: 0,
+    compactedCount: 0,
+  });
+});
+

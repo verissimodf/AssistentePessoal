@@ -246,7 +246,7 @@ export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = 
         <TabsContent value="skills" className="space-y-6 focus-visible:outline-none">
           {/* Card de Status do Multi-Provider Router */}
           {routerStatus && (
-            <div className="hud-panel p-5 bg-gradient-to-r from-secondary/40 via-background to-secondary/20 border border-primary/20">
+            <div data-testid="card-router-status" className="hud-panel p-5 bg-gradient-to-r from-secondary/40 via-background to-secondary/20 border border-primary/20 space-y-4">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
@@ -294,6 +294,75 @@ export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = 
                   <div className="text-muted-foreground">
                     Agente ativo:{" "}
                     <span className="font-semibold text-foreground">{routerStatus.activeAgent}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Perfis de Roteamento e Telemetria Operacional (v1.6.0) */}
+              <div className="border-t border-border/40 pt-3 flex flex-col lg:flex-row lg:items-center justify-between gap-4 text-xs">
+                {/* Perfis de Roteamento */}
+                <div data-testid="router-profiles" className="flex flex-wrap items-center gap-2">
+                  <span className="text-muted-foreground font-medium flex items-center gap-1">
+                    <Cpu className="h-3.5 w-3.5 text-primary" />
+                    Perfis Ativos:
+                  </span>
+                  <Badge variant="outline" className="bg-cyan-500/10 text-cyan-400 border-cyan-500/30 gap-1 text-[11px]">
+                    <span>Voz Tempo Real</span>
+                    {routerStatus.telemetry?.profiles?.realtime_voice !== undefined && (
+                      <span className="opacity-70 font-mono">({routerStatus.telemetry.profiles.realtime_voice})</span>
+                    )}
+                  </Badge>
+                  <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/30 gap-1 text-[11px]">
+                    <span>Engenharia de Código</span>
+                    {routerStatus.telemetry?.profiles?.code_engineering !== undefined && (
+                      <span className="opacity-70 font-mono">({routerStatus.telemetry.profiles.code_engineering})</span>
+                    )}
+                  </Badge>
+                  <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30 gap-1 text-[11px]">
+                    <span>RAG Documental</span>
+                    {routerStatus.telemetry?.profiles?.rag_knowledge !== undefined && (
+                      <span className="opacity-70 font-mono">({routerStatus.telemetry.profiles.rag_knowledge})</span>
+                    )}
+                  </Badge>
+                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 gap-1 text-[11px]">
+                    <span>Geral</span>
+                    {routerStatus.telemetry?.profiles?.general !== undefined && (
+                      <span className="opacity-70 font-mono">({routerStatus.telemetry.profiles.general})</span>
+                    )}
+                  </Badge>
+                </div>
+
+                {/* Métricas de Telemetria Operacional */}
+                <div data-testid="router-telemetry" className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-1.5 bg-background/60 border border-border/60 rounded px-2.5 py-1">
+                    <span className="text-muted-foreground">Chamadas:</span>
+                    <span className="font-mono font-semibold text-foreground">
+                      {routerStatus.telemetry?.totalCalls ?? 0}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-background/60 border border-border/60 rounded px-2.5 py-1">
+                    <span className="text-muted-foreground">Latência Média:</span>
+                    <span className="font-mono font-semibold text-foreground">
+                      {(() => {
+                        const providers = Object.values(routerStatus.telemetry?.providers || {});
+                        if (!providers.length) return "0ms";
+                        const totalLat = providers.reduce((acc, p) => acc + p.totalLatencyMs, 0);
+                        const totalCalls = providers.reduce((acc, p) => acc + p.calls, 0);
+                        return totalCalls > 0 ? `${Math.round(totalLat / totalCalls)}ms` : "0ms";
+                      })()}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-background/60 border border-border/60 rounded px-2.5 py-1">
+                    <span className="text-muted-foreground">Fallbacks:</span>
+                    <span
+                      className={`font-mono font-semibold ${
+                        (routerStatus.telemetry?.totalFallbacks ?? 0) > 0 ? "text-amber-400" : "text-emerald-400"
+                      }`}
+                    >
+                      {(routerStatus.telemetry?.totalFallbacks ?? 0) === 0
+                        ? "0 (nominal)"
+                        : `${routerStatus.telemetry?.totalFallbacks} acionado(s)`}
+                    </span>
                   </div>
                 </div>
               </div>

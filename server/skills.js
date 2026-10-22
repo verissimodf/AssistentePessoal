@@ -223,5 +223,14 @@ export function loadSkill(identifier, baseDir = GLOBAL_SKILLS_DIR) {
 }
 
 export { sanitizeSkillFrontmatter } from "../scripts/setup-global-skills.mjs";
-export { getRouterStatus, classifyTaskIntent, ROUTING_PROFILES } from "./llm.js";
+export {
+  getRouterStatus,
+  classifyTaskIntent,
+  ROUTING_PROFILES,
+  recordProviderMetric,
+  getProviderTelemetry,
+  resetProviderTelemetry,
+  compactConversationContext,
+} from "./llm.js";
+
 

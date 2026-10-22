@@ -53,6 +53,7 @@ import {
   getRouterStatus,
   classifyTaskIntent,
   ROUTING_PROFILES,
+  getProviderTelemetry,
 } from "./llm.js";
 import { getCatalog, listSkills, matchSkillsForPrompt, loadSkill } from "./skills.js";
 import { collectDiagnostics } from "./diagnostics.js";
@@ -587,6 +588,11 @@ route("GET", "/api/router/classify", "skills:read", ({ query }) => {
     profiles: ROUTING_PROFILES,
   };
 });
+
+route("GET", "/api/router/telemetry", "skills:read", () => {
+  return getProviderTelemetry();
+});
+
 
 
 for (const [name, store, type] of [

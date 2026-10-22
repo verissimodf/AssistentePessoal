@@ -166,13 +166,28 @@ export async function runAgent({
 
   async function callModel(currentConvo) {
     let lastError = null;
+    const lastUserMsg = currentConvo.filter((m) => m.role === "user").pop();
+    const taskProfile = classifyTaskIntent(lastUserMsg?.content || "", { hasTools: tools.length > 0 });
+
     for (let i = 0; i < candidateProviders.length; i++) {
       const { id: provId, cfg: provCfg, model: provModel } = candidateProviders[i];
       const provIsAnthropic = provId === "anthropic";
+      const callStart = Date.now();
       try {
         const out = provIsAnthropic
           ? await callAnthropic(provCfg, provModel, system, currentConvo, tools)
           : await callOpenAI(provCfg, provModel, system, currentConvo, tools);
+
+        const latencyMs = Date.now() - callStart;
+        const estimatedTokens = Math.ceil(((out.text || "").length + JSON.stringify(currentConvo).length) / 4);
+
+        recordProviderMetric(provId, {
+          latencyMs,
+          success: true,
+          isFallback: i > 0,
+          taskProfile,
+          estimatedTokens,
+        });
 
         if (i > 0) {
           audit("provider_fallback_success", {
@@ -185,6 +200,15 @@ export async function runAgent({
         return { out, isAnthropic: provIsAnthropic };
       } catch (err) {
         lastError = err;
+        const latencyMs = Date.now() - callStart;
+        recordProviderMetric(provId, {
+          latencyMs,
+          success: false,
+          isFallback: i > 0,
+          taskProfile,
+          estimatedTokens: 0,
+        });
+
         audit("provider_fallback_attempt", {
           failedProvider: provId,
           reason: err.message,
@@ -315,6 +339,83 @@ export function classifyTaskIntent(prompt, { hasTools = false, isVoice = false }
   return "general";
 }
 
+// ---------- Provider Telemetry & Health Metrics (v1.6.0) ----------
+const providerTelemetry = {
+  providers: {},
+  profiles: {
+    realtime_voice: 0,
+    code_engineering: 0,
+    rag_knowledge: 0,
+    general: 0,
+  },
+  totalCalls: 0,
+  totalFallbacks: 0,
+};
+
+export function recordProviderMetric(
+  provider,
+  {
+    latencyMs = 0,
+    success = true,
+    isFallback = false,
+    taskProfile = "general",
+    estimatedTokens = 0,
+  } = {}
+) {
+  const pId = String(provider || "unknown").toLowerCase();
+  if (!providerTelemetry.providers[pId]) {
+    providerTelemetry.providers[pId] = {
+      calls: 0,
+      successes: 0,
+      failures: 0,
+      fallbacksTriggered: 0,
+      totalLatencyMs: 0,
+      avgLatencyMs: 0,
+      totalEstimatedTokens: 0,
+    };
+  }
+
+  const p = providerTelemetry.providers[pId];
+  p.calls++;
+  if (success) {
+    p.successes++;
+  } else {
+    p.failures++;
+  }
+  if (isFallback) {
+    p.fallbacksTriggered++;
+    providerTelemetry.totalFallbacks++;
+  }
+  p.totalLatencyMs += Math.max(0, latencyMs);
+  p.avgLatencyMs = Math.round(p.totalLatencyMs / p.calls);
+  p.totalEstimatedTokens += Math.max(0, estimatedTokens);
+
+  providerTelemetry.totalCalls++;
+  if (taskProfile && providerTelemetry.profiles[taskProfile] !== undefined) {
+    providerTelemetry.profiles[taskProfile]++;
+  } else {
+    providerTelemetry.profiles.general++;
+  }
+}
+
+export function getProviderTelemetry() {
+  return JSON.parse(JSON.stringify(providerTelemetry));
+}
+
+export function resetProviderTelemetry() {
+  providerTelemetry.providers = {};
+  providerTelemetry.profiles = {
+    realtime_voice: 0,
+    code_engineering: 0,
+    rag_knowledge: 0,
+    general: 0,
+  };
+  providerTelemetry.totalCalls = 0;
+  providerTelemetry.totalFallbacks = 0;
+}
+
+export { compactConversationContext } from "./conversations.js";
+
 /**
  * Status do Multi-Provider Router e sua cadeia de contingência.
  */
@@ -350,6 +451,7 @@ export function getRouterStatus(adminId = null) {
     totalProviders: 1 + fallbacks.length,
     resilientFallbackEnabled: true,
     profiles: ROUTING_PROFILES,
+    telemetry: getProviderTelemetry(),
   };
 }
 
