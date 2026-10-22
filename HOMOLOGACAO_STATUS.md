@@ -275,5 +275,38 @@ Com **483 testes automatizados verdes** (417 backend + 66 frontend), suporte nat
 | **Total Global** | **527** | **0** | **18** | **545** | ✅ **APROVADO** |
 | **Vite + Nitro Production Build** | — | — | — | — | ✅ **Zero Erros** |
 
+---
+
+# 🎙️ Release v1.7.0 — Áudio Hands-Free Unificado, Wake Word Offline, VAD & Barge-In
+**Data da Homologação:** 22 de Outubro de 2026  
+**Status do Release:** ✅ **HOMOLOGADO PARA PRODUÇÃO (100% Testes Verdes — 535 Testes)**  
+**Versão:** `1.7.0`
+
+### 1. Entregas Arquiteturais da Release v1.7.0
+
+1. **Áudio Hands-Free Unificado & Wake Word Offline (`src/lib/handsfree.ts`, `src/lib/voice.ts`):**
+   - Módulo centralizador `src/lib/handsfree.ts` com gerenciador singleton de áudio (`SharedAudioEngine`), eliminando alocações redundantes de `AudioContext` e vazamentos de tracks no `MediaStream`.
+   - Detector acústico e espectral offline para o comando "Jarvis" (`createOfflineWakeWordDetector`), analisando trajetória de formantes vocálicos e energia sibilante sem requisições externas de rede.
+   - Detecção robusta de duplo aplauso (`createClapDetector`) unificada à escuta contínua híbrida com `SpeechRecognition` do navegador.
+
+2. **Voz Full-Duplex com VAD e Interrupção (Barge-In) (`src/lib/handsfree.ts`, `src/lib/voice.ts`, `src/routes/index.tsx`):**
+   - Algoritmo de detecção de atividade vocal em tempo real (`createVAD`) computando energia RMS dinâmica contra piso de ruído adaptativo e taxa de cruzamento por zero (ZCR).
+   - Capacidade nativa de Barge-In: o microfone permanece monitorando no estado `speaking`. Ao detectar fala contínua (>180ms), aborta preemptivamente o playback de áudio/TTS via `stopSpeaking()` e `AbortController`, transitando o avatar e o app instantaneamente para `listening`.
+
+3. **Telemetria de Voz e Notificação Operacional (`server/llm.js`, `server/index.js`, `src/routes/agentes.tsx`):**
+   - Expansão do coletor `providerTelemetry` com métricas dedicadas de voz: volume total de interações, latência média e contagem de interrupções por barge-in (`bargeInCount`).
+   - Novo endpoint de ingestão operacional `POST /api/router/telemetry/voice` (protegido por `skills:read`).
+   - Indicador visual HUD no Card do Multi-Provider Router na tela de Agentes exibindo em tempo real o status e a contagem de Barge-In.
+
+### 2. Resultados dos Testes de Homologação (v1.7.0)
+
+| Suíte de Testes | Pass | Fail | Skipped | Total | Status |
+|---|---|---|---|---|---|
+| **Node.js Test Runner (Backend)** | **445** | 0 | 18 | 463 | ✅ 100% Green |
+| **Vitest (Frontend / JSDOM)** | **90** | 0 | 0 | 90 | ✅ 100% Green |
+| **Total Global** | **535** | **0** | **18** | **553** | ✅ **APROVADO** |
+| **Vite + Nitro Production Build** | — | — | — | — | ✅ **Zero Erros** |
+
+
 
 

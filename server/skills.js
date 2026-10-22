@@ -228,6 +228,7 @@ export {
   classifyTaskIntent,
   ROUTING_PROFILES,
   recordProviderMetric,
+  recordVoiceMetric,
   getProviderTelemetry,
   resetProviderTelemetry,
   compactConversationContext,

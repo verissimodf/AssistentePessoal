@@ -20,6 +20,7 @@ import {
   classifyTaskIntent,
   ROUTING_PROFILES,
   recordProviderMetric,
+  recordVoiceMetric,
   getProviderTelemetry,
   resetProviderTelemetry,
 } from "../server/skills.js";
@@ -467,6 +468,37 @@ test("rotas de api /api/skills: inventário, buscas, filtros e proteção de cam
     assert.ok(typeof telemJson.totalFallbacks === "number");
     assert.ok(telemJson.profiles);
     assert.ok(telemJson.providers);
+    assert.ok(telemJson.voice);
+
+    // 8. Rota POST /api/router/telemetry/voice registra eventos de voz e barge-in
+    const postVoiceResp = await fetch(`${base}/api/router/telemetry/voice`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: `jarvis_sid=${sid}`,
+        "x-jarvis-csrf": "csrf-test",
+        origin: "http://127.0.0.1",
+      },
+      body: JSON.stringify({ latencyMs: 240, isBargeIn: false }),
+    });
+    assert.equal(postVoiceResp.status, 200);
+    const postVoiceJson = await postVoiceResp.json();
+    assert.equal(postVoiceJson.ok, true);
+    assert.ok(postVoiceJson.telemetry.voice.totalCalls >= 1);
+
+    const postBargeResp = await fetch(`${base}/api/router/telemetry/voice`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: `jarvis_sid=${sid}`,
+        "x-jarvis-csrf": "csrf-test",
+        origin: "http://127.0.0.1",
+      },
+      body: JSON.stringify({ isBargeIn: true }),
+    });
+    assert.equal(postBargeResp.status, 200);
+    const postBargeJson = await postBargeResp.json();
+    assert.ok(postBargeJson.telemetry.voice.bargeInCount >= 1);
   } finally {
     await new Promise((r) => server.close(r));
   }
@@ -499,12 +531,22 @@ test("telemetria de provedores: recordProviderMetric e getProviderTelemetry calc
     estimatedTokens: 200,
   });
 
+  // Registra métricas de voz e evento de barge-in
+  recordVoiceMetric({ latencyMs: 250, isBargeIn: false });
+  recordVoiceMetric({ isBargeIn: true });
+
   const telem = getProviderTelemetry();
   assert.equal(telem.totalCalls, 3);
   assert.equal(telem.totalFallbacks, 1);
   assert.equal(telem.profiles.code_engineering, 2);
   assert.equal(telem.profiles.rag_knowledge, 1);
-  assert.equal(telem.profiles.realtime_voice, 0);
+  assert.equal(telem.profiles.realtime_voice, 1);
+
+  // Valida métricas do subsistema de voz (v1.7.0)
+  assert.ok(telem.voice);
+  assert.equal(telem.voice.totalCalls, 1);
+  assert.equal(telem.voice.avgLatencyMs, 250);
+  assert.equal(telem.voice.bargeInCount, 1);
 
   const ollama = telem.providers.ollama;
   assert.equal(ollama.calls, 2);
@@ -519,10 +561,11 @@ test("telemetria de provedores: recordProviderMetric e getProviderTelemetry calc
   assert.equal(anthropic.fallbacksTriggered, 1);
   assert.equal(anthropic.avgLatencyMs, 300);
 
-  // Status do router também inclui a telemetria
+  // Status do router também inclui a telemetria completa
   const status = getRouterStatus();
   assert.ok(status.telemetry);
   assert.equal(status.telemetry.totalCalls, 3);
+  assert.equal(status.telemetry.voice.bargeInCount, 1);
 });
 
 

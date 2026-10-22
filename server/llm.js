@@ -339,7 +339,7 @@ export function classifyTaskIntent(prompt, { hasTools = false, isVoice = false }
   return "general";
 }
 
-// ---------- Provider Telemetry & Health Metrics (v1.6.0) ----------
+// ---------- Provider Telemetry & Health Metrics (v1.6.0 & v1.7.0) ----------
 const providerTelemetry = {
   providers: {},
   profiles: {
@@ -347,6 +347,12 @@ const providerTelemetry = {
     code_engineering: 0,
     rag_knowledge: 0,
     general: 0,
+  },
+  voice: {
+    totalCalls: 0,
+    totalLatencyMs: 0,
+    avgLatencyMs: 0,
+    bargeInCount: 0,
   },
   totalCalls: 0,
   totalFallbacks: 0,
@@ -398,6 +404,18 @@ export function recordProviderMetric(
   }
 }
 
+export function recordVoiceMetric({ latencyMs = 0, isBargeIn = false } = {}) {
+  if (isBargeIn) {
+    providerTelemetry.voice.bargeInCount++;
+    return;
+  }
+  const v = providerTelemetry.voice;
+  v.totalCalls++;
+  v.totalLatencyMs += Math.max(0, latencyMs);
+  v.avgLatencyMs = Math.round(v.totalLatencyMs / v.totalCalls);
+  providerTelemetry.profiles.realtime_voice++;
+}
+
 export function getProviderTelemetry() {
   return JSON.parse(JSON.stringify(providerTelemetry));
 }
@@ -409,6 +427,12 @@ export function resetProviderTelemetry() {
     code_engineering: 0,
     rag_knowledge: 0,
     general: 0,
+  };
+  providerTelemetry.voice = {
+    totalCalls: 0,
+    totalLatencyMs: 0,
+    avgLatencyMs: 0,
+    bargeInCount: 0,
   };
   providerTelemetry.totalCalls = 0;
   providerTelemetry.totalFallbacks = 0;

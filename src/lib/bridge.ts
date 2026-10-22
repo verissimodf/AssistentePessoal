@@ -470,6 +470,12 @@ export type ProviderTelemetry = {
     rag_knowledge: number;
     general: number;
   };
+  voice?: {
+    totalCalls: number;
+    totalLatencyMs: number;
+    avgLatencyMs: number;
+    bargeInCount: number;
+  };
   totalCalls: number;
   totalFallbacks: number;
 };

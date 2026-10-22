@@ -54,6 +54,7 @@ import {
   classifyTaskIntent,
   ROUTING_PROFILES,
   getProviderTelemetry,
+  recordVoiceMetric,
 } from "./llm.js";
 import { getCatalog, listSkills, matchSkillsForPrompt, loadSkill } from "./skills.js";
 import { collectDiagnostics } from "./diagnostics.js";
@@ -591,6 +592,13 @@ route("GET", "/api/router/classify", "skills:read", ({ query }) => {
 
 route("GET", "/api/router/telemetry", "skills:read", () => {
   return getProviderTelemetry();
+});
+
+route("POST", "/api/router/telemetry/voice", "skills:read", ({ body }) => {
+  const latencyMs = Number(body?.latencyMs) || 0;
+  const isBargeIn = Boolean(body?.isBargeIn);
+  recordVoiceMetric({ latencyMs, isBargeIn });
+  return { ok: true, telemetry: getProviderTelemetry() };
 });
 
 

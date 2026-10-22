@@ -27,7 +27,7 @@ vi.mock("@/lib/bridge", () => ({
 }));
 
 vi.mock("@/components/Avatar3D", () => ({ Avatar3D: () => null }));
-vi.mock("@/lib/voice", () => ({ listenOnce: vi.fn(async () => ""), speak: vi.fn(async () => {}), useWake: () => 0 }));
+vi.mock("@/lib/voice", () => ({ listenOnce: vi.fn(async () => ""), speak: vi.fn(async () => {}), stopSpeaking: vi.fn(), useWake: () => 0 }));
 
 import { ChatPage } from "@/routes/index";
 

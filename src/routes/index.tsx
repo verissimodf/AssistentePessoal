@@ -16,7 +16,7 @@ import {
 } from "@/lib/bridge";
 import { formatConversationDate, getStoredActive, newClientMsgId, pickActiveConversation, storeActive } from "@/lib/conversations";
 import { speechLang, useI18n } from "@/lib/i18n";
-import { listenOnce, speak, useWake } from "@/lib/voice";
+import { listenOnce, speak, stopSpeaking, useWake } from "@/lib/voice";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -120,6 +120,21 @@ export function ChatPage() {
     setSheetOpen(false);
   };
 
+  const abortCtrlRef = useRef<AbortController | null>(null);
+
+  const handleBargeIn = () => {
+    if (state === "speaking") {
+      stopSpeaking();
+      abortCtrlRef.current?.abort();
+      abortCtrlRef.current = null;
+      api("/api/router/telemetry/voice", {
+        method: "POST",
+        body: JSON.stringify({ isBargeIn: true }),
+      }).catch(() => {});
+      voice();
+    }
+  };
+
   const send = async (text: string, viaVoice = false, retry?: Msg) => {
     const content = text.trim();
     if (!content || state === "thinking") return;
@@ -143,7 +158,15 @@ export function ChatPage() {
       }]);
       if (viaVoice) {
         setState("speaking");
-        await speak(r.reply, sl, settings?.voice?.tts || "browser", setLevel);
+        const ac = new AbortController();
+        abortCtrlRef.current = ac;
+        const voiceStart = performance.now();
+        await speak(r.reply, sl, settings?.voice?.tts || "browser", setLevel, ac.signal);
+        const voiceLatency = Math.round(performance.now() - voiceStart);
+        api("/api/router/telemetry/voice", {
+          method: "POST",
+          body: JSON.stringify({ latencyMs: voiceLatency, isBargeIn: false }),
+        }).catch(() => {});
       }
     } catch {
       // A mensagem do usuário foi preservada no servidor; oferecer retry com o MESMO id (sem duplicar).
@@ -168,10 +191,16 @@ export function ChatPage() {
 
   const v = settings?.voice;
   const mic = useWake({
-    enabled: wakeOn && state === "idle",
-    clap: !!v?.wake?.clap, word: !!v?.wake?.word, hotkey: !!v?.wake?.hotkey,
-    sensitivity: v?.sensitivity ?? 6, name: settings?.general?.agentName || "Jarvis", lang: sl,
+    enabled: wakeOn && (state === "idle" || state === "speaking"),
+    clap: !!v?.wake?.clap,
+    word: !!v?.wake?.word,
+    hotkey: !!v?.wake?.hotkey,
+    sensitivity: v?.sensitivity ?? 6,
+    name: settings?.general?.agentName || "Jarvis",
+    lang: sl,
+    isSpeaking: state === "speaking",
     onWake: voice,
+    onBargeIn: handleBargeIn,
   });
 
   const decide = async (id: string, approve: boolean, i: number, k: number) => {

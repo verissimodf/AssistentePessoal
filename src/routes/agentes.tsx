@@ -13,6 +13,7 @@ import {
   Layers,
   ArrowRight,
   Terminal,
+  Mic,
 } from "lucide-react";
 import { PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -362,6 +363,13 @@ export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = 
                       {(routerStatus.telemetry?.totalFallbacks ?? 0) === 0
                         ? "0 (nominal)"
                         : `${routerStatus.telemetry?.totalFallbacks} acionado(s)`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 bg-background/60 border border-border/60 rounded px-2.5 py-1">
+                    <Mic className="h-3 w-3 text-cyan-400" />
+                    <span className="text-muted-foreground">Barge-In:</span>
+                    <span className="font-mono font-semibold text-cyan-400">
+                      {routerStatus.telemetry?.voice?.bargeInCount ?? 0}
                     </span>
                   </div>
                 </div>
