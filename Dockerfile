@@ -59,6 +59,7 @@ ARG BUILD_TIME=unknown
 ENV NODE_ENV=production
 # HOME gravável pelo uid 1000 e estável: os agentes CLI recusam criar helpers sob /tmp.
 ENV HOME=/home/node
+ENV JARVIS_DATA_DIR=/app/data
 WORKDIR /app
 
 # init mínimo (tini) como PID 1: recolhe processos filhos e repassa sinais.
@@ -91,7 +92,8 @@ LABEL org.opencontainers.image.revision="$GIT_SHA" \
 COPY --from=build /app/.output ./.output
 # Entrada do container + ponte de voz.
 COPY scripts/container-entrypoint.sh scripts/voice-adapter.mjs ./scripts/
-RUN chmod +x scripts/container-entrypoint.sh
+RUN chmod +x scripts/container-entrypoint.sh \
+ && mkdir -p /app/data && chown -R 1000:1000 /app/data /home/node
 
 # Não-root por construção: vale mesmo fora do Compose (sem `--user`).
 # O uid/gid 1000 casa com o dono de `data/` no host, preservando SQLite/WAL.

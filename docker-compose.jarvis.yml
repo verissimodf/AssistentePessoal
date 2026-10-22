@@ -32,7 +32,7 @@ services:
     # Tag dirigida pela release (P0.3.1): um deploy exporta `IMAGE_TAG` (ex.: 1.0.0) para a nova
     # imagem NÃO sobrescrever a tag da versão em produção — que fica disponível como rollback.
     # Por omissão mantém a tag atual para não partir fluxos que correm `compose up --build` sem env.
-    image: assistente-pessoal:${IMAGE_TAG:-1.2.2-gigabrain1}
+    image: assistente-pessoal:${IMAGE_TAG:-1.1.0}
     container_name: assistente-pessoal
     restart: unless-stopped
     # Não-root vem da própria imagem (`USER 1000:1000`), não duplicado aqui.
@@ -43,6 +43,7 @@ services:
       - ALL
     environment:
       NODE_ENV: production
+      JARVIS_DATA_DIR: "/app/data"
       JARVIS_PORT: "7777"
       PANEL_PORT: "8090"
       # Ponte de voz -> xtts-service pela rede Docker.

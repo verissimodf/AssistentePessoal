@@ -121,6 +121,38 @@ export async function api<T = unknown>(path: string, init: RequestInit = {}): Pr
   return (ct.includes("json") ? r.json() : r.blob()) as Promise<T>;
 }
 
+// ---------- documents & hybrid RAG ----------
+export type Doc = {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  created_at: string;
+  chunk_count?: number;
+  rag_status?: "hybrid" | "lexical_only" | "lexical" | string;
+};
+
+export type DocChunk = {
+  id: string;
+  document_id: string;
+  chunk_index: number;
+  content: string;
+  token_estimate: number;
+  has_embedding?: number | boolean;
+  embedding_model?: string | null;
+  created_at?: string;
+};
+
+export async function listDocuments(): Promise<Doc[]> {
+  if (await ping()) return api<Doc[]>("/api/documents");
+  return [];
+}
+
+export async function getDocumentChunks(id: string): Promise<DocChunk[]> {
+  if (await ping()) return api<DocChunk[]>(`/api/documents/${encodeURIComponent(id)}/chunks`);
+  return [];
+}
+
 // ---------- generic collections (server first, demo fallback) ----------
 export type Memory = { id: string; content: string; tags: string; created_at: string };
 export type Agent = {
