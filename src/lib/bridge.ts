@@ -400,3 +400,75 @@ export async function loadAudit(): Promise<AuditRow[] | null> {
   if (!(await ping())) return null;
   try { return await api<AuditRow[]>("/api/audit"); } catch { return null; }
 }
+
+// ---------- skills & global hub ----------
+export type SkillSummary = {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  category: string;
+  path?: string;
+  score?: number;
+};
+
+export type RouterStatus = {
+  activeAgent: string;
+  primary: {
+    provider: string;
+    model: string;
+    baseUrl?: string;
+  };
+  fallbacks: Array<{
+    provider: string;
+    model: string;
+  }>;
+  totalProviders: number;
+  resilientFallbackEnabled: boolean;
+};
+
+export type SkillsResponse = {
+  total: number;
+  totalCatalog: number;
+  categories: string[];
+  skills: SkillSummary[];
+  routerStatus?: RouterStatus;
+};
+
+export type SkillDetail = {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  path: string;
+  content: string;
+};
+
+export async function listSkills(query?: {
+  q?: string | undefined;
+  category?: string | undefined;
+  limit?: number | undefined;
+}): Promise<SkillsResponse | null> {
+  if (!(await ping())) return null;
+  const params = new URLSearchParams();
+  if (query?.q) params.set("q", query.q);
+  if (query?.category) params.set("category", query.category);
+  if (query?.limit !== undefined && query?.limit !== null) params.set("limit", String(query.limit));
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  try {
+    return await api<SkillsResponse>(`/api/skills${qs}`);
+  } catch {
+    return null;
+  }
+}
+
+
+export async function getSkillDetail(id: string): Promise<SkillDetail | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<SkillDetail>(`/api/skills/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+

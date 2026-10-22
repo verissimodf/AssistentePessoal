@@ -267,3 +267,41 @@ export async function testProvider(id, adminId) {
     return { ok: false, detail: e.message };
   }
 }
+
+/**
+ * Status do Multi-Provider Router e sua cadeia de contingência.
+ */
+export function getRouterStatus(adminId = null) {
+  const s = getSettings(adminId);
+  const agent = resolveAgent(adminId, null, s.general?.activeAgentId) || DEFAULT_AGENT;
+  const primaryCfg = providerConfig(agent.provider, adminId);
+  const primaryModel = agent.model || primaryCfg.model;
+
+  const otherProviders = Object.keys(s.providers || {}).filter(
+    (pId) => pId !== agent.provider && (s.providers[pId]?.enabled || s.providers[pId]?.apiKey)
+  );
+  if (agent.provider !== "ollama" && !otherProviders.includes("ollama")) {
+    otherProviders.push("ollama");
+  }
+
+  const fallbacks = otherProviders.map((fbId) => {
+    const fbCfg = providerConfig(fbId, adminId);
+    return {
+      provider: fbId,
+      model: fbCfg.model || (fbId === "ollama" ? "llama3.1" : ""),
+    };
+  });
+
+  return {
+    activeAgent: agent.name || "Jarvis",
+    primary: {
+      provider: agent.provider,
+      model: primaryModel,
+      baseUrl: primaryCfg.baseUrl,
+    },
+    fallbacks,
+    totalProviders: 1 + fallbacks.length,
+    resilientFallbackEnabled: true,
+  };
+}
+

@@ -120,12 +120,17 @@ export function assertSafePath(targetPath, baseDir = GLOBAL_SKILLS_DIR) {
   if (typeof targetPath !== "string" || !targetPath.trim()) {
     throw new Error("caminho_invalido");
   }
-  if (targetPath.includes("\0")) {
+  let clean = targetPath;
+  try {
+    clean = decodeURIComponent(clean);
+  } catch {}
+
+  if (clean.includes("\0")) {
     throw new Error("path_traversal_detected");
   }
 
   const root = resolve(baseDir);
-  const target = resolve(root, targetPath);
+  const target = resolve(root, clean);
 
   // Deve iniciar exatamente com a raiz normalizada seguida do separador de caminho (ou ser a própria raiz)
   if (!target.startsWith(root + sep) && target !== root) {
@@ -143,10 +148,15 @@ export function loadSkill(identifier, baseDir = GLOBAL_SKILLS_DIR) {
     throw new Error("skill_identifier_required");
   }
 
-  const clean = identifier.trim();
+  let clean = identifier.trim();
+  try {
+    clean = decodeURIComponent(clean).trim();
+  } catch {}
+
+  const isPathLike = clean.includes("..") || clean.includes("\0") || clean.startsWith("/") || clean.startsWith("\\") || clean.includes("/") || clean.includes("\\");
 
   // Verifica proativamente tentativas de Path Traversal antes de qualquer busca
-  if (clean.includes("..") || clean.includes("\0") || clean.startsWith("/") || clean.startsWith("\\")) {
+  if (isPathLike) {
     assertSafePath(clean, baseDir);
   }
 
@@ -158,11 +168,11 @@ export function loadSkill(identifier, baseDir = GLOBAL_SKILLS_DIR) {
     (s) => s.id?.toLowerCase() === clean.toLowerCase() || s.name?.toLowerCase() === clean.toLowerCase()
   );
 
-  // 1.1 Se não encontrou exato, busca por prefixo/início do ID ou substring
-  if (!skill) {
+  // 1.1 Se não encontrou exato e não é um caminho com separadores, busca por prefixo/início do ID ou substring
+  if (!skill && !isPathLike) {
     skill = skills.find((s) => s.id?.toLowerCase().startsWith(clean.toLowerCase()));
   }
-  if (!skill) {
+  if (!skill && !isPathLike) {
     skill = skills.find((s) => s.id?.toLowerCase().includes(clean.toLowerCase()));
   }
 
@@ -170,6 +180,14 @@ export function loadSkill(identifier, baseDir = GLOBAL_SKILLS_DIR) {
   let resolvedFilePath = "";
   if (skill) {
     resolvedFilePath = assertSafePath(skill.path || `skills/${skill.id}/SKILL.md`, baseDir);
+  } else if (isPathLike) {
+    try {
+      const candidate = clean.endsWith(".md") ? clean : `skills/${clean}/SKILL.md`;
+      resolvedFilePath = assertSafePath(candidate, baseDir);
+    } catch (e) {
+      if (e.message === "path_traversal_detected") throw e;
+      throw new Error("skill_not_found");
+    }
   } else {
     // Trata como identificador ou busca parcial
     const matches = matchSkillsForPrompt(clean, 1, baseDir);
@@ -188,6 +206,7 @@ export function loadSkill(identifier, baseDir = GLOBAL_SKILLS_DIR) {
     }
   }
 
+
   if (!existsSync(resolvedFilePath)) {
     throw new Error("skill_not_found");
   }
@@ -202,3 +221,7 @@ export function loadSkill(identifier, baseDir = GLOBAL_SKILLS_DIR) {
     content,
   };
 }
+
+export { sanitizeSkillFrontmatter } from "../scripts/setup-global-skills.mjs";
+export { getRouterStatus } from "./llm.js";
+

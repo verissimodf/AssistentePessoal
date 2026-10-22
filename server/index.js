@@ -46,7 +46,8 @@ import {
   cancelPurge,
   listPurgeJobs,
 } from "./ownership.js";
-import { runAgent, testProvider, cancelRun } from "./llm.js";
+import { runAgent, testProvider, cancelRun, getRouterStatus } from "./llm.js";
+import { getCatalog, listSkills, matchSkillsForPrompt, loadSkill } from "./skills.js";
 import { collectDiagnostics } from "./diagnostics.js";
 import { callTool, reaSlashCommand } from "./tools.js";
 import { remember, recall, resolveApproval } from "./tools.js";
@@ -475,6 +476,88 @@ route("DELETE", "/api/documents/:id", "documents:write", ({ params, principal })
   if (!deleteDocument(me(principal), params.id).ok) notFound();
   return { ok: true };
 });
+
+// ---------- skills (Hub Global de Skills: catalog, search & injection) ----------
+route("GET", "/api/skills", "skills:read", ({ query, principal }) => {
+  const q = (query.get("q") || "").trim();
+  const category = (query.get("category") || "").trim();
+  const rawLimit = query.get("limit");
+  const limit = rawLimit !== null && rawLimit !== "" ? Number(rawLimit) : undefined;
+
+  const catalog = getCatalog();
+  const allSkills = Array.isArray(catalog?.skills) ? catalog.skills : [];
+  const categories = [...new Set(allSkills.map((s) => s.category).filter(Boolean))].sort();
+
+  let results = [];
+  if (q) {
+    const scoredMatches = matchSkillsForPrompt(q, limit || 100);
+    const seenIds = new Set(scoredMatches.map((m) => m.id));
+    results = [...scoredMatches];
+
+    // Fallback de correspondência por substring para capturar buscas literais exatas
+    const qLower = q.toLowerCase();
+    for (const s of allSkills) {
+      if (!seenIds.has(s.id)) {
+        const idLower = (s.id || "").toLowerCase();
+        const nameLower = (s.name || "").toLowerCase();
+        const descLower = (s.description || "").toLowerCase();
+        const tagsArr = Array.isArray(s.tags) ? s.tags.map((t) => t.toLowerCase()) : [];
+        if (
+          idLower.includes(qLower) ||
+          nameLower.includes(qLower) ||
+          descLower.includes(qLower) ||
+          tagsArr.some((t) => t.includes(qLower))
+        ) {
+          results.push({
+            id: s.id,
+            name: s.name,
+            description: s.description,
+            tags: s.tags || [],
+            category: s.category || "general",
+            path: s.path,
+          });
+          seenIds.add(s.id);
+        }
+      }
+    }
+  } else {
+    results = listSkills({ category: category || undefined });
+  }
+
+  if (category && q) {
+    const catLower = category.toLowerCase();
+    results = results.filter((s) => (s.category || "").toLowerCase() === catLower);
+  }
+
+  if (limit && Number.isInteger(limit) && limit > 0) {
+    results = results.slice(0, limit);
+  }
+
+  const routerStatus = getRouterStatus(me(principal));
+
+  return {
+    total: results.length,
+    totalCatalog: catalog?.totalSkills || allSkills.length,
+    categories,
+    skills: results,
+    routerStatus,
+  };
+});
+
+route("GET", "/api/skills/:id", "skills:read", ({ params }) => {
+  try {
+    return loadSkill(params.id);
+  } catch (err) {
+    if (err.message === "path_traversal_detected" || err.message === "caminho_invalido") {
+      throw new AuthError(400, "invalid_skill_path");
+    }
+    if (err.message === "skill_not_found" || err.message === "skill_identifier_required") {
+      throw new AuthError(404, "skill_not_found");
+    }
+    throw err;
+  }
+});
+
 
 for (const [name, store, type] of [
   ["agents", agents, "agent"],

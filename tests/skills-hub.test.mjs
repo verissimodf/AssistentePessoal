@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import os from "node:os";
+import yaml from "js-yaml";
 
 import {
   listSkills,
@@ -14,12 +15,17 @@ import {
   assertSafePath,
   getCatalog,
   GLOBAL_SKILLS_DIR,
+  sanitizeSkillFrontmatter,
+  getRouterStatus,
 } from "../server/skills.js";
+import { routeTable, createApp } from "../server/index.js";
+import { AuthError } from "../server/auth.js";
 import { callTool, TOOL_DEFS } from "../server/tools.js";
 import { TOOL_SCOPES } from "../server/auth.js";
 import { runAgent } from "../server/llm.js";
-import { db } from "../server/db.js";
+import { db, auth } from "../server/db.js";
 import { updateSettings } from "../server/settings.js";
+
 
 // Cria fixture temporária isolada para testes herméticos
 function createTempSkillsHub() {
@@ -239,3 +245,151 @@ test("resiliência multi-provider: runAgent realiza fallback transparente e audi
     globalThis.fetch = originalFetch;
   }
 });
+
+test("sanitizador de frontmatter: corrige colons não escapados, escalares multilinhas, BOM e ausência de frontmatter", () => {
+  // Caso 1: Dois-pontos não escapados no valor escalar
+  const rawWithColon = `---
+name: google-ads-api-account-diagnostics
+description: Diagnostic tool for account: issues, recommendations and metrics
+compatibility: Google Ads MCP Server (tools: search, list)
+---
+# Diagnostics
+Instruções aqui...`;
+
+  const sanitized1 = sanitizeSkillFrontmatter(rawWithColon);
+  assert.ok(sanitized1.startsWith("---"));
+  const fm1 = sanitized1.split(/---\r?\n/)[1];
+  const parsed1 = yaml.load(fm1);
+  assert.equal(parsed1.name, "google-ads-api-account-diagnostics");
+  assert.equal(parsed1.description, "Diagnostic tool for account: issues, recommendations and metrics");
+  assert.equal(parsed1.compatibility, "Google Ads MCP Server (tools: search, list)");
+
+  // Caso 2: Linha de continuação em escalar plain com dois pontos
+  const rawMultiline = `---
+name: google-mobile-ads-android-migrate-to-next-gen
+description: Migrates from Google Mobile Ads (GMA) SDK v23 to Next-Gen SDK v24
+  for Android: covers dependency changes, initialization, and format migrations
+tags: [google, ads, android]
+---
+# Content`;
+
+  const sanitized2 = sanitizeSkillFrontmatter(rawMultiline);
+  const fm2 = sanitized2.split(/---\r?\n/)[1];
+  const parsed2 = yaml.load(fm2);
+  assert.ok(parsed2.description.includes("for Android: covers dependency changes"));
+  assert.deepEqual(parsed2.tags, ["google", "ads", "android"]);
+
+  // Caso 3: Arquivo com UTF-8 BOM
+  const rawWithBom = "\uFEFF---\nname: bom-skill\ndescription: Teste com BOM\n---\n# BOM Test";
+  const sanitized3 = sanitizeSkillFrontmatter(rawWithBom);
+  assert.equal(sanitized3.charCodeAt(0), 0x2d, "Não deve conter BOM inicial");
+  const fm3 = sanitized3.split(/---\r?\n/)[1];
+  const parsed3 = yaml.load(fm3);
+  assert.equal(parsed3.name, "bom-skill");
+
+  // Caso 4: Sem frontmatter inicial
+  const rawNoFm = "# Skill Sem Frontmatter\nEsta skill foi criada sem bloco YAML.";
+  const sanitized4 = sanitizeSkillFrontmatter(rawNoFm);
+  assert.ok(sanitized4.startsWith("---"));
+  const fm4 = sanitized4.split(/---\r?\n/)[1];
+  const parsed4 = yaml.load(fm4);
+  assert.ok(parsed4.name);
+  assert.ok(parsed4.description);
+});
+
+test("multi-provider router: getRouterStatus reporta primário e contingências ativas", () => {
+  const status = getRouterStatus();
+  assert.ok(status.primary, "Deve retornar o provedor primário");
+  assert.ok(typeof status.primary.provider === "string");
+  assert.ok(Array.isArray(status.fallbacks), "Deve listar fallbacks");
+  assert.equal(typeof status.totalProviders, "number");
+  assert.equal(status.resilientFallbackEnabled, true);
+});
+
+test("rotas de api /api/skills: inventário, buscas, filtros e proteção de caminho", async () => {
+  const routes = routeTable();
+  const skillsListRoute = routes.find((r) => r.method === "GET" && r.pattern === "/api/skills");
+  const skillGetRoute = routes.find((r) => r.method === "GET" && r.pattern === "/api/skills/:id");
+
+  assert.ok(skillsListRoute, "Rota GET /api/skills deve existir");
+  assert.equal(skillsListRoute.access, "skills:read");
+  assert.ok(skillGetRoute, "Rota GET /api/skills/:id deve existir");
+  assert.equal(skillGetRoute.access, "skills:read");
+
+  // Garante admin existente e cria uma sessão válida para autenticação da API
+  let adminRow = db.prepare("SELECT id FROM admins WHERE active = 1").get();
+  if (!adminRow) {
+    const adminId = "admin-skills-" + Date.now();
+    const uname = "skills_adm_" + Date.now();
+    db.prepare("INSERT INTO admins (id, username, password_hash, created_at, active) VALUES (?,?,?,?,1)").run(
+      adminId,
+      uname,
+      "dummyhash",
+      new Date().toISOString()
+    );
+    adminRow = { id: adminId };
+  }
+
+  const sid = "jss_test_" + Math.random().toString(36).slice(2);
+  const sidHash = (await import("node:crypto")).createHash("sha256").update(sid).digest("hex");
+  const now = Date.now();
+  db.prepare(
+    "INSERT INTO sessions (id_hash, admin_id, csrf, created_at, last_seen, expires_at, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  ).run(sidHash, adminRow.id, "csrf-test", now, now, now + 12 * 3600 * 1000, "test-runner");
+
+  const server = createApp();
+  await new Promise((r) => server.listen(0, "127.0.0.1", r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+
+  const apiReq = (path) =>
+    fetch(`${base}${path}`, {
+      headers: {
+        cookie: `jarvis_sid=${sid}`,
+      },
+    });
+
+
+  try {
+    // 1. Listagem completa
+    const listResp = await apiReq("/api/skills");
+    assert.equal(listResp.status, 200);
+    const listRes = await listResp.json();
+    assert.ok(typeof listRes.total === "number");
+    assert.ok(typeof listRes.totalCatalog === "number");
+    assert.ok(Array.isArray(listRes.categories));
+    assert.ok(Array.isArray(listRes.skills));
+    assert.ok(listRes.routerStatus);
+
+    // 2. Busca por termo
+    const searchResp = await apiReq("/api/skills?q=threejs");
+    assert.equal(searchResp.status, 200);
+    const searchRes = await searchResp.json();
+    assert.ok(searchRes.skills.length > 0);
+    assert.ok(searchRes.skills.some((s) => s.id.toLowerCase().includes("threejs")));
+
+    // 3. Obter skill existente
+    const firstSkillId = searchRes.skills[0].id;
+    const detailResp = await apiReq(`/api/skills/${encodeURIComponent(firstSkillId)}`);
+    assert.equal(detailResp.status, 200);
+    const detailRes = await detailResp.json();
+    assert.equal(detailRes.id, firstSkillId);
+    assert.ok(typeof detailRes.content === "string");
+    assert.ok(detailRes.content.length > 0);
+
+    // 4. Skill inexistente retorna 404
+    const notFoundResp = await apiReq("/api/skills/skill_completamente_inexistente_9999");
+    assert.equal(notFoundResp.status, 404);
+    const notFoundJson = await notFoundResp.json();
+    assert.equal(notFoundJson.error, "skill_not_found");
+
+    // 5. Tentativa de Path Traversal retorna 400
+    const traversalResp = await apiReq("/api/skills/..%2F..%2Fwin.ini");
+    assert.equal(traversalResp.status, 400);
+    const traversalJson = await traversalResp.json();
+    assert.equal(traversalJson.error, "invalid_skill_path");
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
+});
+
+
