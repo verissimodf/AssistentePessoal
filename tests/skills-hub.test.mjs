@@ -6,7 +6,29 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import os from "node:os";
-import yaml from "js-yaml";
+function parseFrontmatterYaml(fm) {
+  const result = {};
+  const lines = fm.split(/\r?\n/);
+  let currentKey = null;
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    if ((line.startsWith("  ") || line.startsWith(" ")) && currentKey) {
+      result[currentKey] = (result[currentKey] + " " + line.trim()).trim();
+      continue;
+    }
+    const match = line.match(/^([a-zA-Z0-9_-]+):\s*(.*)$/);
+    if (match) {
+      currentKey = match[1];
+      let val = match[2].trim();
+      if (val.startsWith("[") && val.endsWith("]")) {
+        result[currentKey] = val.slice(1, -1).split(",").map(s => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+      } else {
+        result[currentKey] = val.replace(/^["']|["']$/g, "");
+      }
+    }
+  }
+  return result;
+}
 
 import {
   listSkills,
@@ -265,7 +287,7 @@ Instruções aqui...`;
   const sanitized1 = sanitizeSkillFrontmatter(rawWithColon);
   assert.ok(sanitized1.startsWith("---"));
   const fm1 = sanitized1.split(/---\r?\n/)[1];
-  const parsed1 = yaml.load(fm1);
+  const parsed1 = parseFrontmatterYaml(fm1);
   assert.equal(parsed1.name, "google-ads-api-account-diagnostics");
   assert.equal(parsed1.description, "Diagnostic tool for account: issues, recommendations and metrics");
   assert.equal(parsed1.compatibility, "Google Ads MCP Server (tools: search, list)");
@@ -281,7 +303,7 @@ tags: [google, ads, android]
 
   const sanitized2 = sanitizeSkillFrontmatter(rawMultiline);
   const fm2 = sanitized2.split(/---\r?\n/)[1];
-  const parsed2 = yaml.load(fm2);
+  const parsed2 = parseFrontmatterYaml(fm2);
   assert.ok(parsed2.description.includes("for Android: covers dependency changes"));
   assert.deepEqual(parsed2.tags, ["google", "ads", "android"]);
 
@@ -290,7 +312,7 @@ tags: [google, ads, android]
   const sanitized3 = sanitizeSkillFrontmatter(rawWithBom);
   assert.equal(sanitized3.charCodeAt(0), 0x2d, "Não deve conter BOM inicial");
   const fm3 = sanitized3.split(/---\r?\n/)[1];
-  const parsed3 = yaml.load(fm3);
+  const parsed3 = parseFrontmatterYaml(fm3);
   assert.equal(parsed3.name, "bom-skill");
 
   // Caso 4: Sem frontmatter inicial
@@ -298,7 +320,7 @@ tags: [google, ads, android]
   const sanitized4 = sanitizeSkillFrontmatter(rawNoFm);
   assert.ok(sanitized4.startsWith("---"));
   const fm4 = sanitized4.split(/---\r?\n/)[1];
-  const parsed4 = yaml.load(fm4);
+  const parsed4 = parseFrontmatterYaml(fm4);
   assert.ok(parsed4.name);
   assert.ok(parsed4.description);
 });

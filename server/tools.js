@@ -92,8 +92,8 @@ export const runShell = (command, timeout = 60000) =>
     child.stderr?.on("data", (c) => { errOut += collect(c); });
     child.on("error", (e) => finish("error", null, `\n[erro] ${e.message}`));
     child.on("close", (code) => {
-      if (overflow) return finish("overflow", code);
-      if (timedOut) return finish("timeout", code, `\n[erro] tempo limite excedido (${timeout} ms)`);
+      if (overflow) return finish("overflow", null);
+      if (timedOut) return finish("timeout", null, `\n[erro] tempo limite excedido (${timeout} ms)`);
       finish(code === 0 ? "completed" : "failed", code, code === 0 ? "" : `\n[erro] exit ${code}`);
     });
   });
