@@ -44,7 +44,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const args = process.argv.slice(2);
-const targetPath = (args.find((a) => !a.startsWith("-") && a !== "analyze-javascript-application") || "").replace(/\\\\/g, "/");
+const targetPath = args.find((a) => !a.startsWith("-") && a !== "analyze-javascript-application") || "";
 
 let jsCount = 0;
 let ipcCount = 0;
