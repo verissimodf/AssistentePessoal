@@ -151,12 +151,16 @@ export function reaResolvePath(input, cfg) {
   const normalized = raw.replace(/\\/g, "/");
   const isAbs = normalized.startsWith("/") || /^[a-zA-Z]:\//.test(normalized);
   if (!isAbs) return { ok: false, reason: "O caminho precisa ser absoluto (a partir de uma raiz permitida)." };
-  if (normalized.includes("..") || normalized.includes("//")) return { ok: false, reason: "Traversal de caminho (..) não é permitido." };
-  if (!REA_PATH_SAFE.test(raw)) return { ok: false, reason: "O caminho contém caractere fora do conjunto permitido." };
+  if (normalized.split("/").includes("..") || normalized.includes("//")) return { ok: false, reason: "Traversal de caminho (..) não é permitido." };
+  if (!REA_PATH_SAFE.test(normalized)) return { ok: false, reason: "O caminho contém caractere fora do conjunto permitido." };
   const roots = parseReaRoots(cfg);
-  if (!roots.some((root) => normalized === root || normalized.startsWith(root.endsWith("/") ? root : `${root}/`))) {
-    return { ok: false, reason: `O caminho está fora das raízes permitidas (${roots.join(", ")}). Copie o alvo para dentro delas e repita.` };
-  }
+  const fold = (value) => process.platform === "win32" ? value.toLowerCase() : value;
+  const isWithinRoot = roots.some((root) => {
+    const r = fold(root.replace(/\\/g, "/").replace(/\/$/, ""));
+    const p = fold(normalized);
+    return p === r || p.startsWith(`${r}/`);
+  });
+  if (!isWithinRoot) return { ok: false, reason: `O caminho está fora das raízes permitidas (${roots.join(", ")}). Copie o alvo para dentro delas e repita.` };
   return { ok: true, abs: normalized, roots };
 }
 
