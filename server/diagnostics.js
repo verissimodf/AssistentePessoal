@@ -15,6 +15,7 @@ import { SCOPES, ADMIN_ONLY, TOOL_SCOPES } from "./auth.js";
 import { TOOL_DEFS } from "./tools.js";
 import { DEFAULT_AGENT } from "./llm.js";
 import { publicSettings } from "./settings.js";
+import { getCatalogStatus } from "./skills.js";
 import { ownedIds } from "./ownership.js";
 
 export const ESTADOS = [
@@ -422,6 +423,23 @@ export function buildInventory(ctx) {
     [],
     "alta",
     { versaoReportada: ctx.version || null, commit: ctx.commit || null, buildTime: ctx.buildTime || null, node: ctx.nodeVersion || null, uptimeSegundos: Math.round(ctx.uptimeSeconds || 0) },
+  ));
+
+  // P1-C: Skills Hub — estado real (provisionado, ausente ou inválido), com origem e versão.
+  const sk = ctx.skills || {};
+  const skOk = !!(sk.present && sk.total > 0);
+  itens.push(mkItem(
+    "servico:skills-hub", "servico", "Hub Global de Skills",
+    skOk ? "OPERACIONAL" : "INDISPONÍVEL",
+    { implementado: true, habilitado: true, testado: skOk },
+    [
+      { metodo: "codigo", ref: "scripts/setup-global-skills.mjs, server/skills.js", data: null, nota: "provisionamento offline e determinístico (modo builtin)." },
+      { metodo: "teste", ref: "tests/skills-provision.test.mjs", data: null, nota: "suíte referenciada." },
+      { metodo: "execucao", ref: "catalog.json (leitura somente)", data: agora, nota: skOk ? "catálogo encontrado." : `catálogo indisponível (${sk.reason || "ausente"}).` },
+    ],
+    skOk ? [] : ["sem catálogo: /api/skills responde vazio até o provisionamento ocorrer."],
+    "alta",
+    { diretorio: sk.dir || null, total: sk.total ?? 0, versao: sk.version || null, origem: sk.source || null, motivo: sk.reason || null },
   ));
 
   if (ctx.bancoOk) {
@@ -897,6 +915,7 @@ export function collectDiagnostics({ adminId, version = null, commit = null, bui
   }
   const comms = publico.comms && typeof publico.comms === "object" ? publico.comms : {};
   const telegram = comms.telegram && typeof comms.telegram === "object" ? comms.telegram : {};
+  const skillsStatus = getCatalogStatus();
   const contasAtivas = Object.entries(comms).filter(
     ([k, v]) => k !== "telegram" && v && typeof v === "object" && v.enabled,
   ).length;
@@ -917,6 +936,8 @@ export function collectDiagnostics({ adminId, version = null, commit = null, bui
       contasAtivas,
     },
     voice: { habilitado: true, tts: typeof publico.voice?.tts === "string" ? publico.voice.tts : null },
+    // P1-C: origem/estado reais do Skills Hub (ausente, inválido ou provisionado).
+    skills: skillsStatus,
     providers,
     integracoes,
     expostas: [...todas],

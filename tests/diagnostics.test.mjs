@@ -40,6 +40,7 @@ function mkCtx(over = {}) {
     telegram: { enabled: true, hasKey: true },
     email: { transporte: "mock", contasAtivas: 0 },
     voice: { habilitado: true, tts: "browser" },
+    skills: { dir: "/tmp/hub", present: true, total: 4, version: "1.2.1-builtin", source: "builtin", reason: null },
     providers: { ollama: { enabled: true, hasKey: false, model: "qwen2.5:7b", endpoint: "interno" } },
     integracoes: { context7: { enabled: true, hasKey: false, endpoint: "interno" } },
     expostas: [
@@ -89,11 +90,22 @@ test("inventário de referência valida e cobre ferramentas, acessos, automaçõ
   const ids = new Set(inv.itens.map((i) => i.id));
   for (const t of Object.keys(TOOL_DEFS)) assert.ok(ids.has(`tool:${t}`), `falta tool:${t}`);
   for (const id of [
-    "servico:api", "servico:banco", "acesso:sessao-admin", "acesso:token-servico",
+    "servico:api", "servico:banco", "servico:skills-hub", "acesso:sessao-admin", "acesso:token-servico",
     "auto:fila-aprovacoes", "auto:expurgo-drec", "dados:memorias", "dados:auditoria",
     "integracao:email-envio", "integracao:voz",
   ]) assert.ok(ids.has(id), `falta ${id}`);
   assert.equal(inv.resumo.saude, "ok");
+});
+
+test("skills hub: catálogo ausente marca INDISPONÍVEL com o motivo (transparência, não finge disponibilidade)", () => {
+  const inv = buildInventory(
+    mkCtx({ skills: { dir: "/x", present: false, total: 0, version: null, source: null, reason: "catalog_missing" } }),
+  );
+  const item = porId(inv, "servico:skills-hub");
+  assert.equal(item.estado, "INDISPONÍVEL");
+  assert.equal(item.detalhes.motivo, "catalog_missing");
+  assert.ok(item.limitacoes.some((l) => /sem catálogo/i.test(l)));
+  assert.notEqual(inv.resumo.saude, "ok", "hub vazio degrada a saúde do diagnóstico");
 });
 
 // ---------------------------------------------------------------------------
