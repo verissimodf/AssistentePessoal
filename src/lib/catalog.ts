@@ -1,5 +1,5 @@
 export const PROVIDERS = [
-  { id: "ollama", name: "Ollama (local)", baseUrl: "http://localhost:11434/v1", model: "llama3.1", needsKey: false },
+  { id: "ollama", name: "Ollama (local)", baseUrl: "http://localhost:11434/v1", model: "qwen2.5:7b", needsKey: false },
   { id: "anthropic", name: "Anthropic", baseUrl: "https://api.anthropic.com", model: "claude-sonnet-4-5", needsKey: true },
   { id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o", needsKey: true },
   { id: "huggingface", name: "HuggingFace", baseUrl: "https://router.huggingface.co/v1", model: "meta-llama/Llama-3.1-8B-Instruct", needsKey: true },

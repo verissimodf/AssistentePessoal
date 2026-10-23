@@ -211,7 +211,7 @@ const seed: Record<string, unknown[]> = {
     { id: "m2", content: "Reunião semanal da equipe toda segunda às 9h.", tags: "agenda", created_at: new Date().toISOString() },
   ],
   agents: [
-    { id: "jarvis", name: "Jarvis", instructions: "Você é J.A.R.V.I.S., assistente pessoal leal, preciso e elegante. Responda no idioma do usuário.", provider: "ollama", model: "llama3.1", tools: ["web_search", "remember", "recall", "run_command"], active: true },
+    { id: "jarvis", name: "Jarvis", instructions: "Você é J.A.R.V.I.S., assistente pessoal leal, preciso e elegante. Responda no idioma do usuário.", provider: "ollama", model: "qwen2.5:7b", tools: ["web_search", "remember", "recall", "run_command"], active: true },
   ],
   bots: [
     { id: "b1", name: "Resumo matinal", goal: "Pesquise as principais notícias de tecnologia e me envie um resumo no Telegram.", agent_id: "jarvis", trigger_type: "daily", trigger_value: "08:00", autonomy: "safe", max_steps: 8, enabled: true },

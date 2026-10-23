@@ -36,11 +36,14 @@ export function decrypt(value) {
 
 export const isSecretField = (k) => /key|token|password|secret/i.test(k);
 
+/** Modelo de chat padrão para o Ollama local: validado no benchmark de P2-B (5/5 casos). */
+export const DEFAULT_OLLAMA_MODEL = "qwen2.5:7b";
+
 // ---------- classification (D5) ----------
 export const PERSONAL_DEFAULTS = {
   general: { agentName: "Jarvis", language: "pt" },
   providers: {
-    ollama: { enabled: true, baseUrl: "http://ollama-llm:11434/v1", model: "llama3.1" },
+    ollama: { enabled: true, baseUrl: "http://ollama-llm:11434/v1", model: DEFAULT_OLLAMA_MODEL },
   },
   comms: {},
   voice: {

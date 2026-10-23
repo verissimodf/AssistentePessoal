@@ -1,6 +1,6 @@
 // Model access for every provider plus the agent tool loop.
 // Anthropic uses its native Messages API; all other providers use the OpenAI-compatible API.
-import { getSettings } from "./settings.js";
+import { getSettings, DEFAULT_OLLAMA_MODEL } from "./settings.js";
 import { agents, uid, audit } from "./db.js";
 import { ownedIds, owns } from "./ownership.js";
 
@@ -44,6 +44,69 @@ function toolSchemas(names, defs) {
   }));
 }
 
+/**
+ * P2-B: erro de CONFIGURAÇÃO do modelo (não é falha do provedor). Carrega `code`/`status` para que
+ * o choke point HTTP responda algo acionável (ex.: 400 model_not_found) em vez de 502 genérico.
+ */
+export class LlmConfigError extends Error {
+  constructor(code, message, { status = 400 } = {}) {
+    super(message ?? code);
+    this.name = "LlmConfigError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+/** Traduz um 404 do provedor que mencione modelo ausente em erro de configuração (senão `null`). */
+export function modelNotFoundFrom(status, bodyText = "") {
+  if (Number(status) !== 404) return null;
+  const text = String(bodyText || "");
+  if (!/model/i.test(text) || !/(not found|not exist|unknown|no such|does not exist)/i.test(text)) return null;
+  const code = "model_not_found";
+  return new LlmConfigError(
+    code,
+    "O modelo configurado não existe no provedor. Escolha um modelo instalado (ex.: qwen2.5:7b) em Configurações > Provedores.",
+  );
+}
+
+// Cache curto do catálogo por baseUrl: evita sondar /models a cada mensagem sem esconder mudanças.
+const catalogCache = new Map();
+const CATALOG_TTL_MS = 60_000;
+
+/**
+ * Garante que o modelo EXISTE no catálogo do provedor antes de usá-lo.
+ * - catálogo alcançável e modelo ausente → erro de configuração acionável (com a lista disponível);
+ * - catálogo inalcançável → fail-open (a própria chamada ao provedor decide);
+ * - provedores remotos (sem `probeCatalog`) não são bloqueados.
+ */
+export async function assertModelAvailable(cfg = {}, model = "", { fetchFn = (...a) => globalThis.fetch(...a), probeCatalog = true, now = Date.now } = {}) {
+  if (!probeCatalog || !model || !cfg?.baseUrl) return;
+  const key = cfg.baseUrl;
+  const cached = catalogCache.get(key);
+  let ids = null;
+  if (cached && now() - cached.at < CATALOG_TTL_MS) ids = cached.ids;
+  if (!ids) {
+    try {
+      const r = await fetchFn(`${String(cfg.baseUrl).replace(/\/$/, "")}/models`, {
+        signal: AbortSignal.timeout(4000),
+      });
+      if (!r?.ok) return; // fail-open
+      const j = await r.json();
+      ids = (Array.isArray(j?.data) ? j.data : []).map((m) => m?.id).filter(Boolean);
+      catalogCache.set(key, { at: now(), ids });
+    } catch {
+      return; // fail-open: não bloqueia o chat por indisponibilidade do catálogo
+    }
+  }
+  if (!ids.length) return; // catálogo vazio não é prova de ausência
+  if (ids.includes(model)) return;
+  const curated = ids.slice(0, 8).join(", ");
+  throw new LlmConfigError(
+    "model_not_found",
+    `O modelo "${model}" não está instalado no provedor "${cfg.id}". Instale-o ou escolha um destes: ${curated}.`,
+  );
+}
+
 async function callOpenAI(cfg, model, system, messages, tools) {
   // stream: false explícito — gateways compatíveis com OpenAI (ex.: Omniroute) podem responder
   // em text/event-stream por padrão, e aí o r.json() abaixo quebra com
@@ -56,7 +119,13 @@ async function callOpenAI(cfg, model, system, messages, tools) {
     headers: { "content-type": "application/json", ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}) },
     body: JSON.stringify(body),
   }).catch((e) => { throw new Error(`Não consegui conectar ao provedor "${cfg.id}" em ${cfg.baseUrl} (${e.cause?.code || e.message}). Verifique se ele está rodando ou ajuste em Configurações.`); });
-  if (!r.ok) throw new Error(`${cfg.id} ${r.status}: ${await r.text()}`);
+  if (!r.ok) {
+    const bodyText = await r.text().catch(() => "");
+    // P2-B: 404 de modelo inexistente é CONFIGURAÇÃO, não falha do provedor.
+    const cfgErr = modelNotFoundFrom(r.status, bodyText);
+    if (cfgErr) throw cfgErr;
+    throw new Error(`${cfg.id} ${r.status}: ${bodyText}`);
+  }
   const j = await r.json();
   const msg = j.choices?.[0]?.message || {};
   return {
@@ -160,7 +229,7 @@ export async function runAgent({
     candidateProviders.push({
       id: fbId,
       cfg: fbCfg,
-      model: fbCfg.model || (fbId === "ollama" ? "llama3.1" : ""),
+      model: fbCfg.model || (fbId === "ollama" ? DEFAULT_OLLAMA_MODEL : ""),
     });
   }
 
@@ -174,6 +243,9 @@ export async function runAgent({
       const provIsAnthropic = provId === "anthropic";
       const callStart = Date.now();
       try {
+        // P2-B: valida a existência do modelo antes de gastar uma chamada (fail-open se o
+        // catálogo estiver inacessível). Erros de configuração NÃO entram no fallback.
+        if (!provIsAnthropic) await assertModelAvailable(provCfg, provModel);
         const out = provIsAnthropic
           ? await callAnthropic(provCfg, provModel, system, currentConvo, tools)
           : await callOpenAI(provCfg, provModel, system, currentConvo, tools);
@@ -199,6 +271,7 @@ export async function runAgent({
         }
         return { out, isAnthropic: provIsAnthropic };
       } catch (err) {
+        if (err instanceof LlmConfigError) throw err; // configuração ≠ indisponibilidade
         lastError = err;
         const latencyMs = Date.now() - callStart;
         recordProviderMetric(provId, {
@@ -254,11 +327,12 @@ export async function runAgent({
 }
 
 // ---------- embeddings for semantic memory (Ollama → OpenAI → none) ----------
-export async function embed(text, adminId = null) {
+export async function embed(text, adminId = null, { fetchFn = (...a) => globalThis.fetch(...a) } = {}) {
   const s = getSettings(adminId);
   if (s.providers?.ollama?.enabled) {
     const base = providerConfig("ollama", adminId).baseUrl.replace(/\/v1$/, "");
-    const r = await fetch(`${base}/api/embed`, { method: "POST", body: JSON.stringify({ model: s.providers.ollama.embedModel || "nomic-embed-text", input: text }), signal: AbortSignal.timeout(8000) });
+    // O modelo de EMBEDDINGS é dedicado e independente do modelo de chat (P2-B).
+    const r = await fetchFn(`${base}/api/embed`, { method: "POST", body: JSON.stringify({ model: s.providers.ollama.embedModel || "nomic-embed-text", input: text }), signal: AbortSignal.timeout(8000) });
     if (r.ok) return (await r.json()).embeddings?.[0];
   }
   if (s.providers?.openai?.enabled && s.providers.openai.apiKey) {
@@ -439,6 +513,7 @@ export function resetProviderTelemetry() {
 }
 
 export { compactConversationContext } from "./conversations.js";
+export { DEFAULT_OLLAMA_MODEL };
 
 /**
  * Status do Multi-Provider Router e sua cadeia de contingência.
@@ -460,7 +535,7 @@ export function getRouterStatus(adminId = null) {
     const fbCfg = providerConfig(fbId, adminId);
     return {
       provider: fbId,
-      model: fbCfg.model || (fbId === "ollama" ? "llama3.1" : ""),
+      model: fbCfg.model || (fbId === "ollama" ? DEFAULT_OLLAMA_MODEL : ""),
     };
   });
 
