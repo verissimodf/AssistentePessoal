@@ -37,8 +37,8 @@ process.env.JARVIS_DATA_DIR = GLOBAL_DATA_DIR;
 process.env.JARVIS_NO_LISTEN = "1";
 mkdirSync(join(GLOBAL_SKILLS_FIXTURE, "skills", "threejs-expert"), { recursive: true });
 mkdirSync(join(GLOBAL_SKILLS_FIXTURE, "skills", "gsap-motion"), { recursive: true });
-writeFileSync(join(GLOBAL_SKILLS_FIXTURE, "skills", "threejs-expert", "SKILL.md"), "---\\nname: Three.js 3D Expert\\ndescription: Criação de cenas 3D e shaders WebGL\\ntags: [threejs, webgl, 3d]\\n---\\n# Three.js Expert\\nDiretrizes de Three.js...", "utf8");
-writeFileSync(join(GLOBAL_SKILLS_FIXTURE, "skills", "gsap-motion", "SKILL.md"), "---\\nname: GSAP Animation\\ndescription: Animações com ScrollTrigger e timelines\\ntags: [gsap, motion, animation]\\n---\\n# GSAP Motion\\nDiretrizes de animação GSAP...", "utf8");
+writeFileSync(join(GLOBAL_SKILLS_FIXTURE, "skills", "threejs-expert", "SKILL.md"), "---\nname: Three.js 3D Expert\ndescription: Criação de cenas 3D e shaders WebGL\ntags: [threejs, webgl, 3d]\n---\n# Three.js Expert\nDiretrizes de Three.js...", "utf8");
+writeFileSync(join(GLOBAL_SKILLS_FIXTURE, "skills", "gsap-motion", "SKILL.md"), "---\nname: GSAP Animation\ndescription: Animações com ScrollTrigger e timelines\ntags: [gsap, motion, animation]\n---\n# GSAP Motion\nDiretrizes de animação GSAP...", "utf8");
 writeFileSync(join(GLOBAL_SKILLS_FIXTURE, "catalog.json"), JSON.stringify({ version: "1.2.0", totalSkills: 2, skills: [
   { id: "threejs-expert", name: "Three.js 3D Expert", description: "Criação de cenas 3D e shaders WebGL", tags: ["threejs", "webgl", "3d"], path: "skills/threejs-expert/SKILL.md", category: "graphics" },
   { id: "gsap-motion", name: "GSAP Animation", description: "Animações com ScrollTrigger e timelines", tags: ["gsap", "motion", "animation"], path: "skills/gsap-motion/SKILL.md", category: "motion" }
