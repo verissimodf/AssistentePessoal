@@ -101,10 +101,10 @@ process.stdout.write(JSON.stringify(payload) + "\\n");
   base = `http://127.0.0.1:${server.address().port}`;
   auth.setupFirstAdmin({ token: auth.ensureBootstrap().token, username: "ana", password: PW });
   await login("ana", A);
-  mkdirSync(join(TARGET, "lib"), { recursive: true });
-  writeFileSync(join(TARGET, "package.json"), JSON.stringify({ name: "demo-app", version: "1.0.0", main: "main.js" }));
-  writeFileSync(join(TARGET, "main.js"), `const { ipcMain } = require("electron");\nconst { searchNotes } = require("./lib/search.js");\nipcMain.handle("search", (_e, q) => searchNotes(q));\n`);
-  writeFileSync(join(TARGET, "lib/search.js"), "function searchNotes(notes, q){ return notes.filter(n => n.includes(q)); }\nmodule.exports = { searchNotes };\n");
+  mkdirSync(join(TARGET_NATIVE, "lib"), { recursive: true });
+  writeFileSync(join(TARGET_NATIVE, "package.json"), JSON.stringify({ name: "demo-app", version: "1.0.0", main: "main.js" }));
+  writeFileSync(join(TARGET_NATIVE, "main.js"), `const { ipcMain } = require("electron");\nconst { searchNotes } = require("./lib/search.js");\nipcMain.handle("search", (_e, q) => searchNotes(q));\n`);
+  writeFileSync(join(TARGET_NATIVE, "lib/search.js"), "function searchNotes(notes, q){ return notes.filter(n => n.includes(q)); }\nmodule.exports = { searchNotes };\n");
 });
 after(() => server.close());
 
