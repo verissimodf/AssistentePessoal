@@ -132,6 +132,11 @@ const walkMask = (o) => {
 const mergeComms = (cur, inc) => {
   const out = { ...(cur && typeof cur === "object" ? cur : {}) };
   for (const [accountId, cfg] of Object.entries(inc && typeof inc === "object" ? inc : {})) {
+    // `null` é a remoção EXPLÍCITA da conta (o vazio preserva; o null remove).
+    if (cfg === null) {
+      delete out[accountId];
+      continue;
+    }
     if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) {
       out[accountId] = cfg;
       continue;

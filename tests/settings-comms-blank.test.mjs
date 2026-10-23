@@ -100,3 +100,17 @@ test("comms: desabilitar a conta é a remoção explícita (credenciais preserva
   assert.equal(r.body.comms.gmail.user, "novo@exemplo.test", "usuário não é apagado");
   assert.equal(r.body.comms.gmail.hasKey, true, "segredo não é apagado");
 });
+
+test("comms: `null` remove a conta explicitamente (o vazio preserva, o null remove)", async () => {
+  const r = await json(
+    await req("/api/settings", { method: "PUT", body: { comms: { gmail: null } }, s: A }),
+  );
+  assert.equal(r.status, 200);
+  assert.equal("gmail" in (r.body.comms || {}), false, "conta removida das settings");
+  const accounts = await json(await req("/api/mail/accounts", { s: A }));
+  assert.equal(
+    accounts.body.some((x) => x.type === "gmail"),
+    false,
+    "conta removida não aparece mais para uso",
+  );
+});
