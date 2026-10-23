@@ -139,6 +139,7 @@ export const REA_INTEGRATION_ID = "rea";
 export const REA_TEMPLATE = "rea analyze-javascript-application {path} --json";
 const REA_PATH_SAFE = /^[/A-Za-z0-9_\-.:\\]+$/;
 const REA_PATH_SAFE_NORMALIZED = /^[/A-Za-z0-9_\-.:]+$/;
+const REA_PATH_WINDOWS_SAFE_NORMALIZED = /^[A-Za-z]:[/A-Za-z0-9_\-.:]+$/;
 
 export const parseReaRoots = (cfg) => {
   const list = String(cfg?.roots ?? "").split(",").map((x) => x.trim().replace(/\\/g, "/")).filter(Boolean);
@@ -153,7 +154,7 @@ export function reaResolvePath(input, cfg) {
   const isAbs = normalized.startsWith("/") || /^[a-zA-Z]:\//.test(normalized);
   if (!isAbs) return { ok: false, reason: "O caminho precisa ser absoluto (a partir de uma raiz permitida)." };
   if (normalized.split("/").includes("..") || normalized.includes("//")) return { ok: false, reason: "Traversal de caminho (..) não é permitido." };
-  if (!REA_PATH_SAFE_NORMALIZED.test(normalized)) return { ok: false, reason: "O caminho contém caractere fora do conjunto permitido." };
+  if (!(REA_PATH_SAFE_NORMALIZED.test(normalized) || (process.platform === "win32" && REA_PATH_WINDOWS_SAFE_NORMALIZED.test(normalized)))) return { ok: false, reason: "O caminho contém caractere fora do conjunto permitido." };
   const roots = parseReaRoots(cfg);
   const fold = (value) => process.platform === "win32" ? value.toLowerCase() : value;
   const isWithinRoot = roots.some((root) => {
