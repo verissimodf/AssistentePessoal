@@ -91,7 +91,7 @@ LABEL org.opencontainers.image.revision="$GIT_SHA" \
 # Painel já construído.
 COPY --from=build /app/.output ./.output
 # Entrada do container + ponte de voz.
-COPY scripts/container-entrypoint.sh scripts/voice-adapter.mjs ./scripts/
+COPY scripts/container-entrypoint.sh scripts/voice-adapter.mjs scripts/setup-global-skills.mjs ./scripts/
 RUN chmod +x scripts/container-entrypoint.sh \
  && mkdir -p /app/data && chown -R 1000:1000 /app/data /home/node
 
