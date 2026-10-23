@@ -194,6 +194,23 @@ export function classifyConnectionError(err) {
 }
 
 /**
+ * Short, stable REASON label for a connection failure (P1-B). It is a taxonomy, not a message: the
+ * provider error text is never returned, so no credential or host detail can leak to the client.
+ */
+const REASON_HINTS = [
+  [/ENOTFOUND|EAI_AGAIN|getaddrinfo|\bDNS\b/i, "dns"],
+  [/ETIMEDOUT|ESOCKETTIMEDOUT|timeout|timed out/i, "timeout"],
+  [/certificate|self[- ]signed|CERT_|TLS|ssl|handshake/i, "tls"],
+  [/EAUTH|AUTHENTICATIONFAILED|invalid login|535|534|5\.7\.[01]/i, "auth"],
+  [/ECONNREFUSED|EHOSTUNREACH|ENETUNREACH/i, "unreachable"],
+];
+export function classifyConnectionReason(err) {
+  const text = `${err?.code ?? ""} ${err?.message ?? err ?? ""}`;
+  for (const [re, reason] of REASON_HINTS) if (re.test(text)) return reason;
+  return "unknown";
+}
+
+/**
  * Errors that can ONLY happen before the message is handed to the SMTP server (DNS, connection,
  * TLS or authentication), so the message is provably NOT sent. Anything else is treated as
  * AMBIGUOUS: the server may already have accepted the message, so we must never invite a blind
@@ -437,6 +454,63 @@ export function createMailService({
   };
 
   return {
+    /**
+     * P1-B: prove connectivity + authentication for IMAP and SMTP WITHOUT sending any message.
+     * - incomplete credentials are a VALIDATION error (400), never a provider failure;
+     * - a transport that cannot verify reports an explicit `mode` (never claims a real connection);
+     * - per-channel failures are classified into a short reason label; no provider text or secret
+     *   ever leaves this method.
+     */
+    async testConnection(adminId, accountId) {
+      const account = requireAccount(adminId, accountId);
+      if (!account.user || !account.appPassword) throw new MailError(400, "incomplete_config");
+      const mode = typeof transport.kind === "string" ? transport.kind : "unknown";
+      const channel = (r) => {
+        if (r?.ok) return { ok: true, state: "connected", reason: null };
+        const err = r?.error;
+        return {
+          ok: false,
+          state: classifyConnectionError(err).state,
+          reason: classifyConnectionReason(err),
+        };
+      };
+      if (typeof transport.verify !== "function") {
+        // Nothing to verify against: the transport cannot attest a real connection.
+        return {
+          account: accountId,
+          mode,
+          imap: { ok: false, state: "unsupported", reason: null },
+          smtp: { ok: false, state: "unsupported", reason: null },
+        };
+      }
+      try {
+        const raw = await withTimeout(
+          Promise.resolve().then(() => transport.verify(account)),
+          cfg.verifyTimeoutMs ?? cfg.timeoutMs,
+        );
+        const imap = channel(raw?.imap);
+        const smtp = channel(raw?.smtp);
+        audit("mail.connection_test", {
+          admin: adminId,
+          account: accountId,
+          status: imap.ok && smtp.ok ? "connected" : "error",
+        });
+        return { account: accountId, mode, imap, smtp };
+      } catch (err) {
+        // A whole-transport failure (e.g. unsupported provider or a thrown factory) degrades to a
+        // 200 result with both channels in error — never a 500 for the operator.
+        const state = classifyConnectionError(err).state;
+        const reason = classifyConnectionReason(err);
+        audit("mail.connection_test", { admin: adminId, account: accountId, status: state });
+        return {
+          account: accountId,
+          mode,
+          imap: { ok: false, state, reason },
+          smtp: { ok: false, state, reason },
+        };
+      }
+    },
+
     async list(adminId, accountId, { limit, offset } = {}) {
       const account = requireAccount(adminId, accountId);
       enforceRate(adminId, accountId, "read");

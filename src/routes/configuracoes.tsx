@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/AppShell";
+import { ConnectionTest } from "@/components/ConnectionTest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -152,6 +153,9 @@ function SettingsPage() {
                 {c.fields.map((f) => (
                   <Field key={f} label={f}><Input type={/token|password/i.test(f) ? "password" : "text"} value={v[f] || ""} onChange={(e) => setNested("comms", c.id, f, e.target.value)} /></Field>
                 ))}
+                {(c.fields as readonly string[]).includes("appPassword") && (
+                  <ConnectionTest account={c.id} />
+                )}
               </div>
             );
           })}

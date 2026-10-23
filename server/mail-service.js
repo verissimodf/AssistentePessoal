@@ -53,6 +53,7 @@ export function createMockTransport(seed = {}) {
   };
 
   return {
+    kind: "mock",
     async list(_account, { limit, offset }) {
       return { messages: messages.slice(offset, offset + limit), total: messages.length };
     },

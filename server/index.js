@@ -789,6 +789,12 @@ route("GET", "/api/mail/accounts", "comms:read", ({ principal }) => {
   const comms = getSettings(principal.adminId)?.comms || {};
   return ACCOUNT_TYPES.filter((t) => comms[t]).map((t) => redactAccount({ ...comms[t], type: t }));
 });
+// P1-B: prova conectividade e autenticação IMAP/SMTP SEM enviar mensagem. Sessão humana + CSRF.
+// Falha de conexão é RESULTADO do teste (200 com estados), não erro do servidor; configuração
+// incompleta é erro de validação (400). Nenhuma credencial ou texto do provedor é retornado.
+route("POST", "/api/mail/:account/test-connection", "session", ({ params, principal }) =>
+  getMailService().testConnection(principal.adminId, params.account),
+);
 route("GET", "/api/mail/:account/messages", "comms:read", ({ params, query, principal }) =>
   getMailService().list(principal.adminId, params.account, {
     limit: numParam(query.get("limit")),
