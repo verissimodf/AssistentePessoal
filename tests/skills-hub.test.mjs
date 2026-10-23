@@ -167,9 +167,10 @@ test("segurança: assertSafePath bloqueia tentativas de Path Traversal", () => {
     // Tentativa com bytes NUL
     assert.throws(() => assertSafePath("skills/threejs\0/secret.txt", tmpDir), /path_traversal_detected/);
 
-    // Tentativa de caminho absoluto externo
-    const externalPath = os.platform() === "win32" ? "C:\\Windows\\System32\\calc.exe" : "/etc/shadow";
-    assert.throws(() => assertSafePath(externalPath, tmpDir), /path_traversal_detected/);
+    // Absolute paths must be rejected consistently on Linux and Windows.
+    assert.throws(() => assertSafePath("/etc/shadow", tmpDir), /path_traversal_detected/);
+    assert.throws(() => assertSafePath("C:/Windows/System32/calc.exe", tmpDir), /path_traversal_detected/);
+    assert.throws(() => assertSafePath("//server/share/secret.txt", tmpDir), /path_traversal_detected/);
 
     // Caminho seguro dentro da base
     const safe = assertSafePath("skills/threejs-expert/SKILL.md", tmpDir);
