@@ -139,7 +139,7 @@ export const REA_INTEGRATION_ID = "rea";
 export const REA_TEMPLATE = "rea analyze-javascript-application {path} --json";
 const REA_PATH_SAFE = /^[/A-Za-z0-9_\-.:\\]+$/;
 const REA_PATH_SAFE_NORMALIZED = /^[/A-Za-z0-9_\-.:]+$/;
-const REA_PATH_WINDOWS_SAFE_NORMALIZED = /^[A-Za-z]:[/A-Za-z0-9_\-.:]+$/;
+const REA_PATH_WINDOWS_SAFE_NORMALIZED = /^[A-Za-z]:[/A-Za-z0-9_\-.:~]+$/;
 
 export const parseReaRoots = (cfg) => {
   const list = String(cfg?.roots ?? "").split(",").map((x) => x.trim().replace(/\\/g, "/")).filter(Boolean);
