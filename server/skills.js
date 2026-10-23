@@ -6,9 +6,9 @@ import { join, resolve, sep, normalize } from "node:path";
 import os from "node:os";
 
 export const GLOBAL_SKILLS_DIR = process.env.JARVIS_GLOBAL_SKILLS_DIR || join(os.homedir(), ".agent-skills");
+// Cache per catalog location prevents concurrent/serial tests from cross-contaminating fixtures.
+const catalogCache = new Map();
 
-let cachedCatalog = null;
-let lastMtime = 0;
 
 /**
  * Lê o catálogo mestre de skills indexadas.
@@ -16,20 +16,22 @@ let lastMtime = 0;
  */
 export function getCatalog(baseDir = GLOBAL_SKILLS_DIR) {
   const catalogPath = join(baseDir, "catalog.json");
+  const key = resolve(catalogPath);
   if (!existsSync(catalogPath)) {
+    catalogCache.delete(key);
     return { version: "1.2.0", totalSkills: 0, skills: [] };
   }
 
   try {
     const stat = statSync(catalogPath);
-    if (cachedCatalog && stat.mtimeMs === lastMtime) {
-      return cachedCatalog;
+    const cached = catalogCache.get(key);
+    if (cached && stat.mtimeMs === cached.mtimeMs && stat.size === cached.size) {
+      return cached.value;
     }
-    const raw = readFileSync(catalogPath, "utf8");
-    cachedCatalog = JSON.parse(raw);
-    lastMtime = stat.mtimeMs;
-    return cachedCatalog;
-  } catch (e) {
+    const value = JSON.parse(readFileSync(catalogPath, "utf8"));
+    catalogCache.set(key, { mtimeMs: stat.mtimeMs, size: stat.size, value });
+    return value;
+  } catch {
     return { version: "1.2.0", totalSkills: 0, skills: [] };
   }
 }
@@ -131,9 +133,15 @@ export function assertSafePath(targetPath, baseDir = GLOBAL_SKILLS_DIR) {
 
   const root = resolve(baseDir);
   const target = resolve(root, clean);
+  const fold = (value) => process.platform === "win32" ? value.toLowerCase() : value;
+  const rootFold = fold(root);
+  const targetFold = fold(target);
 
-  // Deve iniciar exatamente com a raiz normalizada seguida do separador de caminho (ou ser a própria raiz)
-  if (!target.startsWith(root + sep) && target !== root) {
+  // Reject absolute POSIX, drive-letter and UNC paths as identifiers on every platform.
+  if (clean.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(clean) || clean.startsWith("\\\\")) {
+    throw new Error("path_traversal_detected");
+  }
+  if (!(targetFold === rootFold || targetFold.startsWith(rootFold.endsWith(sep) ? rootFold : rootFold + sep))) {
     throw new Error("path_traversal_detected");
   }
 
