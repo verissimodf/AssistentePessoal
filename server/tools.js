@@ -152,7 +152,7 @@ export function reaResolvePath(input, cfg) {
   const isAbs = normalized.startsWith("/") || /^[a-zA-Z]:\//.test(normalized);
   if (!isAbs) return { ok: false, reason: "O caminho precisa ser absoluto (a partir de uma raiz permitida)." };
   if (normalized.split("/").includes("..") || normalized.includes("//")) return { ok: false, reason: "Traversal de caminho (..) não é permitido." };
-  if (!REA_PATH_SAFE.test(normalized)) return { ok: false, reason: "O caminho contém caractere fora do conjunto permitido." };
+  if (!REA_PATH_SAFE.test(normalized) || /[^/A-Za-z0-9_\-.:]/.test(normalized)) return { ok: false, reason: "O caminho contém caractere fora do conjunto permitido." };
   const roots = parseReaRoots(cfg);
   const fold = (value) => process.platform === "win32" ? value.toLowerCase() : value;
   const isWithinRoot = roots.some((root) => {
