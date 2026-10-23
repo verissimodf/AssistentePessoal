@@ -124,3 +124,18 @@ test("embeddings continuam usando nomic-embed-text (não o modelo de chat)", asy
 test("o executor do chat está disponível e classifica falhas (não inventa resposta)", () => {
   assert.equal(typeof runAgent, "function");
 });
+
+test("salvar preferências pessoais não apaga o modelo padrão do provedor (regressão P2-B)", async () => {
+  const { updateSettings, getSettings, publicSettings } = await import("../server/settings.js");
+  const adminId = db.prepare("SELECT id FROM admins WHERE active = 1").get().id;
+  // Uma preferência pessoal qualquer (ex.: idioma) não pode zerar providers.
+  updateSettings({ general: { language: "pt" } }, { adminId });
+  assert.equal(getSettings(adminId).providers.ollama.model, "qwen2.5:7b", "default preservado");
+  assert.equal(getSettings(adminId).providers.ollama.baseUrl, "http://ollama-llm:11434/v1");
+  // Configuração explícita continua vencendo o default.
+  updateSettings({ providers: { ollama: { model: "gemma3:4b" } } }, { adminId });
+  assert.equal(getSettings(adminId).providers.ollama.model, "gemma3:4b");
+  assert.equal(getSettings(adminId).providers.ollama.baseUrl, "http://ollama-llm:11434/v1", "baseUrl default mantido");
+  // E o valor explícito nunca é exposto como segredo pelas settings públicas.
+  assert.equal(JSON.stringify(publicSettings(adminId)).includes("sk-"), false);
+});

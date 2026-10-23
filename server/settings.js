@@ -160,12 +160,26 @@ const merge = (cur, inc) => {
   return out;
 };
 
+/**
+ * P2-B: preserva o default do provedor local quando a seção está ausente. Uma conta pessoal que
+ * salva qualquer outra preferência não pode apagar o modelo padrão validado (evita apontar para um
+ * modelo inexistente por omissão). Configuração explícita do provedor sempre vence.
+ */
+const withProviderDefaults = (providers) => {
+  const prov = providers && typeof providers === "object" ? providers : {};
+  const merged = { ...PERSONAL_DEFAULTS.providers, ...prov };
+  for (const [id, def] of Object.entries(PERSONAL_DEFAULTS.providers)) {
+    if (prov[id] && typeof prov[id] === "object") merged[id] = { ...def, ...prov[id] };
+  }
+  return merged;
+};
+
 function compose(personal, global, walk) {
   const p = walk(personal || {});
   const g = walk(global);
   return {
     general: { ...PERSONAL_DEFAULTS.general, ...(p.general || {}) },
-    providers: p.providers || (personal ? {} : PERSONAL_DEFAULTS.providers),
+    providers: withProviderDefaults(p.providers),
     comms: p.comms || {},
     voice: { ...PERSONAL_DEFAULTS.voice, ...(p.voice || {}), localVoiceUrl: g.localVoiceUrl },
     integrations: g.integrations || {},
