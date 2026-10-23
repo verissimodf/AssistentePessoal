@@ -222,47 +222,73 @@ npx vitest run
 
 ### Instalação Rápida
 
-#### No Windows:
-```cmd
-scripts\instalar.cmd
-scripts\jarvis.cmd
-```
+#### No Windows 10/11:
+1. Abra o PowerShell como usuário comum e libere a execução de scripts locais:
+   ```powershell
+   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+   ```
+2. Instale as dependências e inicialize o serviço:
+   ```cmd
+   scripts\instalar.cmd
+   scripts\jarvis.cmd
+   ```
 
-#### No Linux:
-```bash
-chmod +x scripts/*.sh
-./scripts/instalar.sh
-./scripts/jarvis.sh
-```
+#### No Linux (Ubuntu / Debian / CentOS):
+1. Conceda permissão de execução aos scripts:
+   ```bash
+   chmod +x scripts/*.sh
+   ```
+2. Instale as dependências e inicialize o serviço:
+   ```bash
+   ./scripts/instalar.sh
+   ./scripts/jarvis.sh
+   ```
 
 A interface web será aberta automaticamente em `http://localhost:8080`. O painel se conecta diretamente ao serviço Core local em `http://127.0.0.1:7777`.
 
 ---
 
-### 🚀 Execução Silenciosa em Background (Daemon)
+### 🚀 Execução em Segundo Plano & Serviço de Sistema
 
-O J.A.R.V.I.S. pode rodar de forma invisível em segundo plano sem janelas de terminal abertas:
+#### No Windows 10/11 (Background Daemon):
+* **Iniciar:** Duplo clique em `scripts/jarvis.cmd` (inicia de forma oculta e abre o navegador após 6 segundos).
+* **Parar:** Duplo clique em `scripts/stop_jarvis.cmd`.
+* **Inicializar com o Windows:** Crie um atalho para `scripts/jarvis.cmd` na pasta `shell:startup`.
 
-* **Iniciar no Windows:** Duplo clique em `scripts/jarvis.cmd` (inicia de forma oculta e abre o navegador após 6 segundos).
-* **Parar no Windows:** Duplo clique em `scripts/stop_jarvis.cmd`.
-* **Iniciar no Linux:**
-  ```bash
-  ./scripts/jarvis.sh
-  ```
-* **Parar no Linux:**
-  ```bash
-  ./scripts/stop_jarvis.sh
-  ```
+#### No Linux (Serviço Persistente via Systemd):
+Para executar o J.A.R.V.I.S. como serviço permanente no boot do sistema operacional, crie o arquivo `/etc/systemd/system/jarvis.service`:
+```ini
+[Unit]
+Description=J.A.R.V.I.S. Personal Assistant Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=jarvis
+WorkingDirectory=/opt/jarvis
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/jarvis/.env
+
+[Install]
+WantedBy=multi-user.target
+```
+Ative e inicie o daemon:
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now jarvis.service
+```
 
 ---
 
 ### 🌐 Acesso Remoto Seguro via Tailscale
 
-Para acessar o assistente com segurança fora da rede local sem abrir portas públicas no roteador:
+Para acessar o assistente fora da rede local com segurança e sem expor portas na WAN:
 ```bash
 node scripts/tailnet-proxy.mjs
 ```
-O script mapeia a API (`7777`) e a Web UI (`8090`) exclusivamente para o IP da sua rede privada Tailscale.
+O script mapeia a API (`7777`) e a Web UI (`8090`) exclusivamente para o IP da sua rede privada Tailscale (Tailnet).
 
 ---
 

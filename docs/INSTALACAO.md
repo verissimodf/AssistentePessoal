@@ -1,109 +1,175 @@
-# Instalação
+# Guia de Instalação e Configuração — J.A.R.V.I.S. (v1.7.0)
 
-## 1. Dependências
-| Sistema | Comando |
+Este guia cobre o passo a passo completo para instalação, configuração de permissões, execução em segundo plano e inicialização automática como serviço persistente tanto em **Windows 10/11** quanto em **Servidores Linux (Ubuntu, Debian, CentOS, RHEL)**.
+
+---
+
+## 1. Pré-requisitos e Dependências
+
+| Plataforma | Instruções de Instalação do Node.js (>=22.13 LTS) e IA Offline |
 |---|---|
-| Windows | `winget install -e --id OpenJS.NodeJS.LTS` (Node 22.13+) e, se quiser IA offline, `winget install Ollama.Ollama` |
-| Ubuntu/Debian | `curl -fsSL https://deb.nodesource.com/setup_22.x \| sudo -E bash - && sudo apt install -y nodejs` e `curl -fsSL https://ollama.com/install.sh \| sh` |
+| **Windows 10/11** | `winget install -e --id OpenJS.NodeJS.LTS`<br>*(Opcional)* IA Offline: `winget install Ollama.Ollama` |
+| **Ubuntu / Debian** | `curl -fsSL https://deb.nodesource.com/setup_22.x \| sudo -E bash - && sudo apt install -y nodejs`<br>*(Opcional)* IA Offline: `curl -fsSL https://ollama.com/install.sh \| sh` |
+| **CentOS / RHEL / Fedora** | `sudo dnf module install -y nodejs:22` (ou via NodeSource rpm)<br>*(Opcional)* IA Offline: `curl -fsSL https://ollama.com/install.sh \| sh` |
 
-## 2. Baixar
-- **ZIP**: extraia em uma pasta, por exemplo `C:\jarvis` ou `~/jarvis`.
-- **GitHub**: `git clone https://github.com/laytech-ia-debug/AssistentePessoal.git && cd AssistentePessoal`.
+---
 
-O caminho `C:\jarvis` é o usado como exemplo no resto da documentação (inclusive na configuração
-do MCP, em [CONFIGURACAO.md](CONFIGURACAO.md)). Evite instalar dentro de `C:\Program Files`, onde
-a escrita exige privilégio de administrador.
+## 2. Download do Projeto
 
-## 3. Instalar e iniciar
-```cmd
-scripts\instalar.cmd   &  scripts\jarvis.cmd
+- **Via Git Clone (Recomendado):**
+  ```bash
+  git clone https://github.com/verissimodf/AssistentePessoal.git
+  cd AssistentePessoal
+  ```
+- **Via Pacote ZIP:**
+  Extraia o pacote em uma pasta de sua preferência, por exemplo `C:\jarvis` (no Windows) ou `/opt/jarvis` / `~/jarvis` (no Linux).
+  > [!TIP]
+  > No Windows, evite instalar dentro de `C:\Program Files`, pois a pasta exige privilégios elevados de administrador para escrita do banco de dados SQLite local.
+
+---
+
+## 3. Instalação e Execução no Windows 10/11
+
+### 3.1. Liberação de Execução do PowerShell
+Por padrão, o Windows restringe a execução de scripts automáticos. Execute o PowerShell como usuário comum e libere a execução:
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
+
+### 3.2. Configuração de Variáveis de Ambiente
+O instalador gera o arquivo `.env` a partir do template `.env.example`. Caso deseje ajustar manualmente:
+1. Copie `.env.example` para `.env`:
+   ```cmd
+   copy .env.example .env
+   ```
+2. Defina uma chave mestra para criptografia AES-256-GCM (se não definida, uma chave segura será gerada automaticamente em `data/master.key`):
+   ```env
+   JARVIS_MASTER_KEY=sua_chave_mestra_secreta_aqui
+   JARVIS_HOST=127.0.0.1
+   PORT=7777
+   VITE_PORT=8080
+   ```
+
+### 3.3. Instalação Rápida e Execução em Background
+Execute o script de instalação automatizada:
+```cmd
+scripts\instalar.cmd
+```
+O script verifica a versão do Node.js, instala as dependências via `npm install`, cria o diretório `data/` para o SQLite local e prepara os assets.
+
+**Para iniciar o J.A.R.V.I.S. em segundo plano:**
+```cmd
+scripts\jarvis.cmd
+```
+O script inicia o backend e o frontend de forma silenciosa e abre o navegador automaticamente após a confirmação do boot.
+
+**Para parar os serviços em segundo plano:**
+```cmd
+scripts\stop_jarvis.cmd
+```
+
+### 3.4. Inicialização Automática no Boot do Windows
+Crie um atalho na pasta de inicialização do usuário:
+```powershell
+$s = (New-Object -ComObject WScript.Shell).CreateShortcut("$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\Jarvis.lnk")
+$s.TargetPath = "$PWD\scripts\jarvis.cmd"
+$s.WorkingDirectory = "$PWD"
+$s.Save()
+```
+
+---
+
+## 4. Instalação e Execução em Servidores Linux (Ubuntu / Debian / CentOS)
+
+### 4.1. Permissões de Execução
+No diretório do projeto, conceda permissão de execução a todos os scripts auxiliares:
 ```bash
-./scripts/instalar.sh  && ./scripts/jarvis.sh
+chmod +x scripts/*.sh
 ```
 
-O `instalar` confere a versão do Node, roda `npm install` na raiz e em `server/`, cria `data/` e
-copia `.env.example` para `.env`. Ele leva alguns minutos e **não imprime nada durante o
-`npm install`** — é normal.
-
-Antes de iniciar, vale rodar os testes (opcional, ~30 s):
-
-```cmd
-npx vitest run
-node --test tests/hostpolicy.test.mjs
+### 4.2. Instalação Automatizada
+Execute o assistente de instalação Linux:
+```bash
+./scripts/instalar.sh
 ```
 
-Esperado: 7 testes do painel e 6 da política de host, todos passando.
+### 4.3. Configuração de Serviço Persistente via Systemd
+Para que o J.A.R.V.I.S. permaneça em execução contínua e reinicie automaticamente após reinicializações do servidor, crie o arquivo de serviço `/etc/systemd/system/jarvis.service`:
 
-Depois do `jarvis`, confirme que o serviço respondeu:
+```ini
+[Unit]
+Description=J.A.R.V.I.S. Personal Assistant Daemon
+After=network.target
 
-```cmd
+[Service]
+Type=simple
+User=jarvis
+WorkingDirectory=/opt/jarvis
+ExecStart=/usr/bin/node server/index.js
+Restart=always
+RestartSec=5
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/jarvis/.env
+
+# Limites e Segurança do Processo
+LimitNOFILE=65535
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Ative e inicialize o serviço:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now jarvis.service
+sudo systemctl status jarvis.service
+```
+
+### 4.4. Acesso Remoto Seguro via Proxy Tailscale
+Para acessar o assistente fora da rede local de forma privada e segura (sem expor portas públicas na WAN):
+```bash
+node scripts/tailnet-proxy.mjs
+```
+O script mapeia a API (`7777`) e a Web UI (`8090`) exclusivamente para o IP da sua rede privada Tailscale (Tailnet).
+
+---
+
+## 5. Validação da Instalação e Teste de Saúde (Health Check)
+
+Após iniciar o assistente, confirme que a API responde com sucesso:
+
+```bash
 curl http://127.0.0.1:7777/api/health
 ```
 
-Resposta esperada: `{"ok":true,"version":"1.0.0","name":"Jarvis","platform":"win32"}`.
-
-## 4. Primeiro uso
-
-Abra o painel sempre por **`http://localhost:8080`**, não pelo IP da máquina: o serviço só aceita
-origens `localhost`/`127.0.0.1`, e pelo IP o painel cai em **Modo demonstração** e o microfone é
-negado pelo navegador (a Web Speech API exige contexto seguro).
-
-1. Abra `http://localhost:8080` — o indicador deve mostrar **Conectado ao Jarvis local**.
-2. Em **Configurações → Provedores de IA**, ligue um provedor (ex.: Ollama) e clique **Testar**.
-   O campo da chave fica vazio depois de salvar — é proposital, a chave é cifrada e não volta ao
-   navegador. O **Testar** é a confirmação de que ela foi guardada.
-3. Em **Agentes**, mude o **provedor e o modelo** do agente ativo (estrela) para o que você ligou
-   no passo 2. Esse passo é obrigatório: o agente nasce apontando para o Ollama, e ligar outro
-   provedor em Configurações **não** troca o provedor do agente. Sem isso a conversa falha com
-   `ECONNREFUSED` em `localhost:11434`.
-4. Na **Conversa**, clique no microfone ou ligue **Métodos de ativação** e bata palmas duas vezes.
-
-## 5. Voz local e clonada (opcional)
-
-Precisa de **Python 3.10, 3.11 ou 3.12** — o `kokoro` exige `<3.13`, então 3.13 e 3.14 **não**
-funcionam.
-
-O instalador procura um 3.11, 3.12 ou 3.10 e avisa se não achar nenhum; no Windows ele tenta
-instalar o 3.11 com o winget. Se você já sabe que não tem uma dessas versões, adiantar o passo
-evita a ida e volta:
-
-```cmd
-winget install -e --id Python.Python.3.11
-py -3.11 --version
+**Resposta JSON Esperada:**
+```json
+{
+  "ok": true,
+  "version": "1.7.0",
+  "name": "Jarvis",
+  "mode": "production"
+}
 ```
 
-O segundo comando deve responder `Python 3.11.x`. Se você acabou de instalar e ele não responder,
-abra um terminal novo. No Linux, instale o pacote `venv` da versão correspondente (ex.:
-`sudo apt install python3.12-venv`) ou use `uv venv -p 3.12`.
+Acesse o painel no navegador em: **`http://localhost:8080`**.
 
-Uma observação sobre o `py --list`: interpretadores gerenciados pelo **uv** aparecem como
-`Astral/CPython3.12.15` e **não** respondem a `py -3.12`. Mesmo assim o instalador os encontra,
-porque o uv também deixa um `python3.12` no PATH — foi assim que a instalação de referência rodou.
-Se ainda assim nenhum for achado, dá para criar a `.venv` à mão:
+---
 
-```cmd
-uv venv -p 3.12 scripts\voz\.venv
-scripts\voz\.venv\Scripts\python -m pip install coqui-tts kokoro soundfile numpy
-```
+## 6. Síntese e Clonagem de Voz Local (Opcional)
 
-Depois rode o instalador (~2 GB de modelos no primeiro uso):
+Requisitos: **Python 3.10, 3.11 ou 3.12** (o motor Kokoro exige versão inferior a 3.13).
 
-```cmd
-scripts\instalar-voz.cmd
-```
-```bash
-./scripts/instalar-voz.sh
-```
-
-Por fim: **Configurações → Voz e ativação → Enviar amostra de voz** e escolha **XTTS-v2** como motor.
-
-## Iniciar com o sistema
-- **Windows**: `Win+R` → `shell:startup` → crie nessa pasta um atalho para
-  `C:\jarvis\scripts\jarvis.cmd`. Pela linha de comando:
-  ```powershell
-  $s = (New-Object -ComObject WScript.Shell).CreateShortcut("$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\Jarvis.lnk")
-  $s.TargetPath = 'C:\jarvis\scripts\jarvis.cmd'; $s.WorkingDirectory = 'C:\jarvis'; $s.Save()
-  ```
-  Para rodar como serviço, veja o NSSM em [IMPLANTACAO.md](IMPLANTACAO.md).
-- **Linux**: veja o serviço systemd em [IMPLANTACAO.md](IMPLANTACAO.md).
+1. No Windows:
+   ```cmd
+   winget install -e --id Python.Python.3.11
+   scripts\instalar-voz.cmd
+   ```
+2. No Linux:
+   ```bash
+   sudo apt install -y python3.11-venv
+   ./scripts/instalar-voz.sh
+   ```
+3. No painel web: acesse **Configurações → Voz e ativação → Enviar amostra de voz** e selecione o motor **XTTS-v2** para clonagem zero-shot.

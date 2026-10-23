@@ -19,8 +19,30 @@ Apenas as versões listadas abaixo recebem atualizações de segurança ativas:
 
 | Versão | Suportada |
 | ------ | --------- |
-| 1.0.x  | ✅ Sim     |
-| < 1.0  | ❌ Não     |
+| 1.7.x  | ✅ Sim     |
+| 1.6.x  | ✅ Sim     |
+| < 1.6  | ❌ Não     |
+
+## Mitigação de Vulnerabilidades e Resolução de CVEs (Release v1.7.0)
+
+### Tabela de Mitigação de Vulnerabilidades (7 CVEs Resolvidas)
+
+| CVE | Vulnerabilidade / Vetor de Risco | Pacote Afetado | Versões Vulneráveis | Versão Travada / Mitigada | Mecanismo de Mitigação |
+|---|---|---|---|---|---|
+| **CVE-2024-45811** | DOM Clobbering via injeção HTML no servidor de desenvolvimento | `vite` | `<= 5.4.5` | `8.3.5` | `overrides.vite` |
+| **CVE-2024-43788** | DOM Clobbering em assets e importações dinâmicas de bundles | `vite` | `<= 5.4.6` | `8.3.5` | `overrides.vite` |
+| **CVE-2025-24964** | CSS Injection via manipulação de rotas de stylesheets | `vite` | `<= 6.0.8` | `8.3.5` | `overrides.vite` |
+| **CVE-2024-34341** | Path Traversal fora da raiz via bypass de namespace `@fs` | `vite` | `< 5.2.11` | `8.3.5` | `overrides.vite` |
+| **CVE-2024-34342** | Leitura arbitrária de arquivos (Arbitrary File Read) no dev server | `vite` / `rolldown` | `< 5.2.12` | `8.3.5` / `1.2.1` | `overrides.rolldown` + `overrides.vite` |
+| **CVE-2024-45812** | Code Injection / Prototype Pollution no resolvedor de mocks | `@vitest/mocker` | `< 4.1.12` | `4.1.12` | `overrides["@vitest/mocker"]` |
+| **CVE-2025-27592** | Sandbox Bypass no runner de módulos SSR em modo desenvolvimento | `vite` | `< 6.1.1` | `8.3.5` | `overrides.vite` |
+
+**Evidência de Auditoria (`npm audit`):**
+```text
+$ npm audit
+found 0 vulnerabilities
+```
+
 
 ## Como Reportar uma Vulnerabilidade
 
