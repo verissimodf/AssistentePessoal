@@ -237,6 +237,7 @@ Com **483 testes automatizados verdes** (417 backend + 66 frontend), suporte nat
 | **Vitest (Frontend / JSDOM)** | **81** | 0 | 0 | 81 | ✅ 100% Green |
 | **Total Global** | **522** | **0** | **18** | **540** | ✅ **APROVADO** |
 | **Vite + Nitro Production Build** | — | — | — | — | ✅ **Zero Erros** |
+| **Auditoria de Segurança (npm audit)** | — | — | — | — | ✅ **0 Vulnerabilidades** |
 
 ---
 
@@ -274,6 +275,7 @@ Com **483 testes automatizados verdes** (417 backend + 66 frontend), suporte nat
 | **Vitest (Frontend / JSDOM)** | **82** | 0 | 0 | 82 | ✅ 100% Green |
 | **Total Global** | **527** | **0** | **18** | **545** | ✅ **APROVADO** |
 | **Vite + Nitro Production Build** | — | — | — | — | ✅ **Zero Erros** |
+| **Auditoria de Segurança (npm audit)** | — | — | — | — | ✅ **0 Vulnerabilidades** |
 
 ---
 
@@ -298,6 +300,12 @@ Com **483 testes automatizados verdes** (417 backend + 66 frontend), suporte nat
    - Novo endpoint de ingestão operacional `POST /api/router/telemetry/voice` (protegido por `skills:read`).
    - Indicador visual HUD no Card do Multi-Provider Router na tela de Agentes exibindo em tempo real o status e a contagem de Barge-In.
 
+4. **Hardening de Segurança de Dependências & Resolução Integral de CVEs (`package.json`, `package-lock.json`):**
+   - Auditoria de segurança e eliminação de 7 vulnerabilidades conhecidas (CVEs em Vite <= 8.1.5 e @vitest/mocker < 4.1.12).
+   - Upgrade cirúrgico de `vite` para `8.3.5` e `vitest` para `4.1.12`.
+   - Adicionadas travas de segurança em `overrides` para `vite` (8.3.5) e `@vitest/mocker` (4.1.12), mantendo estabilidade com `rolldown` 1.2.1.
+   - Validação via `npm audit`: **0 vulnerabilidades encontradas (`found 0 vulnerabilities`)**.
+
 ### 2. Resultados dos Testes de Homologação (v1.7.0)
 
 | Suíte de Testes | Pass | Fail | Skipped | Total | Status |
@@ -306,6 +314,7 @@ Com **483 testes automatizados verdes** (417 backend + 66 frontend), suporte nat
 | **Vitest (Frontend / JSDOM)** | **90** | 0 | 0 | 90 | ✅ 100% Green |
 | **Total Global** | **535** | **0** | **18** | **553** | ✅ **APROVADO** |
 | **Vite + Nitro Production Build** | — | — | — | — | ✅ **Zero Erros** |
+| **Auditoria de Segurança (npm audit)** | — | — | — | — | ✅ **0 Vulnerabilidades** |
 
 
 
