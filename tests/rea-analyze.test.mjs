@@ -122,6 +122,9 @@ T("reaResolvePath: absolute, charset and traversal", () => {
   assert.equal(reaResolvePath(`${root}${separator}a; b`, {}).ok, false, "metacaractere");
   assert.equal(reaResolvePath("/opt/sem-permissao/app", {}).ok, false, "fora da raiz");
   assert.equal(reaResolvePath(absoluteInRoot, {}).ok, true, "dentro da raiz");
+  if (process.platform === "win32") {
+    assert.equal(reaResolvePath(root + separator + "demo~1", {}).ok, true, "caminho Windows curto com til aceito dentro da raiz");
+  }
   assert.equal(reaResolvePath(absoluteInRoot, { roots: "/outra/raiz" }).ok, false, "raiz configurável");
 });
 
