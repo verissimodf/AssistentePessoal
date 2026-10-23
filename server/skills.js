@@ -127,7 +127,12 @@ export function assertSafePath(targetPath, baseDir = GLOBAL_SKILLS_DIR) {
     clean = decodeURIComponent(clean);
   } catch {}
 
+  // Reject NUL and traversal components before resolving; normalize separators on Windows too.
   if (clean.includes("\0")) {
+    throw new Error("path_traversal_detected");
+  }
+  const portable = clean.replace(/\\/g, "/");
+  if (portable.split("/").includes("..")) {
     throw new Error("path_traversal_detected");
   }
 
@@ -137,14 +142,14 @@ export function assertSafePath(targetPath, baseDir = GLOBAL_SKILLS_DIR) {
   const rootFold = fold(root);
   const targetFold = fold(target);
 
-  // Reject absolute POSIX, drive-letter and UNC paths as identifiers on every platform.
-  if (clean.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(clean) || clean.startsWith("\\\\")) {
+  // Only relative paths within the catalog root are valid. POSIX absolute, drive and UNC
+  // paths must not be accepted as identifiers, regardless of host platform.
+  if (portable.startsWith("/") || /^[a-zA-Z]:\//.test(portable) || portable.startsWith("//")) {
     throw new Error("path_traversal_detected");
   }
   if (!(targetFold === rootFold || targetFold.startsWith(rootFold.endsWith(sep) ? rootFold : rootFold + sep))) {
     throw new Error("path_traversal_detected");
   }
-
   return target;
 }
 
