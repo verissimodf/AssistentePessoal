@@ -32,7 +32,8 @@ async function login(u, t) {
 }
 const putSettings = (body, s = A) => req("/api/settings", { method: "PUT", body, s });
 
-const TARGET = join(dir, "rea", "targets", "demo-app").replace(/\\/g, "/");
+const TARGET_NATIVE = join(dir, "rea", "targets", "demo-app");
+const TARGET = TARGET_NATIVE.replace(/\\/g, "/");
 before(async () => {
   // Wrapper `rea` no PATH do teste: shim hermético para testes de integração do Jarvis
   const binDir = join(dir, "bin");
