@@ -114,12 +114,15 @@ const T = (name, fn) => test(name, fn);
 // ---------- validadores puros ----------
 T("reaResolvePath: absolute, charset and traversal", () => {
   const roots = parseReaRoots({});
+  const root = roots[0].replace(/\\/g, "/");
+  const separator = root.endsWith("/") ? "" : "/";
+  const absoluteInRoot = `${root}${separator}demo-app`;
   assert.equal(reaResolvePath("main.js", {}).ok, false, "não absoluto");
-  assert.equal(reaResolvePath(`${roots[0]}/../etc/passwd`, {}).ok, false, "traversal");
-  assert.equal(reaResolvePath(`${roots[0]}/a; b`, {}).ok, false, "metacaractere");
+  assert.equal(reaResolvePath(`${root}${separator}..${separator}etc${separator}passwd`, {}).ok, false, "traversal");
+  assert.equal(reaResolvePath(`${root}${separator}a; b`, {}).ok, false, "metacaractere");
   assert.equal(reaResolvePath("/opt/sem-permissao/app", {}).ok, false, "fora da raiz");
-  assert.equal(reaResolvePath(`${roots[0]}/demo-app`, {}).ok, true, "dentro da raiz");
-  assert.equal(reaResolvePath(`${roots[0]}/demo-app`, { roots: "/outra/raiz" }).ok, false, "raiz configurável");
+  assert.equal(reaResolvePath(absoluteInRoot, {}).ok, true, "dentro da raiz");
+  assert.equal(reaResolvePath(absoluteInRoot, { roots: "/outra/raiz" }).ok, false, "raiz configurável");
 });
 
 T("reaResolvePath: demo target resolves (bootstrap layout)", () => {
