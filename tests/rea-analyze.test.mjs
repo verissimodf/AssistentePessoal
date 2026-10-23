@@ -32,7 +32,8 @@ async function login(u, t) {
 }
 const putSettings = (body, s = A) => req("/api/settings", { method: "PUT", body, s });
 
-const TARGET = join(dir, "rea", "targets", "demo-app").replace(/\\/g, "/");
+const TARGET_NATIVE = join(dir, "rea", "targets", "demo-app");
+const TARGET = TARGET_NATIVE.replace(/\\/g, "/");
 before(async () => {
   // Wrapper `rea` no PATH do teste: shim hermético para testes de integração do Jarvis
   const binDir = join(dir, "bin");
@@ -43,7 +44,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const args = process.argv.slice(2);
-const targetPath = (args.find((a) => !a.startsWith("-") && a !== "analyze-javascript-application") || "").replace(/\\\\/g, "/");
+const targetPath = args.find((a) => !a.startsWith("-") && a !== "analyze-javascript-application") || "";
 
 let jsCount = 0;
 let ipcCount = 0;
@@ -101,10 +102,10 @@ process.stdout.write(JSON.stringify(payload) + "\\n");
   base = `http://127.0.0.1:${server.address().port}`;
   auth.setupFirstAdmin({ token: auth.ensureBootstrap().token, username: "ana", password: PW });
   await login("ana", A);
-  mkdirSync(join(TARGET, "lib"), { recursive: true });
-  writeFileSync(join(TARGET, "package.json"), JSON.stringify({ name: "demo-app", version: "1.0.0", main: "main.js" }));
-  writeFileSync(join(TARGET, "main.js"), `const { ipcMain } = require("electron");\nconst { searchNotes } = require("./lib/search.js");\nipcMain.handle("search", (_e, q) => searchNotes(q));\n`);
-  writeFileSync(join(TARGET, "lib/search.js"), "function searchNotes(notes, q){ return notes.filter(n => n.includes(q)); }\nmodule.exports = { searchNotes };\n");
+  mkdirSync(join(TARGET_NATIVE, "lib"), { recursive: true });
+  writeFileSync(join(TARGET_NATIVE, "package.json"), JSON.stringify({ name: "demo-app", version: "1.0.0", main: "main.js" }));
+  writeFileSync(join(TARGET_NATIVE, "main.js"), `const { ipcMain } = require("electron");\nconst { searchNotes } = require("./lib/search.js");\nipcMain.handle("search", (_e, q) => searchNotes(q));\n`);
+  writeFileSync(join(TARGET_NATIVE, "lib/search.js"), "function searchNotes(notes, q){ return notes.filter(n => n.includes(q)); }\nmodule.exports = { searchNotes };\n");
 });
 after(() => server.close());
 
@@ -113,12 +114,15 @@ const T = (name, fn) => test(name, fn);
 // ---------- validadores puros ----------
 T("reaResolvePath: absolute, charset and traversal", () => {
   const roots = parseReaRoots({});
+  const root = roots[0].replace(/\\/g, "/");
+  const separator = root.endsWith("/") ? "" : "/";
+  const absoluteInRoot = `${root}${separator}demo-app`;
   assert.equal(reaResolvePath("main.js", {}).ok, false, "não absoluto");
-  assert.equal(reaResolvePath(`${roots[0]}/../etc/passwd`, {}).ok, false, "traversal");
-  assert.equal(reaResolvePath(`${roots[0]}/a; b`, {}).ok, false, "metacaractere");
+  assert.equal(reaResolvePath(`${root}${separator}..${separator}etc${separator}passwd`, {}).ok, false, "traversal");
+  assert.equal(reaResolvePath(`${root}${separator}a; b`, {}).ok, false, "metacaractere");
   assert.equal(reaResolvePath("/opt/sem-permissao/app", {}).ok, false, "fora da raiz");
-  assert.equal(reaResolvePath(`${roots[0]}/demo-app`, {}).ok, true, "dentro da raiz");
-  assert.equal(reaResolvePath(`${roots[0]}/demo-app`, { roots: "/outra/raiz" }).ok, false, "raiz configurável");
+  assert.equal(reaResolvePath(absoluteInRoot, {}).ok, true, "dentro da raiz");
+  assert.equal(reaResolvePath(absoluteInRoot, { roots: "/outra/raiz" }).ok, false, "raiz configurável");
 });
 
 T("reaResolvePath: demo target resolves (bootstrap layout)", () => {

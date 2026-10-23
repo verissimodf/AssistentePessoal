@@ -30,29 +30,31 @@ function parseFrontmatterYaml(fm) {
   return result;
 }
 
-import {
-  listSkills,
-  matchSkillsForPrompt,
-  loadSkill,
-  assertSafePath,
-  getCatalog,
-  GLOBAL_SKILLS_DIR,
-  sanitizeSkillFrontmatter,
-  getRouterStatus,
-  classifyTaskIntent,
-  ROUTING_PROFILES,
-  recordProviderMetric,
-  recordVoiceMetric,
-  getProviderTelemetry,
-  resetProviderTelemetry,
-} from "../server/skills.js";
-import { routeTable, createApp } from "../server/index.js";
-import { AuthError } from "../server/auth.js";
-import { callTool, TOOL_DEFS } from "../server/tools.js";
-import { TOOL_SCOPES } from "../server/auth.js";
-import { runAgent } from "../server/llm.js";
-import { db, auth } from "../server/db.js";
-import { updateSettings } from "../server/settings.js";
+const GLOBAL_SKILLS_FIXTURE = mkdtempSync(join(os.tmpdir(), "jarvis-global-skills-ci-"));
+const GLOBAL_DATA_DIR = mkdtempSync(join(os.tmpdir(), "jarvis-skills-data-ci-"));
+process.env.JARVIS_GLOBAL_SKILLS_DIR = GLOBAL_SKILLS_FIXTURE;
+process.env.JARVIS_DATA_DIR = GLOBAL_DATA_DIR;
+process.env.JARVIS_NO_LISTEN = "1";
+mkdirSync(join(GLOBAL_SKILLS_FIXTURE, "skills", "threejs-expert"), { recursive: true });
+mkdirSync(join(GLOBAL_SKILLS_FIXTURE, "skills", "gsap-motion"), { recursive: true });
+writeFileSync(join(GLOBAL_SKILLS_FIXTURE, "skills", "threejs-expert", "SKILL.md"), "---\nname: Three.js 3D Expert\ndescription: Criação de cenas 3D e shaders WebGL\ntags: [threejs, webgl, 3d]\n---\n# Three.js Expert\nDiretrizes de Three.js...", "utf8");
+writeFileSync(join(GLOBAL_SKILLS_FIXTURE, "skills", "gsap-motion", "SKILL.md"), "---\nname: GSAP Animation\ndescription: Animações com ScrollTrigger e timelines\ntags: [gsap, motion, animation]\n---\n# GSAP Motion\nDiretrizes de animação GSAP...", "utf8");
+writeFileSync(join(GLOBAL_SKILLS_FIXTURE, "catalog.json"), JSON.stringify({ version: "1.2.0", totalSkills: 2, skills: [
+  { id: "threejs-expert", name: "Three.js 3D Expert", description: "Criação de cenas 3D e shaders WebGL", tags: ["threejs", "webgl", "3d"], path: "skills/threejs-expert/SKILL.md", category: "graphics" },
+  { id: "gsap-motion", name: "GSAP Animation", description: "Animações com ScrollTrigger e timelines", tags: ["gsap", "motion", "animation"], path: "skills/gsap-motion/SKILL.md", category: "motion" }
+]}), "utf8");
+
+const {
+  listSkills, matchSkillsForPrompt, loadSkill, assertSafePath, getCatalog, GLOBAL_SKILLS_DIR,
+  sanitizeSkillFrontmatter, getRouterStatus, classifyTaskIntent, ROUTING_PROFILES,
+  recordProviderMetric, recordVoiceMetric, getProviderTelemetry, resetProviderTelemetry,
+} = await import("../server/skills.js");
+const { routeTable, createApp } = await import("../server/index.js");
+const { AuthError, TOOL_SCOPES } = await import("../server/auth.js");
+const { callTool, TOOL_DEFS } = await import("../server/tools.js");
+const { runAgent } = await import("../server/llm.js");
+const { db, auth } = await import("../server/db.js");
+const { updateSettings } = await import("../server/settings.js");
 
 
 // Cria fixture temporária isolada para testes herméticos
@@ -165,9 +167,10 @@ test("segurança: assertSafePath bloqueia tentativas de Path Traversal", () => {
     // Tentativa com bytes NUL
     assert.throws(() => assertSafePath("skills/threejs\0/secret.txt", tmpDir), /path_traversal_detected/);
 
-    // Tentativa de caminho absoluto externo
-    const externalPath = os.platform() === "win32" ? "C:\\Windows\\System32\\calc.exe" : "/etc/shadow";
-    assert.throws(() => assertSafePath(externalPath, tmpDir), /path_traversal_detected/);
+    // Absolute paths must be rejected consistently on Linux and Windows.
+    assert.throws(() => assertSafePath("/etc/shadow", tmpDir), /path_traversal_detected/);
+    assert.throws(() => assertSafePath("C:/Windows/System32/calc.exe", tmpDir), /path_traversal_detected/);
+    assert.throws(() => assertSafePath("//server/share/secret.txt", tmpDir), /path_traversal_detected/);
 
     // Caminho seguro dentro da base
     const safe = assertSafePath("skills/threejs-expert/SKILL.md", tmpDir);
@@ -194,16 +197,13 @@ test("ferramenta load_skill: integração com callTool e auditoria", async () =>
   const principal = { type: "bot", adminId: "admin-test", scopes: ["chat", "skills:read"] };
   const ctx = { autonomy: "full", pending: [], principal };
 
-  // Chamada de skill válida do Hub Global existente
   const res = await callTool("load_skill", { skill: "threejs" }, ctx);
   assert.ok(typeof res === "string");
   assert.ok(res.includes("[SKILL ESPECIALIZADA:"));
 
-  // Chamada de skill inexistente com sugestão
   const notFound = await callTool("load_skill", { skill: "nao_existe_mesmo_123" }, ctx);
   assert.ok(notFound.includes("não encontrada no Hub Global"));
 
-  // Tentativa maliciosa de Path Traversal
   const traversal = await callTool("load_skill", { skill: "../../../../etc/passwd" }, ctx);
   assert.ok(traversal.includes("Erro de segurança: tentativa de acesso fora do diretório de skills bloqueada."));
 });

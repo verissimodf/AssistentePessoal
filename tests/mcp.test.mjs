@@ -5,12 +5,18 @@
 
 import test, { before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 
 const dir = mkdtempSync(join(tmpdir(), "jarvis-mcp-test-"));
+const skillsHub = join(dir, "skills-hub");
+const skillDir = join(skillsHub, "karpathy-engineering");
+mkdirSync(skillDir, { recursive: true });
+writeFileSync(join(skillDir, "SKILL.md"), "---\nname: Karpathy Engineering\ndescription: Engineering practices for reliable software\ntags: [engineering, code]\n---\n# Karpathy Engineering\nTest fixture skill.", "utf8");
+writeFileSync(join(skillsHub, "catalog.json"), JSON.stringify({ version: "1.2.0", totalSkills: 1, skills: [{ id: "karpathy-engineering", name: "Karpathy Engineering", description: "Engineering practices for reliable software", tags: ["engineering", "code"], path: "karpathy-engineering/SKILL.md", category: "engineering" }] }), "utf8");
+process.env.JARVIS_GLOBAL_SKILLS_DIR = skillsHub;
 process.env.JARVIS_DATA_DIR = dir;
 process.env.JARVIS_NO_LISTEN = "1";
 
@@ -142,13 +148,13 @@ test("MCP: list_skills busca e lista skills do Hub Global", async () => {
       jsonrpc: "2.0",
       id: 5,
       method: "tools/call",
-      params: { name: "list_skills", arguments: { query: "threejs" } },
+      params: { name: "list_skills", arguments: { query: "karpathy-engineering" } },
     },
     { base, token: tokenSkills }
   );
 
   assert.ok(res.content);
-  assert.match(res.content[0].text, /threejs/i);
+  assert.match(res.content[0].text, /karpathy-engineering/i);
 });
 
 test("MCP: document_search executa com documents:read e rejeita sem escopo", async () => {

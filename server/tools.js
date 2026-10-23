@@ -138,6 +138,8 @@ async function fetchUrl(url) {
 export const REA_INTEGRATION_ID = "rea";
 export const REA_TEMPLATE = "rea analyze-javascript-application {path} --json";
 const REA_PATH_SAFE = /^[/A-Za-z0-9_\-.:\\]+$/;
+const REA_PATH_SAFE_NORMALIZED = /^[/A-Za-z0-9_\-.:]+$/;
+const REA_PATH_WINDOWS_SAFE_NORMALIZED = /^[A-Za-z]:[/A-Za-z0-9_\-.:]+$/;
 
 export const parseReaRoots = (cfg) => {
   const list = String(cfg?.roots ?? "").split(",").map((x) => x.trim().replace(/\\/g, "/")).filter(Boolean);
@@ -151,12 +153,19 @@ export function reaResolvePath(input, cfg) {
   const normalized = raw.replace(/\\/g, "/");
   const isAbs = normalized.startsWith("/") || /^[a-zA-Z]:\//.test(normalized);
   if (!isAbs) return { ok: false, reason: "O caminho precisa ser absoluto (a partir de uma raiz permitida)." };
-  if (normalized.includes("..") || normalized.includes("//")) return { ok: false, reason: "Traversal de caminho (..) não é permitido." };
-  if (!REA_PATH_SAFE.test(raw)) return { ok: false, reason: "O caminho contém caractere fora do conjunto permitido." };
+  if (normalized.split("/").includes("..") || normalized.includes("//")) return { ok: false, reason: "Traversal de caminho (..) não é permitido." };
   const roots = parseReaRoots(cfg);
-  if (!roots.some((root) => normalized === root || normalized.startsWith(root.endsWith("/") ? root : `${root}/`))) {
-    return { ok: false, reason: `O caminho está fora das raízes permitidas (${roots.join(", ")}). Copie o alvo para dentro delas e repita.` };
-  }
+  const fold = (value) => process.platform === "win32" ? value.toLowerCase() : value;
+  const isWithinRoot = roots.some((root) => {
+    const r = fold(root.replace(/\\/g, "/").replace(/\/$/, ""));
+    const p = fold(normalized);
+    return p === r || p.startsWith(`${r}/`);
+  });
+  // Permit the Windows drive colon only after the candidate is verified inside an allowed root.
+  const safeCharacters = REA_PATH_SAFE_NORMALIZED.test(normalized)
+    || (process.platform === "win32" && REA_PATH_WINDOWS_SAFE_NORMALIZED.test(normalized));
+  if (!safeCharacters) return { ok: false, reason: "O caminho contém caractere fora do conjunto permitido." };
+  if (!isWithinRoot) return { ok: false, reason: `O caminho está fora das raízes permitidas (${roots.join(", ")}). Copie o alvo para dentro delas e repita.` };
   return { ok: true, abs: normalized, roots };
 }
 
