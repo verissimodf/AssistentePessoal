@@ -84,7 +84,8 @@ export function personalPart(s = {}) {
     const { localVoiceUrl: _drop, ...v } = s.voice;
     if (Object.keys(v).length) out.voice = v;
   }
-  for (const k of ["providers", "comms"]) if (s[k] && typeof s[k] === "object") out[k] = s[k];
+  if (s.providers && typeof s.providers === "object") out.providers = s.providers;
+  if (s.comms && typeof s.comms === "object") out.comms = s.comms;
   return out;
 }
 
@@ -123,6 +124,30 @@ const walkMask = (o) => {
   }
   return out;
 };
+/**
+ * P3: merge de contas de comunicação. Regra explícita de campo em branco: string vazia (ou só
+ * espaços) significa NÃO ALTERAR — nunca apaga um usuário/segredo já salvo em silêncio. Para
+ * remover uma conta, o operador desabilita a conta (campo `enabled`) ou informa outro valor.
+ */
+const mergeComms = (cur, inc) => {
+  const out = { ...(cur && typeof cur === "object" ? cur : {}) };
+  for (const [accountId, cfg] of Object.entries(inc && typeof inc === "object" ? inc : {})) {
+    if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) {
+      out[accountId] = cfg;
+      continue;
+    }
+    const prev = cur?.[accountId] && typeof cur[accountId] === "object" ? cur[accountId] : {};
+    const next = { ...prev };
+    for (const [k, v] of Object.entries(cfg)) {
+      if (k === "hasKey") continue;
+      if (typeof v === "string" && v.trim() === "") continue; // branco = preservar o valor salvo
+      next[k] = isSecretField(k) && typeof v === "string" ? encrypt(v) : v;
+    }
+    out[accountId] = next;
+  }
+  return out;
+};
+
 const merge = (cur, inc) => {
   if (!inc || typeof inc !== "object" || Array.isArray(inc)) return inc;
   const out = { ...(cur && typeof cur === "object" ? cur : {}) };
@@ -231,7 +256,10 @@ export function updateSettings(incoming = {}, { adminId = null, allowGlobal = tr
   }
   const p = personalPart(inc);
   if (adminId && Object.keys(p).length) {
-    const next = merge(rawPersonal(adminId) || {}, p);
+    const cur = rawPersonal(adminId) || {};
+    const next = merge(cur, p);
+    // P3: contas de comunicação têm regra própria de campo em branco (preserva o valor salvo).
+    if (p.comms !== undefined) next.comms = mergeComms(cur.comms, p.comms);
     db.prepare(
       "INSERT INTO admin_settings (admin_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(admin_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
     ).run(adminId, JSON.stringify(next), now());

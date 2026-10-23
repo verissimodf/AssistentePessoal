@@ -689,11 +689,18 @@ export function buildInventory(ctx) {
     { implementado: true, habilitado: ctx.email?.transporte === "real", testado: true },
     [
       { metodo: "codigo", ref: "server/mail-service.js, server/mail-imap.js", data: null },
-      { metodo: "teste", ref: "tests/mail.test.mjs, tests/mail-drafts.test.mjs, tests/mail-routes.test.mjs, tests/mail-imap.test.mjs", data: null },
+      { metodo: "teste", ref: "tests/mail.test.mjs, tests/mail-drafts.test.mjs, tests/mail-routes.test.mjs, tests/mail-imap.test.mjs, tests/mail-connection.test.mjs", data: null },
+      { metodo: "execucao", ref: "POST /api/mail/:account/test-connection (humano + CSRF)", data: agora, nota: "testa IMAP/SMTP sem enviar; distingue mock, configuração incompleta e falha classificada." },
     ],
-    ctx.email?.transporte === "real"
-      ? ["Envio real habilitado por opt-in explícito; verificação dinâmica é a etapa 4 (não executada)."]
-      : ["Transporte simulado (mock) ativo — envio real desativado por padrão (decisão vigente)."],
+    // P3: distingue explicitamente ausência de configuração de falha de conexão.
+    [
+      ...(ctx.email?.transporte === "real"
+        ? ["Envio real habilitado por opt-in explícito; verificação dinâmica é a etapa 4 (não executada)."]
+        : ["Transporte simulado (mock) ativo — envio real desativado por padrão (decisão vigente)."]),
+      ...((ctx.email?.contasAtivas ?? 0) === 0
+        ? ["Nenhuma conta configurada: isso é CONFIGURAÇÃO AUSENTE, não falha de conexão."]
+        : []),
+    ],
     "alta",
     { transporte: ctx.email?.transporte || "mock", contasAtivas: ctx.email?.contasAtivas ?? 0 },
   ));
