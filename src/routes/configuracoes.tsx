@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/AppShell";
+import { ConnectionTest } from "@/components/ConnectionTest";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -150,8 +151,19 @@ function SettingsPage() {
                   <Switch checked={!!v.enabled} onCheckedChange={(x) => setNested("comms", c.id, "enabled", x)} />
                 </div>
                 {c.fields.map((f) => (
-                  <Field key={f} label={f}><Input type={/token|password/i.test(f) ? "password" : "text"} value={v[f] || ""} onChange={(e) => setNested("comms", c.id, f, e.target.value)} /></Field>
+                  <Field key={f} label={f}>
+                    {/* P3: nunca ecoa o segredo — só indica que existe um valor salvo (`hasKey`). */}
+                    <Input
+                      type={/token|password/i.test(f) ? "password" : "text"}
+                      placeholder={/token|password/i.test(f) && v.hasKey ? "•••••••• (salvo)" : ""}
+                      value={v[f] || ""}
+                      onChange={(e) => setNested("comms", c.id, f, e.target.value)}
+                    />
+                  </Field>
                 ))}
+                {(c.fields as readonly string[]).includes("appPassword") && (
+                  <ConnectionTest account={c.id} />
+                )}
               </div>
             );
           })}

@@ -1,8 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { Mail, RefreshCw, Send, XCircle } from "lucide-react";
+import { Mail, Pencil, RefreshCw, Send, XCircle } from "lucide-react";
 import { PageHeader } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/bridge";
 
 export const Route = createFileRoute("/rascunhos")({
@@ -34,6 +36,7 @@ type DraftMeta = {
   expiresAt: string;
 };
 type DraftFull = DraftMeta & { body: string | null };
+type MailAccount = { type: string; user?: string; enabled?: boolean; hasPassword?: boolean };
 
 // Labels/colours per state. `expired` and `cancelled` are terminal; the body is already discarded.
 const STATE: Record<string, { label: string; cls: string }> = {
@@ -51,10 +54,17 @@ const shortTime = (iso: string) => (iso ? new Date(iso).toLocaleString() : "—"
 
 export function DraftsPage() {
   const [drafts, setDrafts] = useState<DraftMeta[]>([]);
+  const [accounts, setAccounts] = useState<MailAccount[]>([]);
   const [selected, setSelected] = useState<DraftFull | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  // P1-A: composição humana na MESMA store transiente dos rascunhos de agente (nunca envia).
+  const [compose, setCompose] = useState({ account: "", to: "", subject: "", body: "" });
+  // Edição em linha de um rascunho pendente.
+  const [editing, setEditing] = useState<{ to: string; subject: string; body: string } | null>(
+    null,
+  );
 
   const fail = (e: unknown) => setMsg(`Falha: ${String((e as Error).message || e)}`);
   const refresh = useCallback(async () => {
@@ -64,9 +74,20 @@ export function DraftsPage() {
       fail(e);
     }
   }, []);
+  const loadAccounts = useCallback(async () => {
+    try {
+      const list = await api<MailAccount[]>("/api/mail/accounts");
+      const safe = Array.isArray(list) ? list : [];
+      setAccounts(safe);
+      setCompose((c) => ({ ...c, account: c.account || safe[0]?.type || "" }));
+    } catch {
+      setAccounts([]);
+    }
+  }, []);
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    loadAccounts();
+  }, [refresh, loadAccounts]);
 
   // Opening a draft only READS it — it is never an approval.
   const open = async (id: string) => {
@@ -119,6 +140,59 @@ export function DraftsPage() {
 
   const canAct = selected?.state === "pending";
 
+  // Compor cria um rascunho PENDENTE (nunca envia): o envio continua exigindo confirmação explícita.
+  const createDraft = async () => {
+    if (!compose.account || !compose.to.trim() || !compose.body.trim()) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      const created = await api<{ id: string; expiresAt: string | number }>("/api/mail/drafts", {
+        method: "POST",
+        body: JSON.stringify({
+          account: compose.account,
+          to: compose.to.trim(),
+          subject: compose.subject,
+          body: compose.body,
+        }),
+      });
+      setCompose((c) => ({ ...c, to: "", subject: "", body: "" }));
+      setMsg(
+        `Rascunho criado (${created.id}). Nada foi enviado — revise e confirme na lista ao lado.`,
+      );
+      await refresh();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startEdit = () => {
+    if (!selected) return;
+    setMsg("");
+    setEditing({ to: selected.to, subject: selected.subject, body: selected.body ?? "" });
+  };
+
+  const saveEdit = async () => {
+    if (!selected || !editing) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      await api(`/api/mail/drafts/${selected.id}`, {
+        method: "PUT",
+        body: JSON.stringify(editing),
+      });
+      setMsg("Rascunho atualizado.");
+      setEditing(null);
+      await refresh();
+      await open(selected.id);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="h-screen overflow-y-auto p-6 md:p-10">
       <PageHeader
@@ -139,6 +213,59 @@ export function DraftsPage() {
           {msg}
         </pre>
       )}
+
+      {/* Composição humana: cria um rascunho transiente (mesma store dos rascunhos de agente).
+          Nada é enviado aqui — o envio exige a confirmação explícita ENVIAR na revisão. */}
+      <div data-testid="draft-compose" className="hud-panel mb-4 space-y-2 p-4">
+        <span className="hud-label">Novo rascunho</span>
+        <div className="grid gap-2 md:grid-cols-3">
+          <select
+            data-testid="compose-account"
+            className="h-9 rounded-md border border-input bg-transparent px-3 text-sm"
+            value={compose.account}
+            onChange={(e) => setCompose((c) => ({ ...c, account: e.target.value }))}
+          >
+            {accounts.length === 0 && <option value="">(nenhuma conta configurada)</option>}
+            {accounts.map((a) => (
+              <option key={a.type} value={a.type}>
+                {a.type}
+              </option>
+            ))}
+          </select>
+          <Input
+            data-testid="compose-to"
+            placeholder="Para (destinatário)"
+            value={compose.to}
+            onChange={(e) => setCompose((c) => ({ ...c, to: e.target.value }))}
+          />
+          <Input
+            data-testid="compose-subject"
+            placeholder="Assunto"
+            value={compose.subject}
+            onChange={(e) => setCompose((c) => ({ ...c, subject: e.target.value }))}
+          />
+        </div>
+        <Textarea
+          data-testid="compose-body"
+          placeholder="Corpo do e-mail"
+          rows={4}
+          value={compose.body}
+          onChange={(e) => setCompose((c) => ({ ...c, body: e.target.value }))}
+        />
+        <div className="flex items-center gap-2">
+          <Button
+            data-testid="compose-submit"
+            onClick={createDraft}
+            disabled={busy || !compose.account || !compose.to.trim() || !compose.body.trim()}
+          >
+            <Mail className="mr-2 h-4 w-4" />
+            Criar rascunho
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            O rascunho fica pendente de revisão; nenhum e-mail é enviado sem confirmação.
+          </span>
+        </div>
+      </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-2">
@@ -215,6 +342,15 @@ export function DraftsPage() {
                     Enviar…
                   </Button>
                   <Button
+                    data-testid="draft-edit"
+                    variant="outline"
+                    onClick={startEdit}
+                    disabled={busy}
+                  >
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Editar
+                  </Button>
+                  <Button
                     data-testid="draft-cancel"
                     variant="outline"
                     onClick={() => cancel(selected.id)}
@@ -223,6 +359,36 @@ export function DraftsPage() {
                     <XCircle className="mr-2 h-4 w-4" />
                     Cancelar
                   </Button>
+                </div>
+              )}
+
+              {canAct && editing && (
+                <div className="space-y-2 rounded border border-border p-3">
+                  <span className="hud-label">Editar rascunho</span>
+                  <Input
+                    data-testid="edit-to"
+                    value={editing.to}
+                    onChange={(e) => setEditing((v) => (v ? { ...v, to: e.target.value } : v))}
+                  />
+                  <Input
+                    data-testid="edit-subject"
+                    value={editing.subject}
+                    onChange={(e) => setEditing((v) => (v ? { ...v, subject: e.target.value } : v))}
+                  />
+                  <Textarea
+                    data-testid="edit-body"
+                    rows={5}
+                    value={editing.body}
+                    onChange={(e) => setEditing((v) => (v ? { ...v, body: e.target.value } : v))}
+                  />
+                  <div className="flex gap-2">
+                    <Button data-testid="edit-save" onClick={saveEdit} disabled={busy}>
+                      Salvar
+                    </Button>
+                    <Button variant="outline" onClick={() => setEditing(null)} disabled={busy}>
+                      Descartar
+                    </Button>
+                  </div>
                 </div>
               )}
 

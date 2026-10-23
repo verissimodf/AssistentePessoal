@@ -37,6 +37,45 @@ export function getCatalog(baseDir = GLOBAL_SKILLS_DIR) {
 }
 
 /**
+ * Estado do catálogo para diagnóstico (P1-C): distingue ausente, inválido e válido, além da versão
+ * e da ORIGEM do catálogo — a interface nunca deve fingir que existem skills disponíveis.
+ */
+export function getCatalogStatus(baseDir = GLOBAL_SKILLS_DIR) {
+  const catalogPath = join(baseDir, "catalog.json");
+  if (!existsSync(catalogPath)) {
+    return {
+      dir: baseDir,
+      present: false,
+      total: 0,
+      version: null,
+      source: null,
+      reason: "catalog_missing",
+    };
+  }
+  try {
+    const c = JSON.parse(readFileSync(catalogPath, "utf8"));
+    const total = Array.isArray(c?.skills) ? c.skills.length : 0;
+    return {
+      dir: baseDir,
+      present: true,
+      total,
+      version: c?.version ?? null,
+      source: c?.source ?? "unknown",
+      reason: total === 0 ? "catalog_empty" : null,
+    };
+  } catch {
+    return {
+      dir: baseDir,
+      present: true,
+      total: 0,
+      version: null,
+      source: null,
+      reason: "catalog_invalid",
+    };
+  }
+}
+
+/**
  * Retorna a lista de todas as skills disponíveis, com suporte a filtros por tag ou categoria.
  */
 export function listSkills({ category, tag, baseDir = GLOBAL_SKILLS_DIR } = {}) {

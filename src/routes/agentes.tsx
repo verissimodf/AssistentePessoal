@@ -64,7 +64,7 @@ const blank: Partial<Agent> = {
   name: "",
   instructions: "",
   provider: "ollama",
-  model: "llama3.1",
+  model: "qwen2.5:7b",
   tools: ["remember", "recall", "web_search", "load_skill"],
 };
 

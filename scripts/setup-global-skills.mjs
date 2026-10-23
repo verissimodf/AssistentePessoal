@@ -173,6 +173,112 @@ export function sanitizeSkillFrontmatter(rawMarkdown) {
   return cleanFrontmatter + body;
 }
 
+/** Versão do catálogo determinístico local (modo offline). */
+export const ESSENTIALS_VERSION = "1.2.1-builtin";
+
+/**
+ * Catálogo determinístico embutido: sem rede, sem clones, sem origem não verificada (P1-C).
+ * É a fonte padrão do runtime e o fallback quando nenhum repositório externo foi indexado.
+ */
+export const ESSENTIAL_SKILLS = [
+  {
+    id: "threejs-expert",
+    name: "Three.js & WebGL 3D Expert",
+    description: "Construção de cenas 3D, WebGL/WebGPU, shaders TSL/GLSL, controle de ciclo de vida e descarte de recursos de GPU.",
+    tags: ["threejs", "webgl", "webgpu", "3d", "r3f"],
+    category: "graphics",
+  },
+  {
+    id: "gsap-motion",
+    name: "GSAP High-Performance Animation",
+    description: "Animações fluidas de interface com GSAP Timeline, ScrollTrigger, interpolações SVG e otimização de composite layers.",
+    tags: ["gsap", "animation", "motion", "frontend"],
+    category: "motion",
+  },
+  {
+    id: "design-dna",
+    name: "Design DNA & Interface Polish",
+    description: "Padrões de design visual refinado, tipografia proporcional, paletas HUD ciano/âmbar, espaçamentos consistentes e UX moderna.",
+    tags: ["design", "ui", "ux", "tailwind", "hud"],
+    category: "design",
+  },
+  {
+    id: "karpathy-engineering",
+    name: "Karpathy Lean Engineering",
+    description: "Engenharia ágil com foco em simplicidade radical, inspeção de dados brutos antes de abstrações e modificações cirúrgicas.",
+    tags: ["engineering", "architecture", "clean-code"],
+    category: "engineering",
+  },
+];
+
+/**
+ * Provisionamento OFFLINE e deterministico do Skills Hub (P1-C).
+ * - não faz rede, não clona repositórios e não executa código de terceiros;
+ * - idempotente: repetir a execução não duplica nem corrompe entradas;
+ * - NUNCA lança: devolve `{ ok, reason }` para que a falha seja explícita e diagnosticável.
+ * `bridges: true` é opt-in e cria pontes em ~/.claude|.gemini|.antigravity (fora do container por padrão).
+ */
+export function runEssentialsSetup({ baseDir = BASE_DIR, bridges = false, log = console.log } = {}) {
+  try {
+    const consolidated = join(baseDir, "skills");
+    const catalogPath = join(baseDir, "catalog.json");
+    mkdirSync(consolidated, { recursive: true });
+
+    const skills = [];
+    for (const item of ESSENTIAL_SKILLS) {
+      const dir = join(consolidated, item.id);
+      mkdirSync(dir, { recursive: true });
+      const content = `# ${item.name}\n\n${item.description}\n\nTags: ${item.tags.join(", ")}\n`;
+      const clean = sanitizeSkillFrontmatter(content);
+      const fullPath = join(dir, "SKILL.md");
+      writeFileSync(fullPath, clean, "utf8");
+      skills.push({
+        ...item,
+        source: "builtin",
+        path: `skills/${item.id}/SKILL.md`,
+        fullPath,
+        size: clean.length,
+      });
+    }
+
+    const catalog = {
+      version: ESSENTIALS_VERSION,
+      generatedAt: new Date().toISOString(),
+      baseDir,
+      source: "builtin",
+      totalSkills: skills.length,
+      skills,
+    };
+    writeFileSync(catalogPath, JSON.stringify(catalog, null, 2) + "\n", "utf8");
+    log(`assistente-pessoal: skills hub (builtin) provisionado em ${baseDir} (${skills.length} skills)`);
+
+    if (bridges) {
+      for (const bridgeDir of [
+        join(os.homedir(), ".claude", "skills"),
+        join(os.homedir(), ".gemini", "skills"),
+        join(os.homedir(), ".antigravity", "skills"),
+      ]) {
+        try {
+          mkdirSync(bridgeDir, { recursive: true });
+          for (const s of skills) {
+            mkdirSync(join(bridgeDir, s.id), { recursive: true });
+            writeFileSync(
+              join(bridgeDir, s.id, "SKILL.md"),
+              readFileSync(s.fullPath, "utf8"),
+              "utf8",
+            );
+          }
+        } catch {
+          /* pontes são best-effort e nunca derrubam o provisionamento */
+        }
+      }
+    }
+    return { ok: true, reason: null, baseDir, catalogPath, totalSkills: skills.length, source: "builtin" };
+  } catch (e) {
+    return { ok: false, reason: `provision_failed: ${e?.code ?? e?.message ?? "erro"}`, baseDir, totalSkills: 0 };
+  }
+}
+
 export function runSetup() {
   console.log("==================================================================");
   console.log(" Hub Global de Skills Multi-Agente — Provisionamento v1.2.1");
@@ -370,36 +476,7 @@ export function runSetup() {
   // Se nenhum repo foi clonado ainda ou para garantir catálogo mínimo robusto:
   if (skills.length === 0) {
     console.log("  [aviso] Nenhum SKILL.md externo encontrado; gerando catálogo essencial local...");
-    const essentials = [
-      {
-        id: "threejs-expert",
-        name: "Three.js & WebGL 3D Expert",
-        description: "Construção de cenas 3D, WebGL/WebGPU, shaders TSL/GLSL, controle de ciclo de vida e descarte de recursos de GPU.",
-        tags: ["threejs", "webgl", "webgpu", "3d", "r3f"],
-        category: "graphics",
-      },
-      {
-        id: "gsap-motion",
-        name: "GSAP High-Performance Animation",
-        description: "Animações fluidas de interface com GSAP Timeline, ScrollTrigger, interpolações SVG e otimização de composite layers.",
-        tags: ["gsap", "animation", "motion", "frontend"],
-        category: "motion",
-      },
-      {
-        id: "design-dna",
-        name: "Design DNA & Interface Polish",
-        description: "Padrões de design visual refinado, tipografia proporcional, paletas HUD ciano/âmbar, espaçamentos consistentes e UX moderna.",
-        tags: ["design", "ui", "ux", "tailwind", "hud"],
-        category: "design",
-      },
-      {
-        id: "karpathy-engineering",
-        name: "Karpathy Lean Engineering",
-        description: "Engenharia ágil com foco em simplicidade radical, inspeção de dados brutos antes de abstrações e modificações cirúrgicas.",
-        tags: ["engineering", "architecture", "clean-code"],
-        category: "engineering",
-      },
-    ];
+    const essentials = ESSENTIAL_SKILLS;
 
     for (const item of essentials) {
       const dir = join(SKILLS_CONSOLIDATED, item.id);
@@ -421,6 +498,8 @@ export function runSetup() {
     version: "1.2.1",
     generatedAt: new Date().toISOString(),
     baseDir: BASE_DIR,
+    // Origem explícita: clones de repositórios externos não fixados por commit (modo opt-in).
+    source: "github-unpinned",
     totalSkills: skills.length,
     skills,
   };
@@ -467,5 +546,17 @@ const isCLI =
     fileURLToPath(import.meta.url) === resolve(process.argv[1]));
 
 if (isCLI) {
-  runSetup();
+  const args = new Set(process.argv.slice(2));
+  // Padrão SEGURO: catálogo determinístico offline (sem clones de origem não verificada).
+  // O modo de rede depende de opt-in explícito: --full ou JARVIS_SKILLS_SOURCE=full.
+  const wantFull = args.has("--full") || process.env.JARVIS_SKILLS_SOURCE === "full";
+  if (wantFull) {
+    runSetup();
+  } else {
+    const r = runEssentialsSetup({ bridges: process.env.JARVIS_SKILLS_BRIDGES === "1" });
+    if (!r.ok) {
+      console.error(`assistente-pessoal: AVISO — provisionamento de skills falhou (${r.reason}).`);
+      process.exitCode = 1;
+    }
+  }
 }

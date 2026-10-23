@@ -54,6 +54,17 @@ export function stopSpeaking() {
   }
 }
 
+/** P2-A: reconhece o estado de aquecimento do TTS local (cold-start do XTTS). */
+export const isVoiceWarmingUp = (message: string) => /voice_warming_up/i.test(String(message ?? ""));
+
+/** Espera antes de repetir uma síntese em aquecimento (usa o retryAfter anunciado, com teto). */
+export function warmingRetryDelay(message: string, fallbackMs = 5000): number {
+  const m = /retryAfter[^0-9]{0,6}(\d+)/i.exec(String(message ?? ""));
+  const secs = m ? Number(m[1]) : NaN;
+  const ms = Number.isFinite(secs) && secs >= 0 ? secs * 1000 : fallbackMs;
+  return Math.min(Math.max(ms, 250), 30_000);
+}
+
 /**
  * Reproduz texto via TTS local (/api/tts) ou SpeechSynthesis do navegador.
  * Suporta cancelamento e sinal de interrupção (Barge-In).
@@ -72,10 +83,22 @@ export async function speak(
 
   if (engine !== "browser" && (await ping())) {
     try {
-      const blob = await api<Blob>("/api/tts", {
-        method: "POST",
-        body: JSON.stringify({ text: plain, lang }),
-      });
+      let blob: Blob;
+      try {
+        blob = await api<Blob>("/api/tts", {
+          method: "POST",
+          body: JSON.stringify({ text: plain, lang }),
+        });
+      } catch (e) {
+        // Cold-start: o modelo local ainda está carregando — espera e tenta UMA vez.
+        if (!isVoiceWarmingUp(String((e as Error)?.message ?? e))) throw e;
+        await new Promise((r) => setTimeout(r, warmingRetryDelay(String((e as Error)?.message ?? e))));
+        if (signal?.aborted) return;
+        blob = await api<Blob>("/api/tts", {
+          method: "POST",
+          body: JSON.stringify({ text: plain, lang }),
+        });
+      }
       if (signal?.aborted) return;
 
       const audioUrl = URL.createObjectURL(blob);

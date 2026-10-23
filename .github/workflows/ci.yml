@@ -81,3 +81,70 @@ jobs:
           done
           echo "Timeout aguardando API e painel." >&2
           exit 1
+
+      - name: Fluxo real autenticado (container e banco temporários próprios)
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # Container PRÓPRIO e efêmero: o container do passo anterior é removido pelo `trap` dele no
+          # fim daquele passo. Sem volume do host, sem tocar em nenhum outro serviço.
+          container_name=assistente-pessoal-ci-auth
+          cleanup() {
+            rc=$?
+            if [ "$rc" -ne 0 ]; then docker logs "$container_name" >&2 || true; fi
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run -d --name "$container_name" \
+            -p 127.0.0.1:27777:7777 \
+            -p 127.0.0.1:28090:8090 \
+            assistente-pessoal:ci >/dev/null
+          API=http://127.0.0.1:27777
+          ready=0
+          for _ in $(seq 1 45); do
+            if curl --fail --silent "$API/api/health" >/dev/null; then ready=1; break; fi
+            if [ "$(docker inspect -f '{{.State.Running}}' "$container_name" 2>/dev/null || echo false)" != "true" ]; then
+              echo "Container efêmero encerrou antes de ficar saudável." >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          [ "$ready" = "1" ] || { echo "Timeout aguardando a API do container efêmero." >&2; exit 1; }
+
+          TOKEN=$(docker exec "$container_name" cat /app/data/bootstrap-token.txt | tr -d '\r\n')
+          USER="ci-smoke-$RANDOM"
+          PASS="Ci#$(openssl rand -hex 12)!"
+          curl --fail --silent -X POST "$API/api/auth/setup" -H 'content-type: application/json' \
+            -d "{\"token\":\"$TOKEN\",\"username\":\"$USER\",\"password\":\"$PASS\"}" >/dev/null
+
+          LOGIN=$(curl --fail --silent -X POST "$API/api/auth/login" -H 'content-type: application/json' \
+            -d "{\"username\":\"$USER\",\"password\":\"$PASS\"}" -c /tmp/ci-cookies)
+          CSRF=$(printf '%s' "$LOGIN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["csrf"])')
+          authed() { curl --fail --silent -b /tmp/ci-cookies -H "x-jarvis-csrf: $CSRF" "$@"; }
+
+          # P1-C: catálogo de skills provisionado no boot (offline, determinístico).
+          skills=$(authed "$API/api/skills")
+          printf '%s' "$skills" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["total"]>0, "skills hub vazio"; print("skills:", d["total"])'
+
+          # P1-A: criar e excluir rascunho humano (nunca envia).
+          authed -X PUT "$API/api/settings" -H 'content-type: application/json' \
+            -d '{"comms":{"gmail":{"enabled":true,"user":"ci@exemplo.test","appPassword":"segredo-de-ci"}}}' >/dev/null
+          draft=$(authed -X POST "$API/api/mail/drafts" -H 'content-type: application/json' \
+            -d '{"account":"gmail","to":"dest@exemplo.test","subject":"ci","body":"corpo de teste"}')
+          DID=$(printf '%s' "$draft" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          authed -X DELETE "$API/api/mail/drafts/$DID" >/dev/null
+
+          # P1-B: teste de conexão explícito como MOCK (nunca afirma conexão real).
+          conn=$(authed -X POST "$API/api/mail/gmail/test-connection")
+          printf '%s' "$conn" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["mode"]=="mock", d; assert d["imap"]["ok"] is not True; print("test-connection:", d["mode"])'
+
+          # P2-A: TTS sem serviço local devolve estado estruturado (não 500 genérico).
+          code=$(curl --silent -o /tmp/tts.json -w '%{http_code}' -b /tmp/ci-cookies -H "x-jarvis-csrf: $CSRF" \
+            -X POST "$API/api/tts" -H 'content-type: application/json' -d '{"text":"teste ci"}')
+          python3 -c 'import json; d=json.load(open("/tmp/tts.json")); assert d.get("error"), d; print("tts:", d["error"])'
+
+          # P2-B: diagnóstico reflete o catálogo de skills e a versão/commit do build.
+          diag=$(authed "$API/api/diagnostics")
+          printf '%s' "$diag" | python3 -c 'import json,sys; d=json.load(sys.stdin); items={i["id"]: i for i in d["itens"]}; sk=items["servico:skills-hub"]; assert sk["estado"]=="OPERACIONAL", sk["estado"]; assert d["versao"]["app"]; print("diagnostico: skills", sk["estado"], "| versao", d["versao"]["app"])'
+          echo "Fluxo autenticado do container validado."

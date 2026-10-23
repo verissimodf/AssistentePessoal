@@ -36,11 +36,14 @@ export function decrypt(value) {
 
 export const isSecretField = (k) => /key|token|password|secret/i.test(k);
 
+/** Modelo de chat padrão para o Ollama local: validado no benchmark de P2-B (5/5 casos). */
+export const DEFAULT_OLLAMA_MODEL = "qwen2.5:7b";
+
 // ---------- classification (D5) ----------
 export const PERSONAL_DEFAULTS = {
   general: { agentName: "Jarvis", language: "pt" },
   providers: {
-    ollama: { enabled: true, baseUrl: "http://ollama-llm:11434/v1", model: "llama3.1" },
+    ollama: { enabled: true, baseUrl: "http://ollama-llm:11434/v1", model: DEFAULT_OLLAMA_MODEL },
   },
   comms: {},
   voice: {
@@ -81,7 +84,8 @@ export function personalPart(s = {}) {
     const { localVoiceUrl: _drop, ...v } = s.voice;
     if (Object.keys(v).length) out.voice = v;
   }
-  for (const k of ["providers", "comms"]) if (s[k] && typeof s[k] === "object") out[k] = s[k];
+  if (s.providers && typeof s.providers === "object") out.providers = s.providers;
+  if (s.comms && typeof s.comms === "object") out.comms = s.comms;
   return out;
 }
 
@@ -120,6 +124,35 @@ const walkMask = (o) => {
   }
   return out;
 };
+/**
+ * P3: merge de contas de comunicação. Regra explícita de campo em branco: string vazia (ou só
+ * espaços) significa NÃO ALTERAR — nunca apaga um usuário/segredo já salvo em silêncio. Para
+ * remover uma conta, o operador desabilita a conta (campo `enabled`) ou informa outro valor.
+ */
+const mergeComms = (cur, inc) => {
+  const out = { ...(cur && typeof cur === "object" ? cur : {}) };
+  for (const [accountId, cfg] of Object.entries(inc && typeof inc === "object" ? inc : {})) {
+    // `null` é a remoção EXPLÍCITA da conta (o vazio preserva; o null remove).
+    if (cfg === null) {
+      delete out[accountId];
+      continue;
+    }
+    if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) {
+      out[accountId] = cfg;
+      continue;
+    }
+    const prev = cur?.[accountId] && typeof cur[accountId] === "object" ? cur[accountId] : {};
+    const next = { ...prev };
+    for (const [k, v] of Object.entries(cfg)) {
+      if (k === "hasKey") continue;
+      if (typeof v === "string" && v.trim() === "") continue; // branco = preservar o valor salvo
+      next[k] = isSecretField(k) && typeof v === "string" ? encrypt(v) : v;
+    }
+    out[accountId] = next;
+  }
+  return out;
+};
+
 const merge = (cur, inc) => {
   if (!inc || typeof inc !== "object" || Array.isArray(inc)) return inc;
   const out = { ...(cur && typeof cur === "object" ? cur : {}) };
@@ -132,12 +165,26 @@ const merge = (cur, inc) => {
   return out;
 };
 
+/**
+ * P2-B: preserva o default do provedor local quando a seção está ausente. Uma conta pessoal que
+ * salva qualquer outra preferência não pode apagar o modelo padrão validado (evita apontar para um
+ * modelo inexistente por omissão). Configuração explícita do provedor sempre vence.
+ */
+const withProviderDefaults = (providers) => {
+  const prov = providers && typeof providers === "object" ? providers : {};
+  const merged = { ...PERSONAL_DEFAULTS.providers, ...prov };
+  for (const [id, def] of Object.entries(PERSONAL_DEFAULTS.providers)) {
+    if (prov[id] && typeof prov[id] === "object") merged[id] = { ...def, ...prov[id] };
+  }
+  return merged;
+};
+
 function compose(personal, global, walk) {
   const p = walk(personal || {});
   const g = walk(global);
   return {
     general: { ...PERSONAL_DEFAULTS.general, ...(p.general || {}) },
-    providers: p.providers || (personal ? {} : PERSONAL_DEFAULTS.providers),
+    providers: withProviderDefaults(p.providers),
     comms: p.comms || {},
     voice: { ...PERSONAL_DEFAULTS.voice, ...(p.voice || {}), localVoiceUrl: g.localVoiceUrl },
     integrations: g.integrations || {},
@@ -228,7 +275,10 @@ export function updateSettings(incoming = {}, { adminId = null, allowGlobal = tr
   }
   const p = personalPart(inc);
   if (adminId && Object.keys(p).length) {
-    const next = merge(rawPersonal(adminId) || {}, p);
+    const cur = rawPersonal(adminId) || {};
+    const next = merge(cur, p);
+    // P3: contas de comunicação têm regra própria de campo em branco (preserva o valor salvo).
+    if (p.comms !== undefined) next.comms = mergeComms(cur.comms, p.comms);
     db.prepare(
       "INSERT INTO admin_settings (admin_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(admin_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at",
     ).run(adminId, JSON.stringify(next), now());

@@ -15,6 +15,7 @@ import { SCOPES, ADMIN_ONLY, TOOL_SCOPES } from "./auth.js";
 import { TOOL_DEFS } from "./tools.js";
 import { DEFAULT_AGENT } from "./llm.js";
 import { publicSettings } from "./settings.js";
+import { getCatalogStatus } from "./skills.js";
 import { ownedIds } from "./ownership.js";
 
 export const ESTADOS = [
@@ -424,6 +425,23 @@ export function buildInventory(ctx) {
     { versaoReportada: ctx.version || null, commit: ctx.commit || null, buildTime: ctx.buildTime || null, node: ctx.nodeVersion || null, uptimeSegundos: Math.round(ctx.uptimeSeconds || 0) },
   ));
 
+  // P1-C: Skills Hub — estado real (provisionado, ausente ou inválido), com origem e versão.
+  const sk = ctx.skills || {};
+  const skOk = !!(sk.present && sk.total > 0);
+  itens.push(mkItem(
+    "servico:skills-hub", "servico", "Hub Global de Skills",
+    skOk ? "OPERACIONAL" : "INDISPONÍVEL",
+    { implementado: true, habilitado: true, testado: skOk },
+    [
+      { metodo: "codigo", ref: "scripts/setup-global-skills.mjs, server/skills.js", data: null, nota: "provisionamento offline e determinístico (modo builtin)." },
+      { metodo: "teste", ref: "tests/skills-provision.test.mjs", data: null, nota: "suíte referenciada." },
+      { metodo: "execucao", ref: "catalog.json (leitura somente)", data: agora, nota: skOk ? "catálogo encontrado." : `catálogo indisponível (${sk.reason || "ausente"}).` },
+    ],
+    skOk ? [] : ["sem catálogo: /api/skills responde vazio até o provisionamento ocorrer."],
+    "alta",
+    { diretorio: sk.dir || null, total: sk.total ?? 0, versao: sk.version || null, origem: sk.source || null, motivo: sk.reason || null },
+  ));
+
   if (ctx.bancoOk) {
     itens.push(mkItem(
       "servico:banco", "servico", "Banco de dados local",
@@ -671,11 +689,18 @@ export function buildInventory(ctx) {
     { implementado: true, habilitado: ctx.email?.transporte === "real", testado: true },
     [
       { metodo: "codigo", ref: "server/mail-service.js, server/mail-imap.js", data: null },
-      { metodo: "teste", ref: "tests/mail.test.mjs, tests/mail-drafts.test.mjs, tests/mail-routes.test.mjs, tests/mail-imap.test.mjs", data: null },
+      { metodo: "teste", ref: "tests/mail.test.mjs, tests/mail-drafts.test.mjs, tests/mail-routes.test.mjs, tests/mail-imap.test.mjs, tests/mail-connection.test.mjs", data: null },
+      { metodo: "execucao", ref: "POST /api/mail/:account/test-connection (humano + CSRF)", data: agora, nota: "testa IMAP/SMTP sem enviar; distingue mock, configuração incompleta e falha classificada." },
     ],
-    ctx.email?.transporte === "real"
-      ? ["Envio real habilitado por opt-in explícito; verificação dinâmica é a etapa 4 (não executada)."]
-      : ["Transporte simulado (mock) ativo — envio real desativado por padrão (decisão vigente)."],
+    // P3: distingue explicitamente ausência de configuração de falha de conexão.
+    [
+      ...(ctx.email?.transporte === "real"
+        ? ["Envio real habilitado por opt-in explícito; verificação dinâmica é a etapa 4 (não executada)."]
+        : ["Transporte simulado (mock) ativo — envio real desativado por padrão (decisão vigente)."]),
+      ...((ctx.email?.contasAtivas ?? 0) === 0
+        ? ["Nenhuma conta configurada: isso é CONFIGURAÇÃO AUSENTE, não falha de conexão."]
+        : []),
+    ],
     "alta",
     { transporte: ctx.email?.transporte || "mock", contasAtivas: ctx.email?.contasAtivas ?? 0 },
   ));
@@ -897,6 +922,7 @@ export function collectDiagnostics({ adminId, version = null, commit = null, bui
   }
   const comms = publico.comms && typeof publico.comms === "object" ? publico.comms : {};
   const telegram = comms.telegram && typeof comms.telegram === "object" ? comms.telegram : {};
+  const skillsStatus = getCatalogStatus();
   const contasAtivas = Object.entries(comms).filter(
     ([k, v]) => k !== "telegram" && v && typeof v === "object" && v.enabled,
   ).length;
@@ -917,6 +943,8 @@ export function collectDiagnostics({ adminId, version = null, commit = null, bui
       contasAtivas,
     },
     voice: { habilitado: true, tts: typeof publico.voice?.tts === "string" ? publico.voice.tts : null },
+    // P1-C: origem/estado reais do Skills Hub (ausente, inválido ou provisionado).
+    skills: skillsStatus,
     providers,
     integracoes,
     expostas: [...todas],

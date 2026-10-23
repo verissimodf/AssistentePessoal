@@ -120,6 +120,47 @@ export function createImapSmtpTransport({
   };
 
   return {
+    kind: "imap",
+
+    /**
+     * P1-B: prove IMAP connectivity/auth (connect + INBOX lock, then logout) and SMTP auth
+     * (`transport.verify()`, which authenticates WITHOUT sending). Returns raw per-channel
+     * outcomes; classification and redaction live in the core (`mail.js`).
+     */
+    async verify(account) {
+      const out = {};
+      try {
+        await withMailbox(account, async () => {});
+        out.imap = { ok: true };
+      } catch (error) {
+        out.imap = { ok: false, error };
+      }
+      try {
+        const h = endpoint(account);
+        const transport = await smtpFactory({
+          host: h.smtp,
+          port: smtpPort,
+          secure: false,
+          requireTLS: true,
+          tls: TLS_OPTIONS,
+          auth: { user: account.user, pass: account.appPassword },
+        });
+        try {
+          await transport.verify();
+          out.smtp = { ok: true };
+        } finally {
+          try {
+            transport.close?.();
+          } catch {
+            /* best effort */
+          }
+        }
+      } catch (error) {
+        out.smtp = { ok: false, error };
+      }
+      return out;
+    },
+
     async list(account, { limit, offset }) {
       return withMailbox(account, async (client) => {
         const total = client.mailbox?.exists ?? 0;

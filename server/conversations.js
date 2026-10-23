@@ -234,6 +234,10 @@ export async function chatExchange(ownerId, { conversationId, message, clientMsg
   } catch (e) {
     // A mensagem do usuário fica preservada; nenhuma resposta falsa é gravada.
     console.error(`[chat] provedor falhou (mensagem preservada): ${cap(e?.message || e, 300)}`);
+    // P2-B: erro de CONFIGURAÇÃO (ex.: modelo ausente) é acionável — nunca vira 502 genérico.
+    if (e && typeof e.status === "number" && typeof e.code === "string") {
+      throw new ConvError(e.status, e.code);
+    }
     throw new ConvError(502, "provider_error");
   }
 

@@ -78,10 +78,10 @@ import {
   deleteConversation,
 } from "./conversations.js";
 import { runBot, listRuns, startScheduler, triggerByText, auditLegacyBlocked } from "./bots.js";
-import { tts, cloneVoice } from "./voice.js";
+import { tts, cloneVoice, VoiceError } from "./voice.js";
 import { startTelegramPolling, sendMessage, describeSend, sendFingerprint } from "./comms.js";
 import { getMailService, setMailTransport } from "./mail-service.js";
-import { redactAccount, ACCOUNT_TYPES } from "./mail.js";
+import { redactAccount, ACCOUNT_TYPES, validateOutgoing, MailError } from "./mail.js";
 import { getDraftStore, setDraftStore } from "./mail-drafts.js";
 import { APP_VERSION, GIT_COMMIT, BUILD_TIME, BUILD_MODE } from "./build-info.js";
 
@@ -496,7 +496,6 @@ route("POST", "/api/documents/:id/reindex", "documents:write", async ({ params, 
   return r;
 });
 
-
 // ---------- skills (Hub Global de Skills: catalog, search & injection) ----------
 route("GET", "/api/skills", "skills:read", ({ query, principal }) => {
   const q = (query.get("q") || "").trim();
@@ -601,8 +600,6 @@ route("POST", "/api/router/telemetry/voice", "skills:read", ({ body }) => {
   return { ok: true, telemetry: getProviderTelemetry() };
 });
 
-
-
 for (const [name, store, type] of [
   ["agents", agents, "agent"],
   ["bots", bots, "bot"],
@@ -705,8 +702,19 @@ route("POST", "/api/runs/:id/cancel", "bots:run", ({ params, principal }) => {
 });
 
 route("POST", "/api/tts", "voice", async ({ body, principal }) => {
-  const a = await tts(body.text, body.lang, me(principal));
-  return { __raw: a.data, __type: a.type };
+  try {
+    const a = await tts(body.text, body.lang, me(principal));
+    return { __raw: a.data, __type: a.type };
+  } catch (e) {
+    // P2-A: o cold-start do XTTS é um ESTADO recuperável, não um erro interno do servidor.
+    if (e instanceof VoiceError) {
+      const err = new AuthError(e.code === "voice_busy" ? 429 : 503, e.code);
+      if (e.retryAfter) err.retryAfter = e.retryAfter;
+      err.state = e.state;
+      throw err;
+    }
+    throw e;
+  }
 });
 route("POST", "/api/voice/clone", "settings:write", async ({ form, principal }) => {
   const adminId = me(principal);
@@ -792,6 +800,12 @@ route("GET", "/api/mail/accounts", "comms:read", ({ principal }) => {
   const comms = getSettings(principal.adminId)?.comms || {};
   return ACCOUNT_TYPES.filter((t) => comms[t]).map((t) => redactAccount({ ...comms[t], type: t }));
 });
+// P1-B: prova conectividade e autenticação IMAP/SMTP SEM enviar mensagem. Sessão humana + CSRF.
+// Falha de conexão é RESULTADO do teste (200 com estados), não erro do servidor; configuração
+// incompleta é erro de validação (400). Nenhuma credencial ou texto do provedor é retornado.
+route("POST", "/api/mail/:account/test-connection", "session", ({ params, principal }) =>
+  getMailService().testConnection(principal.adminId, params.account),
+);
 route("GET", "/api/mail/:account/messages", "comms:read", ({ params, query, principal }) =>
   getMailService().list(principal.adminId, params.account, {
     limit: numParam(query.get("limit")),
@@ -834,6 +848,51 @@ route("GET", "/api/mail/drafts/:id", "session", ({ params, principal }) => {
 route("DELETE", "/api/mail/drafts/:id", "session", ({ params, principal }) => {
   if (!getDraftStore().cancel(params.id, principal.adminId)) throw new AuthError(404, "not_found");
   return { ok: true };
+});
+// P1-A: human-created drafts live in the SAME transient store (D9). Creating or editing a draft is
+// NOT an authorisation to send: the send still requires a human `POST /:id/send` with ENVIAR, the
+// body is never persisted and the TTL semantics stay identical to agent-created drafts.
+/** Map a MailError from `validateOutgoing` onto the route contract without exposing internals. */
+const rejectBadDraftInput = (e) => {
+  if (e instanceof MailError) throw new AuthError(e.status, e.code);
+  throw e;
+};
+route("POST", "/api/mail/drafts", "session", ({ body, principal }) => {
+  const account = String(body?.account ?? "");
+  // The account must resolve FOR THIS ADMIN (ownership) — otherwise composition is meaningless.
+  if (!getSettings(principal.adminId)?.comms?.[account])
+    throw new AuthError(400, "invalid_account");
+  let outgoing;
+  try {
+    outgoing = validateOutgoing({ to: body?.to, subject: body?.subject, body: body?.body });
+  } catch (e) {
+    rejectBadDraftInput(e);
+  }
+  const { id, expiresAt } = getDraftStore().put({
+    adminId: principal.adminId,
+    account,
+    to: outgoing.to,
+    subject: outgoing.subject,
+    body: outgoing.text,
+  });
+  audit("mail.draft_created", { admin: principal.adminId, status: "pending_review" });
+  return { id, state: "pending", account, to: outgoing.to, subject: outgoing.subject, expiresAt };
+});
+route("PUT", "/api/mail/drafts/:id", "session", ({ params, body, principal }) => {
+  let outgoing;
+  try {
+    outgoing = validateOutgoing({ to: body?.to, subject: body?.subject, body: body?.body });
+  } catch (e) {
+    rejectBadDraftInput(e);
+  }
+  const edited = getDraftStore().edit(params.id, principal.adminId, {
+    to: outgoing.to,
+    subject: outgoing.subject,
+    body: outgoing.text,
+  });
+  if (!edited) throw new AuthError(404, "not_found"); // terminal, foreign and unknown alike
+  audit("mail.draft_edited", { admin: principal.adminId, status: "pending_review" });
+  return edited;
 });
 route("POST", "/api/mail/drafts/:id/send", "session", async ({ params, body, principal }) => {
   if (body.confirm !== "ENVIAR") throw new AuthError(400, "confirmation_required");
@@ -928,13 +987,20 @@ export function createApp(opts = {}) {
       ) {
         if (e.status === 413) {
           res.setHeader("connection", "close"); // unread body: never reuse this socket
-          try { req.resume(); } catch {}
+          try {
+            req.resume();
+          } catch {}
         }
         const extra = e.retryAfter ? { "retry-after": String(e.retryAfter) } : undefined;
         return send(
           res,
           e.status,
-          { error: e.code, ...(e.retryAfter ? { retryAfter: e.retryAfter } : {}) },
+          {
+            error: e.code,
+            ...(e.retryAfter ? { retryAfter: e.retryAfter } : {}),
+            // P2-A: estado recuperável (ex.: `warming_up`) para o cliente orientar o usuário.
+            ...(e.state ? { state: e.state } : {}),
+          },
           origin,
           "application/json",
           extra,
