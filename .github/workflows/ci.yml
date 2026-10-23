@@ -32,3 +32,52 @@ jobs:
         run: |
           (cd server && node --no-warnings index.js &) ; sleep 3
           curl -sf http://127.0.0.1:7777/api/health
+
+  container:
+    name: Container — build e inicialização
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build da imagem de produção
+        run: docker build --tag assistente-pessoal:ci .
+      - name: Validar inicialização da API e do painel
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          container_name=assistente-pessoal-ci
+          cleanup() {
+            rc=$?
+            if [ "$rc" -ne 0 ]; then
+              docker logs "$container_name" >&2 || true
+            fi
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run -d --name "$container_name" \
+            -p 127.0.0.1:17777:7777 \
+            -p 127.0.0.1:18090:8090 \
+            assistente-pessoal:ci
+
+          api_ok=0
+          panel_ok=0
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:17777/api/health >/tmp/api-health.json; then
+              api_ok=1
+            fi
+            if curl --fail --silent http://127.0.0.1:18090/ >/dev/null; then
+              panel_ok=1
+            fi
+            if [ "$api_ok" -eq 1 ] && [ "$panel_ok" -eq 1 ]; then
+              cat /tmp/api-health.json
+              printf '\\nAPI e painel responderam no container.\\n'
+              exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' "$container_name" 2>/dev/null || echo false)" != "true" ]; then
+              echo "Container encerrou antes de ficar saudável." >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          echo "Timeout aguardando API e painel." >&2
+          exit 1
