@@ -148,13 +148,13 @@ test("MCP: list_skills busca e lista skills do Hub Global", async () => {
       jsonrpc: "2.0",
       id: 5,
       method: "tools/call",
-      params: { name: "list_skills", arguments: { query: "threejs" } },
+      params: { name: "list_skills", arguments: { query: "karpathy-engineering" } },
     },
     { base, token: tokenSkills }
   );
 
   assert.ok(res.content);
-  assert.match(res.content[0].text, /threejs/i);
+  assert.match(res.content[0].text, /karpathy-engineering/i);
 });
 
 test("MCP: document_search executa com documents:read e rejeita sem escopo", async () => {
