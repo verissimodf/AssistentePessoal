@@ -78,7 +78,7 @@ import {
   deleteConversation,
 } from "./conversations.js";
 import { runBot, listRuns, startScheduler, triggerByText, auditLegacyBlocked } from "./bots.js";
-import { tts, cloneVoice } from "./voice.js";
+import { tts, cloneVoice, VoiceError } from "./voice.js";
 import { startTelegramPolling, sendMessage, describeSend, sendFingerprint } from "./comms.js";
 import { getMailService, setMailTransport } from "./mail-service.js";
 import { redactAccount, ACCOUNT_TYPES, validateOutgoing, MailError } from "./mail.js";
@@ -702,8 +702,19 @@ route("POST", "/api/runs/:id/cancel", "bots:run", ({ params, principal }) => {
 });
 
 route("POST", "/api/tts", "voice", async ({ body, principal }) => {
-  const a = await tts(body.text, body.lang, me(principal));
-  return { __raw: a.data, __type: a.type };
+  try {
+    const a = await tts(body.text, body.lang, me(principal));
+    return { __raw: a.data, __type: a.type };
+  } catch (e) {
+    // P2-A: o cold-start do XTTS é um ESTADO recuperável, não um erro interno do servidor.
+    if (e instanceof VoiceError) {
+      const err = new AuthError(e.code === "voice_busy" ? 429 : 503, e.code);
+      if (e.retryAfter) err.retryAfter = e.retryAfter;
+      err.state = e.state;
+      throw err;
+    }
+    throw e;
+  }
 });
 route("POST", "/api/voice/clone", "settings:write", async ({ form, principal }) => {
   const adminId = me(principal);
@@ -984,7 +995,12 @@ export function createApp(opts = {}) {
         return send(
           res,
           e.status,
-          { error: e.code, ...(e.retryAfter ? { retryAfter: e.retryAfter } : {}) },
+          {
+            error: e.code,
+            ...(e.retryAfter ? { retryAfter: e.retryAfter } : {}),
+            // P2-A: estado recuperável (ex.: `warming_up`) para o cliente orientar o usuário.
+            ...(e.state ? { state: e.state } : {}),
+          },
           origin,
           "application/json",
           extra,
