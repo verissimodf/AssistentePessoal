@@ -193,23 +193,18 @@ test("skills hub: loadSkill carrega conteúdo legítimo e rejeita skills inexist
 });
 
 test("ferramenta load_skill: integração com callTool e auditoria", async () => {
-  const { tmpDir, cleanup } = createTempSkillsHub();
   const principal = { type: "bot", adminId: "admin-test", scopes: ["chat", "skills:read"] };
   const ctx = { autonomy: "full", pending: [], principal };
 
-  try {
-    const res = loadSkill("threejs", tmpDir);
-    assert.ok(typeof res.content === "string");
-    assert.ok(res.content.includes("Diretrizes de Three.js"));
+  const res = await callTool("load_skill", { skill: "threejs" }, ctx);
+  assert.ok(typeof res === "string");
+  assert.ok(res.includes("[SKILL ESPECIALIZADA:"));
 
-    assert.throws(() => loadSkill("nao_existe_mesmo_123", tmpDir), /skill_not_found/);
-    assert.throws(
-      () => loadSkill("../../../../etc/passwd", tmpDir),
-      /path_traversal_detected/
-    );
-  } finally {
-    cleanup();
-  }
+  const notFound = await callTool("load_skill", { skill: "nao_existe_mesmo_123" }, ctx);
+  assert.ok(notFound.includes("não encontrada no Hub Global"));
+
+  const traversal = await callTool("load_skill", { skill: "../../../../etc/passwd" }, ctx);
+  assert.ok(traversal.includes("Erro de segurança: tentativa de acesso fora do diretório de skills bloqueada."));
 });
 
 test("resiliência multi-provider: runAgent realiza fallback transparente e audita eventos", async (t) => {
