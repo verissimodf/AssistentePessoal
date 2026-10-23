@@ -120,7 +120,8 @@ test("runShell: timeout mata o grupo de processos e não deixa órfãos", async 
   assert.equal(out.exitCode, null);
   await new Promise((r) => setTimeout(r, 500));
   // Nenhum `sleep` deste grupo sobrevive (netos incluídos).
-  const mine = await runShell("pgrep -f 'sleep 33.333' | wc -l || echo 0", 5000);
+  // Match child arguments without allowing the grep process to match itself.
+  const mine = await runShell("ps -eo args= | grep -F '[s]leep 33.333' | wc -l", 5000);
   assert.equal(String(mine.output).trim().split("\n").pop(), "0", `órfãos: ${mine.output}`);
 });
 
