@@ -3,9 +3,9 @@
 // Temporary data dir + synthetic data only (same bootstrap as phase2-fixes.test.mjs).
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 
 const dir = mkdtempSync(join(tmpdir(), "jarvis-rea-"));
 process.env.JARVIS_DATA_DIR = dir;
@@ -32,7 +32,7 @@ async function login(u, t) {
 }
 const putSettings = (body, s = A) => req("/api/settings", { method: "PUT", body, s });
 
-const TARGET = join(dir, "rea", "targets", "demo-app");
+const TARGET = join(dir, "rea", "targets", "demo-app").replace(/\\/g, "/");
 before(async () => {
   // Wrapper `rea` no PATH do teste: shim hermético para testes de integração do Jarvis
   const binDir = join(dir, "bin");
@@ -43,7 +43,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 
 const args = process.argv.slice(2);
-const targetPath = args.find((a) => !a.startsWith("-") && a !== "analyze-javascript-application") || "";
+const targetPath = (args.find((a) => !a.startsWith("-") && a !== "analyze-javascript-application") || "").replace(/\\\\/g, "/");
 
 let jsCount = 0;
 let ipcCount = 0;
@@ -88,10 +88,14 @@ const payload = {
 };
 
 process.stdout.write(JSON.stringify(payload) + "\\n");
-`;
+`.replace(/\r\n/g, "\n");
 
   writeFileSync(join(binDir, "rea"), reaScript, { mode: 0o755 });
-  process.env.PATH = `${binDir}:${process.env.PATH}`;
+  try { chmodSync(join(binDir, "rea"), 0o755); } catch {}
+  if (process.platform === "win32") {
+    writeFileSync(join(binDir, "rea.cmd"), `@echo off\r\nnode "%~dp0rea" %*\r\n`);
+  }
+  process.env.PATH = `${binDir}${delimiter}${process.env.PATH}`;
   server = createApp();
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${server.address().port}`;
@@ -104,10 +108,7 @@ process.stdout.write(JSON.stringify(payload) + "\\n");
 });
 after(() => server.close());
 
-// REA opera com semântica de caminhos POSIX (raízes absolutas, `..`, metacaracteres). No Windows
-// os testes de caminho/fluxo são pulados com motivo — plataforma, não enfraquecimento de assertion.
-const UNIX = process.platform !== "win32";
-const T = (name, fn) => test(name, { skip: UNIX ? false : "REA usa semântica de caminhos POSIX (Linux)" }, fn);
+const T = (name, fn) => test(name, fn);
 
 // ---------- validadores puros ----------
 T("reaResolvePath: absolute, charset and traversal", () => {
@@ -165,13 +166,13 @@ function matchEvidence(text) {
   const files = readFileSync(join(dir, "rea", "index.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
   assert.equal(files.length, 1, "um recibo no índice");
   assert.equal(files[0].ok, true, "execução registrada como ok");
-  assert.equal(files[0].path, TARGET && `${dir}/rea/targets/demo-app`, "caminho carimbado é o aprovado");
+  assert.equal(files[0].path, TARGET, "caminho carimbado é o aprovado");
   assert.ok(files[0].evidence_id?.startsWith("ev_"), "evidence_id no recibo");
   const evidencePath = join(dir, files[0].file);
   assert.ok(existsSync(evidencePath), "arquivo de Evidence existe");
   const evidence = JSON.parse(readFileSync(evidencePath, "utf8"));
   assert.match(evidence.evidence_id, /^ev_[a-f0-9]{64}$/, "Evidence bem formada");
-  assert.equal(evidence.subject?.local_path, `${dir}/rea/targets/demo-app`, "Evidence fala do alvo aprovado");
+  assert.equal(evidence.subject?.local_path, TARGET, "Evidence fala do alvo aprovado");
   const stats = evidence.normalized_result?.statistics ?? {};
   assert.ok(stats.parsed_javascript_files >= 2, "módulos JS parseados");
   const summary = evidence.normalized_result?.summary ?? {};

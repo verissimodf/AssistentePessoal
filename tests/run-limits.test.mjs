@@ -111,7 +111,7 @@ test("rota de cancelamento: 404 para run de outro dono", async () => {
 test("runShell: timeout mata o grupo de processos e não deixa órfãos", async (t) => {
   if (process.platform === "win32") return t.skip("kill de grupo de processos é POSIX");
   const t0 = Date.now();
-  const out = await runShell("sh -c 'sleep 30 & sleep 30'", 500);
+  const out = await runShell("sh -c 'sleep 33.333 & sleep 33.333'", 500);
   const dt = Date.now() - t0;
   assert.ok(dt < 5000, `retornou em ${dt}ms (não esperou os 30s)`);
   assert.match(out.output, /tempo limite/i);
@@ -119,8 +119,8 @@ test("runShell: timeout mata o grupo de processos e não deixa órfãos", async 
   assert.equal(out.timedOut, true);
   assert.equal(out.exitCode, null);
   await new Promise((r) => setTimeout(r, 500));
-  // Nenhum `sleep` do MEU usuário sobrevive (netos incluídos).
-  const mine = await runShell("pgrep -x sleep -u $(id -u) | wc -l || echo 0", 5000);
+  // Nenhum `sleep` deste grupo sobrevive (netos incluídos).
+  const mine = await runShell("pgrep -f 'sleep 33.333' | wc -l || echo 0", 5000);
   assert.equal(String(mine.output).trim().split("\n").pop(), "0", `órfãos: ${mine.output}`);
 });
 

@@ -137,25 +137,27 @@ async function fetchUrl(url) {
 // exibir o template — qualquer alteração é recusada em tempo de execução.
 export const REA_INTEGRATION_ID = "rea";
 export const REA_TEMPLATE = "rea analyze-javascript-application {path} --json";
-const REA_PATH_SAFE = /^[/A-Za-z0-9_\-./]+$/;
+const REA_PATH_SAFE = /^[/A-Za-z0-9_\-.:\\]+$/;
 
 export const parseReaRoots = (cfg) => {
-  const list = String(cfg?.roots ?? "").split(",").map((x) => x.trim()).filter(Boolean);
-  return list.length ? list : [join(DATA_DIR, "rea", "targets")];
+  const list = String(cfg?.roots ?? "").split(",").map((x) => x.trim().replace(/\\/g, "/")).filter(Boolean);
+  return list.length ? list : [join(DATA_DIR, "rea", "targets").replace(/\\/g, "/")];
 };
 
 /** Resolve e valida o caminho do alvo: absoluto, sem metacaracteres/traversal, dentro de uma raiz permitida. */
 export function reaResolvePath(input, cfg) {
-  const raw = String(input ?? "");
+  const raw = String(input ?? "").trim();
   if (!raw || raw.length > 500) return { ok: false, reason: "Informe o caminho absoluto do alvo a analisar." };
-  if (!raw.startsWith("/")) return { ok: false, reason: "O caminho precisa ser absoluto (a partir de uma raiz permitida)." };
-  if (raw.includes("..") || raw.includes("//")) return { ok: false, reason: "Traversal de caminho (..) não é permitido." };
+  const normalized = raw.replace(/\\/g, "/");
+  const isAbs = normalized.startsWith("/") || /^[a-zA-Z]:\//.test(normalized);
+  if (!isAbs) return { ok: false, reason: "O caminho precisa ser absoluto (a partir de uma raiz permitida)." };
+  if (normalized.includes("..") || normalized.includes("//")) return { ok: false, reason: "Traversal de caminho (..) não é permitido." };
   if (!REA_PATH_SAFE.test(raw)) return { ok: false, reason: "O caminho contém caractere fora do conjunto permitido." };
   const roots = parseReaRoots(cfg);
-  if (!roots.some((root) => raw === root || raw.startsWith(root.endsWith("/") ? root : `${root}/`))) {
+  if (!roots.some((root) => normalized === root || normalized.startsWith(root.endsWith("/") ? root : `${root}/`))) {
     return { ok: false, reason: `O caminho está fora das raízes permitidas (${roots.join(", ")}). Copie o alvo para dentro delas e repita.` };
   }
-  return { ok: true, abs: raw, roots };
+  return { ok: true, abs: normalized, roots };
 }
 
 export const reaCommandOk = (cfg) => { const c = String(cfg?.command ?? ""); return !c || c === REA_TEMPLATE; };
@@ -178,7 +180,8 @@ export function reaSlashCommand(text) {
 function reaRun(absPath, outPath, { approvalId = null, timeoutMs = 600_000 } = {}) {
   return new Promise((resolve) => {
     const argv = ["analyze-javascript-application", absPath, "--json"];
-    const child = spawn("rea", argv, { windowsHide: true });
+    const isWin = process.platform === "win32";
+    const child = spawn(isWin ? "rea.cmd" : "rea", argv, { shell: isWin, windowsHide: true });
     let out = "", errOut = "", done = false, timedOut = false, code = null;
     const timer = setTimeout(() => { timedOut = true; try { child.kill("SIGKILL"); } catch { /* já saiu */ } }, timeoutMs);
     child.stdout?.on("data", (c) => { out += c; });
@@ -260,8 +263,12 @@ const GB_DURABILITY = new Set(["durable", "ephemeral"]);
  *  precisa viver DENTRO de DATA_DIR e terminar em config.json (sem traversal). */
 export function gbResolveConfig(cfg) {
   const raw = String(cfg?.config ?? "").trim();
-  if (!raw) return { ok: true, path: join(DATA_DIR, "gigabrain", "config.json") };
-  if (!raw.startsWith("/") || raw.includes("..") || !raw.endsWith("/config.json") || !raw.startsWith(`${DATA_DIR}/`))
+  const defaultPath = join(DATA_DIR, "gigabrain", "config.json");
+  if (!raw) return { ok: true, path: defaultPath };
+  const normRaw = raw.replace(/\\/g, "/");
+  const normDataDir = DATA_DIR.replace(/\\/g, "/");
+  const isAbs = normRaw.startsWith("/") || /^[a-zA-Z]:\//.test(normRaw);
+  if (!isAbs || normRaw.includes("..") || !normRaw.endsWith("/config.json") || !normRaw.startsWith(`${normDataDir}/`))
     return { ok: false, reason: `O config da store Gigabrain precisa ficar dentro de ${DATA_DIR} (ex.: data/gigabrain/config.json).` };
   return { ok: true, path: raw };
 }
