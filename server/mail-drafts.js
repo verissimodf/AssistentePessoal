@@ -131,6 +131,19 @@ export function createDraftStore({
       finish(d, "cancelled", now());
       return true;
     },
+    /**
+     * Edit a pending draft in place (P1-A): only `pending` drafts can be edited; a terminal or
+     * foreign/unknown draft is indistinguishable (null).
+     */
+    edit(id, adminId, patch = {}) {
+      sweep();
+      const d = owned(id, adminId);
+      if (!d || d.state !== "pending") return null;
+      if (patch.to !== undefined) d.to = patch.to;
+      if (patch.subject !== undefined) d.subject = patch.subject;
+      if (patch.body !== undefined) d.body = patch.body;
+      return { ...meta(d), body: d.body };
+    },
     size: () => drafts.size,
   };
 }

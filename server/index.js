@@ -81,7 +81,7 @@ import { runBot, listRuns, startScheduler, triggerByText, auditLegacyBlocked } f
 import { tts, cloneVoice } from "./voice.js";
 import { startTelegramPolling, sendMessage, describeSend, sendFingerprint } from "./comms.js";
 import { getMailService, setMailTransport } from "./mail-service.js";
-import { redactAccount, ACCOUNT_TYPES } from "./mail.js";
+import { redactAccount, ACCOUNT_TYPES, validateOutgoing, MailError } from "./mail.js";
 import { getDraftStore, setDraftStore } from "./mail-drafts.js";
 import { APP_VERSION, GIT_COMMIT, BUILD_TIME, BUILD_MODE } from "./build-info.js";
 
@@ -496,7 +496,6 @@ route("POST", "/api/documents/:id/reindex", "documents:write", async ({ params, 
   return r;
 });
 
-
 // ---------- skills (Hub Global de Skills: catalog, search & injection) ----------
 route("GET", "/api/skills", "skills:read", ({ query, principal }) => {
   const q = (query.get("q") || "").trim();
@@ -600,8 +599,6 @@ route("POST", "/api/router/telemetry/voice", "skills:read", ({ body }) => {
   recordVoiceMetric({ latencyMs, isBargeIn });
   return { ok: true, telemetry: getProviderTelemetry() };
 });
-
-
 
 for (const [name, store, type] of [
   ["agents", agents, "agent"],
@@ -835,6 +832,51 @@ route("DELETE", "/api/mail/drafts/:id", "session", ({ params, principal }) => {
   if (!getDraftStore().cancel(params.id, principal.adminId)) throw new AuthError(404, "not_found");
   return { ok: true };
 });
+// P1-A: human-created drafts live in the SAME transient store (D9). Creating or editing a draft is
+// NOT an authorisation to send: the send still requires a human `POST /:id/send` with ENVIAR, the
+// body is never persisted and the TTL semantics stay identical to agent-created drafts.
+/** Map a MailError from `validateOutgoing` onto the route contract without exposing internals. */
+const rejectBadDraftInput = (e) => {
+  if (e instanceof MailError) throw new AuthError(e.status, e.code);
+  throw e;
+};
+route("POST", "/api/mail/drafts", "session", ({ body, principal }) => {
+  const account = String(body?.account ?? "");
+  // The account must resolve FOR THIS ADMIN (ownership) — otherwise composition is meaningless.
+  if (!getSettings(principal.adminId)?.comms?.[account])
+    throw new AuthError(400, "invalid_account");
+  let outgoing;
+  try {
+    outgoing = validateOutgoing({ to: body?.to, subject: body?.subject, body: body?.body });
+  } catch (e) {
+    rejectBadDraftInput(e);
+  }
+  const { id, expiresAt } = getDraftStore().put({
+    adminId: principal.adminId,
+    account,
+    to: outgoing.to,
+    subject: outgoing.subject,
+    body: outgoing.text,
+  });
+  audit("mail.draft_created", { admin: principal.adminId, status: "pending_review" });
+  return { id, state: "pending", account, to: outgoing.to, subject: outgoing.subject, expiresAt };
+});
+route("PUT", "/api/mail/drafts/:id", "session", ({ params, body, principal }) => {
+  let outgoing;
+  try {
+    outgoing = validateOutgoing({ to: body?.to, subject: body?.subject, body: body?.body });
+  } catch (e) {
+    rejectBadDraftInput(e);
+  }
+  const edited = getDraftStore().edit(params.id, principal.adminId, {
+    to: outgoing.to,
+    subject: outgoing.subject,
+    body: outgoing.text,
+  });
+  if (!edited) throw new AuthError(404, "not_found"); // terminal, foreign and unknown alike
+  audit("mail.draft_edited", { admin: principal.adminId, status: "pending_review" });
+  return edited;
+});
 route("POST", "/api/mail/drafts/:id/send", "session", async ({ params, body, principal }) => {
   if (body.confirm !== "ENVIAR") throw new AuthError(400, "confirmation_required");
   const pending = getDraftStore().get(params.id, principal.adminId);
@@ -928,7 +970,9 @@ export function createApp(opts = {}) {
       ) {
         if (e.status === 413) {
           res.setHeader("connection", "close"); // unread body: never reuse this socket
-          try { req.resume(); } catch {}
+          try {
+            req.resume();
+          } catch {}
         }
         const extra = e.retryAfter ? { "retry-after": String(e.retryAfter) } : undefined;
         return send(
