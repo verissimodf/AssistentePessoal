@@ -82,11 +82,13 @@ jobs:
           echo "Timeout aguardando API e painel." >&2
           exit 1
 
-      - name: Fluxo real autenticado (banco temporário do próprio container)
+      - name: Fluxo real autenticado (container e banco temporários próprios)
         shell: bash
         run: |
           set -Eeuo pipefail
-          container_name=assistente-pessoal-ci
+          # Container PRÓPRIO e efêmero: o container do passo anterior é removido pelo `trap` dele no
+          # fim daquele passo. Sem volume do host, sem tocar em nenhum outro serviço.
+          container_name=assistente-pessoal-ci-auth
           cleanup() {
             rc=$?
             if [ "$rc" -ne 0 ]; then docker logs "$container_name" >&2 || true; fi
@@ -94,13 +96,21 @@ jobs:
           }
           trap cleanup EXIT
 
-          # Banco temporário: o container do CI não usa nenhum volume do host.
-          docker exec "$container_name" sh -c 'rm -f /app/data/jarvis.db* || true'
-          docker restart "$container_name" >/dev/null
-          API=http://127.0.0.1:17777
+          docker run -d --name "$container_name" \
+            -p 127.0.0.1:27777:7777 \
+            -p 127.0.0.1:28090:8090 \
+            assistente-pessoal:ci >/dev/null
+          API=http://127.0.0.1:27777
+          ready=0
           for _ in $(seq 1 45); do
-            curl --fail --silent "$API/api/health" >/dev/null && break || sleep 2
+            if curl --fail --silent "$API/api/health" >/dev/null; then ready=1; break; fi
+            if [ "$(docker inspect -f '{{.State.Running}}' "$container_name" 2>/dev/null || echo false)" != "true" ]; then
+              echo "Container efêmero encerrou antes de ficar saudável." >&2
+              exit 1
+            fi
+            sleep 2
           done
+          [ "$ready" = "1" ] || { echo "Timeout aguardando a API do container efêmero." >&2; exit 1; }
 
           TOKEN=$(docker exec "$container_name" cat /app/data/bootstrap-token.txt | tr -d '\r\n')
           USER="ci-smoke-$RANDOM"

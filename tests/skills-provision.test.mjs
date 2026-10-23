@@ -25,7 +25,15 @@ const { getCatalog, getCatalogStatus, listSkills, matchSkillsForPrompt, loadSkil
   await import("../server/skills.js");
 
 const quiet = () => {};
-after(() => rmSync(root, { recursive: true, force: true }));
+// Limpeza best-effort: no Windows o arquivo SQLite pode estar com handle aberto (EBUSY) e o
+// unlink falha — a limpeza do temp dir não é requisito do teste.
+after(() => {
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch {
+    /* Windows: jarvis.db aberto pelo módulo de banco; o temp dir fica para o SO limpar */
+  }
+});
 
 test("skills: catálogo ausente é reportado com a causa (nunca 'vazio silencioso')", () => {
   const status = getCatalogStatus(skillsDir);
