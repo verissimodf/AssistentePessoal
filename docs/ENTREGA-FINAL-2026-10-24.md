@@ -153,6 +153,7 @@ Testes específicos incluídos na suíte: `auth`, `password-change`, `http-auth`
 | Correção `safeFetch` | PR **#59** → `c75f12f` |
 | Relatório E2E anterior | PR **#60** → `8e397eb` |
 | Selo de modo demonstração | PR **#61** → **`cb83453`** |
+| Relatório final | PR **#62** → **`5b90800`** |
 | Branch-base | `main` |
 | Push | normal, sem force push |
 | CI remoto | **bloqueado por faturamento** — run `40125788008`: “The job was not started because recent account payments have failed or your spending limit needs to be increased.” |
@@ -163,6 +164,8 @@ O merge da correção visual foi feito com equivalente local documentado, pois o
 ---
 
 ## 5. Gate D — build, implantação e validação
+
+Implantação inicial do candidato funcional (a implantação final, reconstruída após o merge do relatório, está no §8):
 
 | Item | Valor |
 |---|---|
@@ -213,7 +216,29 @@ Nenhum volume foi removido, nenhum `git reset --hard`, `git clean` ou restauraç
 
 ---
 
-## 8. Conclusão
+## 8. Registro de implantação final
+
+Após o merge do relatório, a árvore final foi reconstruída e implantada para que o SHA da imagem corresponda ao commit publicado.
+
+| Item | Valor |
+|---|---|
+| Commit de código implantado | `5b90800d1e586528e85b090c26ceef2c73674730` (merge docs-only sobre `cb83453`) |
+| Imagem | `assistente-pessoal:5b90800` |
+| Image ID | `sha256:5019459df72ba45f54b18f92a493766b69550c03a3898b0e89a544aaf6a9dd2e` |
+| Build time | `2026-10-24T19:50:39Z` |
+| Versão | `1.7.2` |
+| Saúde | `healthy`, `restarts=0`, `/api/health` com commit `5b90800…` |
+| Backup pré-deploy | `data/backups/jarvis-antes-deploy-5b90800-20261024T195416Z.db` — `integrity=ok`, SHA-256 `3c08d8d62a917aba…` |
+| Smoke isolado | API `200`, painel `200` |
+| Preflight LAN | `204` |
+
+**Validação pós-deploy (navegador real + API):** login `200`, `/api/auth/me` `200` (`verissimo`), sessão sobrevive à recarga, logout `200` → `401`; `skills=4`, `agents=4`, roteamento `general`, chat `200` e TTS `200` (WAV PCM 16-bit mono 24 kHz, 189.004 bytes).
+
+**Estado final:** `sessions_active=0`, `tokens_active=0`, `integrity_check=ok`, `foreign_key_check` limpo, `user_version=12`, agents=4, memories=4, ownership=13, audit=181. A conta `verissimo` permanece ativa e proprietária dos 4 agentes e 4 memórias.
+
+> O commit final deste relatório é uma continuação **docs-only** de `5b90800`; a árvore de código implantada é idêntica. A imagem registrada acima é a que está em execução.
+
+## 9. Conclusão
 
 O acesso administrativo de `verissimo` está recuperado e comprovado de forma persistente, com a identidade correta, privilégios administrativos, sessão sobrevivendo à recarga, logout invalidando a sessão, senha antiga rejeitada e senha nova aceita. As fases 0–4 foram validadas no candidato implantado, com 545 testes de backend e 103 testes de frontend verdes, banco íntegro e ownership preservado.
 
