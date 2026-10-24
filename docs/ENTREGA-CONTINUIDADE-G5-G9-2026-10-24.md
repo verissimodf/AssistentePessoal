@@ -253,6 +253,22 @@ Nenhum reset, purge, expurgo de auditoria ou migração destrutiva foi executado
 
 **Artefato candidato (local):** `assistente-pessoal:cand-235eafa`, `GIT_SHA=235eafa0930e029d620de7300105d174fffbfc5f`, `APP_VERSION=1.7.5`, `RELEASE_BUILD=1`; smoke isolado `healthy`, API `200`, painel `200` com os 4 cabeçalhos.
 
+### 7.1 Observação de runtime (registrada por transparência)
+
+O container de produção, que estava com `restarts=0` no baseline desta rodada, apresentou **2 reinicializações** durante a execução (≈19:44 e ≈19:45 no horário local, 22:44–22:45 UTC).
+
+| Verificação | Resultado |
+|---|---|
+| Tipo de encerramento | **gracioso** (`Stopping server gracefully` → `Server closed successfully`), `exitcode=0` |
+| OOM | `false` |
+| Erros no log | nenhum |
+| Política de restart | `unless-stopped` (Docker reinicia após saída limpa) |
+| Automação de restart no host | **não encontrada** (sem watchtower/autoheal; o cron de 5 min só registra conectividade) |
+| Atribuição | **não determinada** — o log de eventos do Docker não retém os eventos desse intervalo |
+| Estado após | `healthy`, `restarts` estável em 2 por mais de 15 min, banco íntegro, auditoria intacta |
+
+Não houve perda de dados nem mudança de versão (a imagem permaneceu `951cf3d`). A causa não foi identificada com evidência suficiente e fica registrada como ponto de observação, não como incidente resolvido.
+
 ---
 
 ## 8. Matriz final
