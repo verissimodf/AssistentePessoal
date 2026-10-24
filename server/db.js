@@ -62,6 +62,13 @@ export const AUDIT_REASONS = new Set([
   "reauth_failed", "admin_limit_reached", "username_taken", "last_admin_protected", "admin_session_required",
   "invalid_scopes", "wildcard_scope_forbidden", "admin_scope_forbidden", "unknown_scope", "foreign_bot_run",
   "already_resolved", "not_found", "unauthorized", "forbidden", "csrf_rejected", "timeout", "interrupted", "unknown_action", "ambiguous_result", "policy_changed", "correlation_mismatch",
+  // Portões já existentes cujo motivo era descartado (lacuna fechada junto com o navegador):
+  "integration_disabled", "channel_disabled",
+  // Navegador (browser_action): recusas e falhas SEMPRE vêm de constantes do código (nunca de
+  // texto do usuário/modelo), por isso podem entrar no conjunto fechado de motivos auditáveis.
+  "blocked_destination", "unsupported_op", "url_required", "selector_required", "selector_too_long",
+  "text_too_long", "browser_disabled", "browser_unavailable", "browser_unreachable", "browser_unauthorized",
+  "browser_protocol_error", "browser_timeout", "browser_cancelled", "browser_error",
 ]);
 export const AUDIT_AGENTS = new Set(["cli_agent", "claude", "claude_code", "codex", "opencode", "gemini", "hermes", "odysseus", "openhands", "default"]);
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

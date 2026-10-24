@@ -36,6 +36,9 @@ export const TOOL_SCOPES = {
   gigabrain_recall: "memories:read", gigabrain_remember: "memories:write",
   // Hub Global de Skills (v1.2): carrega instruções e regras especializadas sob demanda.
   load_skill: "skills:read",
+  // Navegador: ação de rede externa — mesmo escopo de leitura de rede dos demais fetchers.
+  // O portão efetivo é a APROVAÇÃO HUMANA (ver tools.js) + integração opt-in.
+  browser_action: "web",
 };
 
 /** Loopback sources (all local processes look identical here). */

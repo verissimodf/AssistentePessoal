@@ -14,6 +14,7 @@ import { sendMessage, readCalendar, describeSend, sendFingerprint } from "./comm
 import { safeFetch } from "./urlpolicy.js";
 import { getMailService } from "./mail-service.js";
 import { getDraftStore } from "./mail-drafts.js";
+import { runBrowserAction, validateBrowserRequest, BROWSER_OPS } from "./browser.js";
 import { MailError, validateOutgoing } from "./mail.js";
 import { loadSkill, matchSkillsForPrompt } from "./skills.js";
 
@@ -36,6 +37,11 @@ export const TOOL_DEFS = {
   gigabrain_recall: { description: "Search the persistent shared local memory (Gigabrain) for prior decisions, context or preferences. Return candidate evidence, cite source.", params: { query: "string", target: "string", limit: "number" } },
   gigabrain_remember: { description: "Save an explicit durable fact in the shared local memory (Gigabrain). Only when the user clearly asks to remember.", params: { content: "string", target: "string", type: "string", durability: "string" } },
   load_skill: { description: "Carrega instruções e diretrizes especializadas de uma skill do Hub Global (.agent-skills) sob demanda.", params: { skill: "string" } },
+  browser_action: {
+    description:
+      "Automação de navegador (Playwright). Operações permitidas: navigate, extract, click, fill, wait_for, screenshot. Sem shell e sem download; destino validado por política de rede; exige aprovação humana.",
+    params: { op: "string", url: "string", selector: "string", text: "string", timeoutMs: "number" },
+  },
 };
 // Alias exposed in the panel
 TOOL_DEFS.read_calendar.params = {};
@@ -471,6 +477,13 @@ export async function recall(query, limit = 6, ownerId) {
  * The row is claimed by one conditional UPDATE (pending → running), so a single approval can
  * never authorize two operations, and the payload is frozen at request time.
  */
+/** Fingerprint da ação de navegador: fixa operação + destino + seletor + texto no momento do pedido. */
+export const browserFingerprint = (request = {}) =>
+  createHash("sha256")
+    .update([request.op, request.url || "", request.selector || "", request.text || "", String(request.timeoutMs ?? "")].join("\u0000"))
+    .digest("hex")
+    .slice(0, 32);
+
 function queueApproval(entry, ownerId, correlation = null) {
   const id = uid();
   const command = typeof entry === "string" ? entry : String(entry.command ?? "");
@@ -524,6 +537,14 @@ export function classifyOutcome(kind, result) {
   if (kind === "openhands_task") {
     if (/Tarefa enviada ao OpenHands/i.test(o)) return "confirmed";
     if (/cancelad|desabilitad|Tarefa vazia|OpenHands \d+/i.test(o)) return /cancelad|desabilitad|Tarefa vazia/i.test(o) ? "denied" : "failed";
+    return "unknown";
+  }
+  if (kind === "browser_action") {
+    if (structured) {
+      if (structured.state === "completed") return "confirmed";
+      if (structured.state === "failed" || structured.state === "error") return "failed";
+      return "unknown"; // timeout | cancelled: o efeito externo pode ter ocorrido
+    }
     return "unknown";
   }
   if (kind === "rea_analyze") {
@@ -659,6 +680,27 @@ export async function callTool(name, input, ctx) {
       audit("rea_analyze(requested)", { approvalId: id, status: "requested", principal: who(ctx.principal), ...corr(ctx) });
       ctx.pending.push({ id, command: summary });
       return "Análise enviada para aprovação no painel. Após aprovar, o resultado completo é gravado em data/rea/.";
+    }
+    case "browser_action": {
+      // Navegador: integração opt-in + APROVAÇÃO HUMANA (mesma classe de rea_analyze/cli_agent).
+      // O pedido é validado (lista fechada de operações e destino permitido) ANTES de virar
+      // aprovação; nada navega enquanto o humano não decidir. Sem shell, sem download, sem eval.
+      const bcfg = s.integrations?.browser;
+      if (!bcfg?.enabled) return 'Integração "browser" não está habilitada em Configurações.';
+      const v = validateBrowserRequest(input);
+      if (!v.ok) {
+        audit("browser_action(refused)", { approvalId: null, status: "refused", reason: v.code, principal: who(ctx.principal), ...corr(ctx) });
+        return `Navegação recusada: ${v.reason}`;
+      }
+      const summary = `Navegador: ${v.request.op}${v.request.url ? ` em ${v.request.url}` : ""}${v.request.selector ? ` (${v.request.selector})` : ""}`;
+      const id = queueApproval(
+        { command: summary, action: { kind: "browser_action", params: v.request, fingerprint: browserFingerprint(v.request) } },
+        adminId,
+        ctxCorrelation(ctx),
+      );
+      audit("browser_action(requested)", { approvalId: id, status: "requested", principal: who(ctx.principal), ...corr(ctx) });
+      ctx.pending.push({ id, command: summary });
+      return "Navegação enviada para aprovação no painel. Após aprovar, o resultado (título, URL final e trecho de texto) volta para a conversa.";
     }
     case "gigabrain_recall": {
       // Memória compartilhada Gigabrain (leitura). Consulta é um argumento único no MCP
@@ -798,7 +840,8 @@ export async function resolveApproval(id, approve, principal) {
       : kind === "openhands_task" ? (s.integrations?.openhands?.enabled ? null : "integration_disabled")
         : kind === "rea_analyze" ? (s.integrations?.rea?.enabled ? null : "integration_disabled")
           : kind === "send_message" ? (describeSend(adminId, action.channel, action.text).ok ? null : "channel_disabled")
-            : "unknown_action";
+            : kind === "browser_action" ? (s.integrations?.browser?.enabled ? null : "integration_disabled")
+              : "unknown_action";
 
   const next = !approve || gate ? "denied" : "running";
   const claimed = db.prepare("UPDATE approvals SET status = ? WHERE id = ? AND status = 'pending'").run(next, id).changes;
@@ -825,6 +868,7 @@ export async function resolveApproval(id, approve, principal) {
     if (kind === "openhands_task") result = await openhandsSend(action.target, action.task, action.fingerprint);
     else if (kind === "rea_analyze") result = await reaAnalyzeApproved(action, adminId, id);
     else if (kind === "send_message") result = await sendMessage(adminId, action.channel, action.text, action.fingerprint);
+    else if (kind === "browser_action") result = await runBrowserAction(adminId, action.params || {});
     else result = await runShell(action?.command || row.command);
     const text = resultText(result);
     db.prepare("UPDATE approvals SET status = 'done', output = ? WHERE id = ?").run(text, id);
