@@ -69,6 +69,9 @@ export const AUDIT_REASONS = new Set([
   "blocked_destination", "unsupported_op", "url_required", "selector_required", "selector_too_long",
   "text_too_long", "browser_disabled", "browser_unavailable", "browser_unreachable", "browser_unauthorized",
   "browser_protocol_error", "browser_timeout", "browser_cancelled", "browser_error",
+  // Política de URL (assertSafeUrl/assertPublicHost): mesmos motivos do navegador, agora também
+  // aplicados ao crawl_page. Constantes do código — nunca texto do usuário/modelo.
+  "protocol_not_allowed", "port_not_allowed", "credentials_not_allowed", "dns_no_answer", "invalid_url",
 ]);
 export const AUDIT_AGENTS = new Set(["cli_agent", "claude", "claude_code", "codex", "opencode", "gemini", "hermes", "odysseus", "openhands", "default"]);
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

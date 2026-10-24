@@ -147,3 +147,25 @@ test("crawl_page entrega ao crawl4ai apenas destino público validado", async ()
   assert.equal(out, "# Documentação\nconteúdo");
   assert.equal(visto.body.url, "https://public.example/docs");
 });
+
+test("o motivo do bloqueio sobrevive à auditoria (allowlist fechada)", async () => {
+  const { db } = await import("../server/db.js");
+  const motivo = (url, opts) => crawlPage(url, opts).then(() => {
+    const row = db
+      .prepare("SELECT detail FROM audit WHERE kind = 'web.crawl_blocked' ORDER BY id DESC LIMIT 1")
+      .get();
+    return JSON.parse(row.detail);
+  });
+  const nunca = () => {
+    throw new Error("DNS não deveria ser consultado");
+  };
+  // Cada motivo é uma constante do código (nunca texto do usuário), então pode ser auditado.
+  assert.equal((await motivo("http://public.example:8080/", { resolve: nunca })).reason, "port_not_allowed");
+  assert.equal((await motivo("file:///etc/passwd", { resolve: nunca })).reason, "protocol_not_allowed");
+  assert.equal((await motivo("http://user:pass@public.example/", { resolve: nunca })).reason, "credentials_not_allowed");
+  assert.equal((await motivo("http://127.0.0.1/", { resolve: nunca })).reason, "blocked_destination");
+  assert.equal(
+    (await motivo("https://vazio.example/", { resolve: resolver({ "vazio.example": [] }) })).reason,
+    "dns_no_answer",
+  );
+});
