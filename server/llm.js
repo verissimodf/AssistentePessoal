@@ -107,14 +107,14 @@ export async function assertModelAvailable(cfg = {}, model = "", { fetchFn = (..
   );
 }
 
-async function callOpenAI(cfg, model, system, messages, tools, timeoutMs = PROVIDER_TIMEOUT_CEILING_MS) {
+async function callOpenAI(cfg, model, system, messages, tools, signal) {
   // stream: false explícito — gateways compatíveis com OpenAI (ex.: Omniroute) podem responder
   // em text/event-stream por padrão, e aí o r.json() abaixo quebra com
   // "Unexpected token 'd', \"data: {...\" is not valid JSON".
   const body = { model, stream: false, messages: [{ role: "system", content: system }, ...messages] };
   if (tools.length) body.tools = tools.map((t) => ({ type: "function", function: t }));
   const r = await fetch(`${cfg.baseUrl}/chat/completions`, {
-    signal: AbortSignal.timeout(timeoutMs),
+    signal,
     method: "POST",
     headers: { "content-type": "application/json", ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}) },
     body: JSON.stringify(body),
@@ -136,14 +136,14 @@ async function callOpenAI(cfg, model, system, messages, tools, timeoutMs = PROVI
   };
 }
 
-async function callAnthropic(cfg, model, system, messages, tools, timeoutMs = PROVIDER_TIMEOUT_CEILING_MS) {
+async function callAnthropic(cfg, model, system, messages, tools, signal) {
   const body = { model, max_tokens: 4096, system, messages, thinking: undefined };
   if (tools.length) body.tools = tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
   const r = await fetch(`${cfg.baseUrl}/v1/messages`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": cfg.apiKey, "anthropic-version": "2023-06-01" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
+    signal,
   });
   if (!r.ok) throw new Error(`anthropic ${r.status}: ${await r.text()}`);
   const j = await r.json();
@@ -163,6 +163,8 @@ export function cancelRun(runId) {
   const r = activeRuns.get(runId);
   if (!r) return false;
   r.cancelled = true;
+  // Interrompe a chamada de provedor em voo: só marcar a flag faria o usuário esperar o timeout.
+  r.controller?.abort();
   return true;
 }
 export const runActive = (runId) => activeRuns.has(runId);
@@ -201,7 +203,7 @@ export async function runAgent({
   const cfg = providerConfig(agent.provider, adminId);
   const model = agent.model || cfg.model;
   const startedAt = Date.now();
-  const state = { cancelled: false };
+  const state = { cancelled: false, controller: new AbortController() };
   if (runId) activeRuns.set(runId, state);
   const stop = (reply) => {
     if (runId) activeRuns.delete(runId);
@@ -258,14 +260,20 @@ export async function runAgent({
       const callStart = Date.now();
       // Orçamento da tentativa = tempo restante do run. Um provedor morto não pode consumir
       // todo o deadline antes de o fallback ser tentado.
+      if (state.cancelled) throw new Error("cancelled_by_user");
       const attemptMs = attemptTimeoutMs(deadlineMs - (callStart - startedAt));
+      // Duas causas de abort: o orçamento da tentativa e o cancelamento do usuário.
+      const attemptSignal = AbortSignal.any([
+        AbortSignal.timeout(attemptMs),
+        state.controller.signal,
+      ]);
       try {
         // P2-B: valida a existência do modelo antes de gastar uma chamada (fail-open se o
         // catálogo estiver inacessível). Erros de configuração NÃO entram no fallback.
         if (!provIsAnthropic) await assertModelAvailable(provCfg, provModel);
         const out = provIsAnthropic
-          ? await callAnthropic(provCfg, provModel, system, currentConvo, tools, attemptMs)
-          : await callOpenAI(provCfg, provModel, system, currentConvo, tools, attemptMs);
+          ? await callAnthropic(provCfg, provModel, system, currentConvo, tools, attemptSignal)
+          : await callOpenAI(provCfg, provModel, system, currentConvo, tools, attemptSignal);
 
         const latencyMs = Date.now() - callStart;
         const estimatedTokens = Math.ceil(((out.text || "").length + JSON.stringify(currentConvo).length) / 4);
@@ -322,6 +330,7 @@ export async function runAgent({
     try {
       modelResult = await callModel(convo);
     } catch (err) {
+      if (state.cancelled) return stop("Execução cancelada pelo usuário.");
       if (Date.now() - startedAt >= deadlineMs) return stop("Limite de tempo da execução atingido.");
       throw err;
     }
@@ -373,22 +382,53 @@ export function cosine(a, b) {
   return d / (Math.sqrt(x) * Math.sqrt(y) || 1);
 }
 
-export async function testProvider(id, adminId) {
+export async function testProvider(
+  id,
+  adminId,
+  { fetchFn = (...a) => globalThis.fetch(...a), timeoutMs = 10_000 } = {},
+) {
   const cfg = providerConfig(id, adminId);
+  const signal = AbortSignal.timeout(timeoutMs);
   try {
     if (id === "anthropic") {
-      const r = await fetch(`${cfg.baseUrl}/v1/models`, { headers: { "x-api-key": cfg.apiKey, "anthropic-version": "2023-06-01" } });
+      const r = await fetchFn(`${cfg.baseUrl}/v1/models`, {
+        headers: { "x-api-key": cfg.apiKey, "anthropic-version": "2023-06-01" },
+        signal,
+      });
       return { ok: r.ok, detail: r.ok ? "Anthropic OK" : `${r.status} ${await r.text()}` };
     }
     if (id === "elevenlabs") {
-      const r = await fetch("https://api.elevenlabs.io/v1/voices", { headers: { "xi-api-key": cfg.apiKey } });
+      const r = await fetchFn("https://api.elevenlabs.io/v1/voices", {
+        headers: { "xi-api-key": cfg.apiKey },
+        signal,
+      });
       return { ok: r.ok, detail: r.ok ? "ElevenLabs OK" : `${r.status}` };
     }
-    const r = await fetch(`${cfg.baseUrl}/models`, { headers: cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {} });
-    const j = r.ok ? await r.json() : null;
-    return { ok: r.ok, detail: r.ok ? `${id}: ${j?.data?.length ?? "?"} modelos` : `${r.status} ${await r.text()}` };
+    // Contrato funcional: uma completion mínima. `/models` sozinho não prova que o provedor
+    // atende — um serviço pode listar modelos e travar/recusar em /chat/completions.
+    const r = await fetchFn(`${cfg.baseUrl}/chat/completions`, {
+      method: "POST",
+      signal,
+      headers: {
+        "content-type": "application/json",
+        ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}),
+      },
+      body: JSON.stringify({
+        model: cfg.model || "",
+        messages: [{ role: "user", content: "ping" }],
+        max_tokens: 1,
+        stream: false,
+      }),
+    });
+    const txt = await r.text();
+    if (!r.ok) return { ok: false, detail: `${id} ${r.status}: ${txt.slice(0, 200)}` };
+    return /"choices"/.test(txt)
+      ? { ok: true, detail: `${id}: resposta de chat OK` }
+      : { ok: false, detail: `resposta inesperada de ${id}: ${txt.slice(0, 160)}` };
   } catch (e) {
-    return { ok: false, detail: e.message };
+    const detalhe =
+      e?.name === "TimeoutError" ? `tempo esgotado (${timeoutMs}ms) ao falar com ${id}` : `${id}: ${e.message}`;
+    return { ok: false, detail: detalhe };
   }
 }
 
