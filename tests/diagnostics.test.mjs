@@ -43,6 +43,9 @@ function mkCtx(over = {}) {
     skills: { dir: "/tmp/hub", present: true, total: 4, version: "1.2.1-builtin", source: "builtin", reason: null },
     providers: { ollama: { enabled: true, hasKey: false, model: "qwen2.5:7b", endpoint: "interno" } },
     integracoes: { context7: { enabled: true, hasKey: false, endpoint: "interno" } },
+    // Navegador habilitado em modo local: o inventário de referência deve refletir um sistema
+    // operacional (o caso "desligado" tem teste próprio abaixo).
+    browser: { enabled: true, mode: "local", endpoint: null, hasToken: false },
     expostas: [
       "web_search", "fetch_url", "remember", "recall", "run_command", "cli_agent",
       "document_search", "rea_analyze", "send_email", "context7_docs",
@@ -73,7 +76,7 @@ const clonaItem = (id) => JSON.parse(JSON.stringify(porId(buildInventory(mkCtx()
 
 test("registro de diagnóstico cobre exatamente as ferramentas reais de server/tools.js", () => {
   assert.deepEqual(Object.keys(TOOL_META).sort(), Object.keys(TOOL_DEFS).sort());
-  assert.equal(Object.keys(TOOL_DEFS).length, 18);
+  assert.equal(Object.keys(TOOL_DEFS).length, 19); // + browser_action (navegador)
 });
 
 test("permissões: TOOL_SCOPES coerente com TOOL_DEFS e nunca admin-only", () => {
@@ -92,9 +95,19 @@ test("inventário de referência valida e cobre ferramentas, acessos, automaçõ
   for (const id of [
     "servico:api", "servico:banco", "servico:skills-hub", "acesso:sessao-admin", "acesso:token-servico",
     "auto:fila-aprovacoes", "auto:expurgo-drec", "dados:memorias", "dados:auditoria",
-    "integracao:email-envio", "integracao:voz",
+    "integracao:email-envio", "integracao:voz", "integracao:navegador",
   ]) assert.ok(ids.has(id), `falta ${id}`);
   assert.equal(inv.resumo.saude, "ok");
+});
+
+test("navegador: desligado é reportado como INDISPONÍVEL com motivo (não finge capacidade)", () => {
+  const inv = buildInventory(
+    mkCtx({ browser: { enabled: false, mode: "off", endpoint: null, hasToken: false } }),
+  );
+  const item = porId(inv, "integracao:navegador");
+  assert.equal(item.estado, "INDISPONÍVEL");
+  assert.equal(item.detalhes.modo, "off");
+  assert.ok(item.limitacoes.some((l) => /Desligado/i.test(l)));
 });
 
 test("skills hub: catálogo ausente marca INDISPONÍVEL com o motivo (transparência, não finge disponibilidade)", () => {

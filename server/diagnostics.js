@@ -43,6 +43,17 @@ export class DiagnosticsError extends Error {
 
 /** Uma entrada por ferramenta real de server/tools.js (cobertura verificada em teste). */
 export const TOOL_META = {
+  browser_action: {
+    nome: "Navegador (Playwright)",
+    portao: "Integração opt-in + APROVAÇÃO HUMANA sempre (mesma classe de cli_agent/rea_analyze). Operações em lista fechada; sem shell, sem download, sem eval.",
+    deps: "Modo local: Playwright no container. Modo remoto: worker externo por contrato HTTP autenticado.",
+    limites: [
+      "Destino validado por política de rede (loopback, redes privadas, metadados de cloud e esquemas não-HTTP recusados) inclusive após resolução DNS.",
+      "Nunca devolve cookie/token/header sensível; texto limitado por execução.",
+      "Timeout com teto (60 s) e cancelamento cooperativo; sem expiração automática de aprovação.",
+    ],
+    testes: ["tests/browser-tool.test.mjs"],
+  },
   web_search: {
     nome: "Busca na web",
     portao: "Leitura de rede (escopo web); sem aprovação.",
@@ -705,6 +716,23 @@ export function buildInventory(ctx) {
     { transporte: ctx.email?.transporte || "mock", contasAtivas: ctx.email?.contasAtivas ?? 0 },
   ));
 
+  // Navegador (browser_action): modo efetivo e se existe credencial — nunca o valor do token.
+  const bmeta = TOOL_META.browser_action;
+  const binfo = ctx.browser || { enabled: false, mode: "off", endpoint: null, hasToken: false };
+  const bmode = binfo.mode || (binfo.enabled ? "local" : "off");
+  itens.push(mkItem(
+    "integracao:navegador", "integracao", "Navegador (automação de páginas)",
+    bmode === "off" ? "INDISPONÍVEL" : "HABILITADO",
+    { implementado: true, habilitado: bmode !== "off", testado: true },
+    [
+      { metodo: "codigo", ref: "server/browser.js, scripts/browser-worker.mjs", data: null, nota: bmeta.portao },
+      { metodo: "teste", ref: "tests/browser-tool.test.mjs", data: null, nota: "contrato, política de destino, aprovação, timeout e cancelamento." },
+    ],
+    bmode === "off" ? ["Desligado: habilite a integração \"browser\" em Configurações para usar a ferramenta."] : bmeta.limites,
+    "alta",
+    { modo: bmode, endpoint: binfo.endpoint ?? null, hasToken: !!binfo.hasToken },
+  ));
+
   // --- automações ----------------------------------------------------------
   itens.push(mkItem(
     "auto:agendador", "automacao", "Agendador de bots",
@@ -943,6 +971,12 @@ export function collectDiagnostics({ adminId, version = null, commit = null, bui
       contasAtivas,
     },
     voice: { habilitado: true, tts: typeof publico.voice?.tts === "string" ? publico.voice.tts : null },
+    // Navegador: modo efetivo derivado da configuração (sem expor o token).
+    browser: (() => {
+      const b = publico.integrations?.browser && typeof publico.integrations.browser === "object" ? publico.integrations.browser : null;
+      const mode = !b?.enabled ? "off" : b.command ? "remote" : "local";
+      return { enabled: mode !== "off", mode, endpoint: b?.command ? classificaEndpoint(b.command) : null, hasToken: !!b?.hasKey };
+    })(),
     // P1-C: origem/estado reais do Skills Hub (ausente, inválido ou provisionado).
     skills: skillsStatus,
     providers,

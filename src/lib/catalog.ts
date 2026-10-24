@@ -35,6 +35,11 @@ export const AGENT_INTEGRATIONS = [
   // Gigabrain: memória local persistente compartilhada — store no volume data/gigabrain/,
   // ferramentas gigabrain_recall/gigabrain_remember no JARVIS (escopos memories:*).
   { id: "gigabrain", name: "Gigabrain (memória compartilhada)", kind: "cli", command: "gigabrain-mcp --config {config}" },
+  // Navegador (browser_action): dois modos pela configuração —
+  //  · habilitado SEM endereço  → navegador LOCAL dentro do container (Playwright);
+  //  · habilitado COM endereço  → worker EXTERNO por contrato HTTP autenticado (apiKey = token).
+  // Toda navegação exige aprovação humana; destino é validado por política de rede.
+  { id: "browser", name: "Navegador (Playwright)", kind: "http", command: "" },
 ] as const;
 
 export const COMMS = [
