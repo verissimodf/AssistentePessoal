@@ -716,10 +716,11 @@ export async function crawlPage(
   url,
   { resolve, fetchImpl = (...a) => globalThis.fetch(...a), settings } = {},
 ) {
+  const policy = resolve ? { resolve } : {};
   // Validação local ANTES de entregar a URL ao crawl4ai: o serviço remoto mantém a própria
   // proteção SSRF, mas não deve ser a única barreira entre o Jarvis e a rede interna.
   try {
-    await assertPublicHost(url, resolve ? { resolve } : {});
+    await assertPublicHost(url, policy);
   } catch (e) {
     const reason = e?.code || e?.message || "invalid_url";
     audit("web.crawl_blocked", { reason });
@@ -727,18 +728,41 @@ export async function crawlPage(
   }
   const cfg = (settings || getSettings()).integrations?.crawl4ai || {};
   const base = (cfg.command || "http://192.168.2.29:11235").replace(/\/$/, "");
-  const r = await fetchImpl(`${base}/md`, {
+  const r = await fetchImpl(`${base}/crawl`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}),
     },
-    body: JSON.stringify({ url, f: "fit" }),
+    // `/crawl` (e não `/md`) porque só ele devolve `redirected_url`, necessário para conferir
+    // o destino FINAL. WRITE_ONLY mantém o comportamento de sempre buscar a página (sem ler cache).
+    body: JSON.stringify({ urls: [url], crawler_config: { cache_mode: "WRITE_ONLY" } }),
     signal: AbortSignal.timeout(90000),
   });
   if (!r.ok) return `crawl4ai ${r.status}: ${await r.text()}`;
   const j = await r.json();
-  return String(j.markdown || j.fit_markdown || JSON.stringify(j)).slice(0, 8000);
+  const result = Array.isArray(j?.results) ? j.results[0] : null;
+  if (!result) {
+    audit("web.crawl_blocked", { reason: "crawl_no_result" });
+    return "crawl4ai não retornou resultado para esta URL.";
+  }
+  if (result.success === false) {
+    return `crawl4ai não conseguiu buscar a página: ${String(result.error_message || "falha").slice(0, 300)}`;
+  }
+  // O crawl4ai segue redirecionamentos por conta própria. Validar o destino final impede que o
+  // conteúdo de um alvo interno chegue ao modelo quando a página pública redireciona para lá.
+  // Isto controla a DIVULGAÇÃO da resposta; a requisição em si já ocorreu no serviço remoto.
+  const finalUrl = result.redirected_url || result.url || url;
+  try {
+    await assertPublicHost(finalUrl, policy);
+  } catch (e) {
+    const detail = e?.code || e?.message || "invalid_url";
+    audit("web.crawl_blocked", { reason: "redirect_blocked" });
+    return `URL recusada pela política de segurança (redirecionou para destino não público: ${detail}).`;
+  }
+  const md = result.markdown;
+  const text = typeof md === "string" ? md : md?.fit_markdown || md?.raw_markdown || "";
+  return String(text || result.html || "").slice(0, 8000);
 }
 
 const openhandsFingerprint = (base, task) =>

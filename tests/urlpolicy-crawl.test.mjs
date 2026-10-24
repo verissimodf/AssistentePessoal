@@ -134,36 +134,135 @@ test("crawl_page bloqueia o destino interno antes de chamar o crawl4ai", async (
   assert.equal(chamadas, 0);
 });
 
+/** Resposta no formato real de `POST /crawl` do crawl4ai 0.9.2. */
+const crawlResponse = (over = {}) => ({
+  ok: true,
+  json: async () => ({
+    success: true,
+    results: [
+      {
+        url: "https://public.example/docs",
+        redirected_url: "",
+        success: true,
+        status_code: 200,
+        markdown: {
+          fit_markdown: "# Documentação\nconteúdo",
+          raw_markdown: "# Documentação\nconteúdo bruto",
+        },
+        ...over,
+      },
+    ],
+  }),
+});
+
 test("crawl_page entrega ao crawl4ai apenas destino público validado", async () => {
   let visto = null;
   const fetchImpl = async (url, init) => {
     visto = { url, body: JSON.parse(init.body) };
-    return { ok: true, json: async () => ({ markdown: "# Documentação\nconteúdo" }) };
+    return crawlResponse();
   };
   const out = await crawlPage("https://public.example/docs", {
     resolve: resolver({ "public.example": ["93.184.216.34"] }),
     fetchImpl,
   });
   assert.equal(out, "# Documentação\nconteúdo");
-  assert.equal(visto.body.url, "https://public.example/docs");
+  assert.equal(visto.body.urls[0], "https://public.example/docs");
+  assert.match(visto.url, /\/crawl$/);
+});
+
+test("crawl_page retém o conteúdo quando o crawl4ai termina em destino não público", async () => {
+  const { db } = await import("../server/db.js");
+  // Redirecionamento seguido pelo crawl4ai: a URL inicial era pública, a final não é.
+  const fetchImpl = async () =>
+    crawlResponse({ redirected_url: "http://169.254.169.254/latest/meta-data/" });
+  const out = await crawlPage("https://public.example/docs", {
+    resolve: resolver({
+      "public.example": ["93.184.216.34"],
+      "169.254.169.254": ["169.254.169.254"],
+    }),
+    fetchImpl,
+  });
+  assert.match(out, /redirecionou/i);
+  assert.doesNotMatch(out, /conteúdo/i, "nenhum trecho da página pode vazar");
+  const row = db
+    .prepare("SELECT detail FROM audit WHERE kind = 'web.crawl_blocked' ORDER BY id DESC LIMIT 1")
+    .get();
+  assert.equal(JSON.parse(row.detail).reason, "redirect_blocked");
+});
+
+test("crawl_page aceita redirecionamento para outro host público", async () => {
+  const fetchImpl = async () => crawlResponse({ redirected_url: "https://cdn.example/final" });
+  const out = await crawlPage("https://public.example/docs", {
+    resolve: resolver({
+      "public.example": ["93.184.216.34"],
+      "cdn.example": ["93.184.216.35"],
+    }),
+    fetchImpl,
+  });
+  assert.equal(out, "# Documentação\nconteúdo");
+});
+
+test("crawl_page é conservador com resposta sem resultado ou com falha do crawler", async () => {
+  const semResultado = async () => ({
+    ok: true,
+    json: async () => ({ success: true, results: [] }),
+  });
+  const out1 = await crawlPage("https://public.example/docs", {
+    resolve: resolver({ "public.example": ["93.184.216.34"] }),
+    fetchImpl: semResultado,
+  });
+  assert.match(out1, /não retornou resultado/i);
+
+  const falhou = async () => crawlResponse({ success: false, error_message: "boom", markdown: {} });
+  const out2 = await crawlPage("https://public.example/docs", {
+    resolve: resolver({ "public.example": ["93.184.216.34"] }),
+    fetchImpl: falhou,
+  });
+  assert.match(out2, /crawl4ai/i);
+  assert.doesNotMatch(out2, /# Documentação/);
+});
+
+test("crawl_page cai para raw_markdown quando o fit vem vazio", async () => {
+  const fetchImpl = async () =>
+    crawlResponse({ markdown: { fit_markdown: "", raw_markdown: "# só bruto" } });
+  const out = await crawlPage("https://public.example/docs", {
+    resolve: resolver({ "public.example": ["93.184.216.34"] }),
+    fetchImpl,
+  });
+  assert.equal(out, "# só bruto");
 });
 
 test("o motivo do bloqueio sobrevive à auditoria (allowlist fechada)", async () => {
   const { db } = await import("../server/db.js");
-  const motivo = (url, opts) => crawlPage(url, opts).then(() => {
-    const row = db
-      .prepare("SELECT detail FROM audit WHERE kind = 'web.crawl_blocked' ORDER BY id DESC LIMIT 1")
-      .get();
-    return JSON.parse(row.detail);
-  });
+  const motivo = (url, opts) =>
+    crawlPage(url, opts).then(() => {
+      const row = db
+        .prepare(
+          "SELECT detail FROM audit WHERE kind = 'web.crawl_blocked' ORDER BY id DESC LIMIT 1",
+        )
+        .get();
+      return JSON.parse(row.detail);
+    });
   const nunca = () => {
     throw new Error("DNS não deveria ser consultado");
   };
   // Cada motivo é uma constante do código (nunca texto do usuário), então pode ser auditado.
-  assert.equal((await motivo("http://public.example:8080/", { resolve: nunca })).reason, "port_not_allowed");
-  assert.equal((await motivo("file:///etc/passwd", { resolve: nunca })).reason, "protocol_not_allowed");
-  assert.equal((await motivo("http://user:pass@public.example/", { resolve: nunca })).reason, "credentials_not_allowed");
-  assert.equal((await motivo("http://127.0.0.1/", { resolve: nunca })).reason, "blocked_destination");
+  assert.equal(
+    (await motivo("http://public.example:8080/", { resolve: nunca })).reason,
+    "port_not_allowed",
+  );
+  assert.equal(
+    (await motivo("file:///etc/passwd", { resolve: nunca })).reason,
+    "protocol_not_allowed",
+  );
+  assert.equal(
+    (await motivo("http://user:pass@public.example/", { resolve: nunca })).reason,
+    "credentials_not_allowed",
+  );
+  assert.equal(
+    (await motivo("http://127.0.0.1/", { resolve: nunca })).reason,
+    "blocked_destination",
+  );
   assert.equal(
     (await motivo("https://vazio.example/", { resolve: resolver({ "vazio.example": [] }) })).reason,
     "dns_no_answer",
