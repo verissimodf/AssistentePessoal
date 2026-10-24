@@ -91,12 +91,15 @@ export function assertSafeUrl(raw) {
 }
 
 /** `lookup` que só devolve endereços públicos; usado em cada conexão (anti-rebinding). */
-export function guardedLookup(hostname, options, cb) {
-  dnsLookup(hostname, { all: true, verbatim: true }, (err, addrs) => {
+export function guardedLookup(hostname, options, cb, { resolve = dnsLookup } = {}) {
+  resolve(hostname, { all: true, verbatim: true }, (err, addrs) => {
     if (err) return cb(err);
-    const list = Array.isArray(addrs) ? addrs : [addrs];
+    const list = (Array.isArray(addrs) ? addrs : [addrs]).filter((a) => a && a.address);
     if (!list.length) return cb(new Error("dns_no_answer"));
     for (const a of list) if (isBlockedAddress(a.address)) return cb(new Error("blocked_destination"));
+    // Node 22 (autoSelectFamily) pede TODOS os endereços quando `options.all`; devolver um
+    // escalar nesse caso faz o http.request falhar com ERR_INVALID_IP_ADDRESS (fetch_url quebrado).
+    if (options?.all) return cb(null, list);
     cb(null, list[0].address, list[0].family);
   });
 }
