@@ -61,6 +61,30 @@ test("guardedLookup recusa host que resolve para endereço interno (garantia ant
   });
 });
 
+test("guardedLookup respeita o contrato `all` do Node (autoSelectFamily) — regressão do fetch_url", async () => {
+  // Node 22 chama o lookup com `all: true` e espera a LISTA; devolver um escalar faz o
+  // http.request falhar com "Invalid IP address: undefined". Resolvedor injetado: sem DNS real.
+  const publico = (host, opts, cb) => cb(null, [{ address: "93.184.216.34", family: 4 }]);
+  const interno = (host, opts, cb) => cb(null, [{ address: "10.0.0.7", family: 4 }]);
+
+  const todos = await new Promise((res, rej) =>
+    guardedLookup("publico.example", { all: true }, (e, a) => (e ? rej(e) : res(a)), { resolve: publico }),
+  );
+  assert.ok(Array.isArray(todos), "all:true devolve array");
+  assert.equal(todos[0].address, "93.184.216.34");
+
+  const um = await new Promise((res, rej) =>
+    guardedLookup("publico.example", {}, (e, a, f) => (e ? rej(e) : res({ a, f })), { resolve: publico }),
+  );
+  assert.equal(um.a, "93.184.216.34");
+  assert.equal(um.f, 4);
+
+  await assert.rejects(
+    () => new Promise((res, rej) => guardedLookup("interno.example", { all: true }, (e) => (e ? rej(e) : res()), { resolve: interno })),
+    /blocked_destination/,
+  );
+});
+
 test("safeFetch recusa metadados de nuvem e loopback (nenhuma conexão é tentada)", async () => {
   await assert.rejects(() => safeFetch("http://169.254.169.254/latest/meta-data/"), /blocked_destination/);
   await assert.rejects(() => safeFetch("http://127.0.0.1/"), /blocked_destination/);
