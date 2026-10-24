@@ -107,14 +107,14 @@ export async function assertModelAvailable(cfg = {}, model = "", { fetchFn = (..
   );
 }
 
-async function callOpenAI(cfg, model, system, messages, tools) {
+async function callOpenAI(cfg, model, system, messages, tools, timeoutMs = PROVIDER_TIMEOUT_CEILING_MS) {
   // stream: false explícito — gateways compatíveis com OpenAI (ex.: Omniroute) podem responder
   // em text/event-stream por padrão, e aí o r.json() abaixo quebra com
   // "Unexpected token 'd', \"data: {...\" is not valid JSON".
   const body = { model, stream: false, messages: [{ role: "system", content: system }, ...messages] };
   if (tools.length) body.tools = tools.map((t) => ({ type: "function", function: t }));
   const r = await fetch(`${cfg.baseUrl}/chat/completions`, {
-    signal: AbortSignal.timeout(300000),
+    signal: AbortSignal.timeout(timeoutMs),
     method: "POST",
     headers: { "content-type": "application/json", ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}) },
     body: JSON.stringify(body),
@@ -136,13 +136,14 @@ async function callOpenAI(cfg, model, system, messages, tools) {
   };
 }
 
-async function callAnthropic(cfg, model, system, messages, tools) {
+async function callAnthropic(cfg, model, system, messages, tools, timeoutMs = PROVIDER_TIMEOUT_CEILING_MS) {
   const body = { model, max_tokens: 4096, system, messages, thinking: undefined };
   if (tools.length) body.tools = tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.parameters }));
   const r = await fetch(`${cfg.baseUrl}/v1/messages`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": cfg.apiKey, "anthropic-version": "2023-06-01" },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!r.ok) throw new Error(`anthropic ${r.status}: ${await r.text()}`);
   const j = await r.json();
@@ -169,6 +170,19 @@ export const runActive = (runId) => activeRuns.has(runId);
 const RUN_DEFAULT_DEADLINE_MS = 5 * 60 * 1000; // teto por execução
 const RUN_DEFAULT_MAX_TOOL_CALLS = 25;         // teto de chamadas de ferramenta por execução
 const REPEAT_LIMIT = 3;                        // mesma chamada repetida → ciclo
+const PROVIDER_TIMEOUT_CEILING_MS = 300_000;   // teto por tentativa de provedor
+const PROVIDER_TIMEOUT_FLOOR_MS = 1_000;       // piso: sempre deixa uma tentativa curta
+
+/**
+ * Orçamento de UMA tentativa de provedor: o tempo que ainda resta do `deadlineMs` da execução,
+ * limitado ao teto por tentativa. Sem isso, um provedor que aceita a conexão e nunca responde
+ * consome até 5 minutos e o fallback só acontece depois — bem além do deadline do run.
+ */
+export function attemptTimeoutMs(remainingMs) {
+  const n = Number(remainingMs);
+  if (!Number.isFinite(n)) return PROVIDER_TIMEOUT_CEILING_MS;
+  return Math.min(PROVIDER_TIMEOUT_CEILING_MS, Math.max(PROVIDER_TIMEOUT_FLOOR_MS, Math.trunc(n)));
+}
 
 /**
  * Run an agent: model ↔ tools loop.
@@ -242,13 +256,16 @@ export async function runAgent({
       const { id: provId, cfg: provCfg, model: provModel } = candidateProviders[i];
       const provIsAnthropic = provId === "anthropic";
       const callStart = Date.now();
+      // Orçamento da tentativa = tempo restante do run. Um provedor morto não pode consumir
+      // todo o deadline antes de o fallback ser tentado.
+      const attemptMs = attemptTimeoutMs(deadlineMs - (callStart - startedAt));
       try {
         // P2-B: valida a existência do modelo antes de gastar uma chamada (fail-open se o
         // catálogo estiver inacessível). Erros de configuração NÃO entram no fallback.
         if (!provIsAnthropic) await assertModelAvailable(provCfg, provModel);
         const out = provIsAnthropic
-          ? await callAnthropic(provCfg, provModel, system, currentConvo, tools)
-          : await callOpenAI(provCfg, provModel, system, currentConvo, tools);
+          ? await callAnthropic(provCfg, provModel, system, currentConvo, tools, attemptMs)
+          : await callOpenAI(provCfg, provModel, system, currentConvo, tools, attemptMs);
 
         const latencyMs = Date.now() - callStart;
         const estimatedTokens = Math.ceil(((out.text || "").length + JSON.stringify(currentConvo).length) / 4);
@@ -299,7 +316,16 @@ export async function runAgent({
     if (state.cancelled) return stop("Execução cancelada pelo usuário.");
     if (Date.now() - startedAt > deadlineMs) return stop("Limite de tempo da execução atingido.");
     if (toolCalls >= maxToolCalls) return stop("Limite de chamadas de ferramenta atingido.");
-    const { out, isAnthropic: activeIsAnthropic } = await callModel(convo);
+    // Uma tentativa abortada por deadline não é "erro do provedor": o run termina no limite,
+    // com a mesma resposta graciosa do cheque acima, em vez de propagar AbortError.
+    let modelResult;
+    try {
+      modelResult = await callModel(convo);
+    } catch (err) {
+      if (Date.now() - startedAt >= deadlineMs) return stop("Limite de tempo da execução atingido.");
+      throw err;
+    }
+    const { out, isAnthropic: activeIsAnthropic } = modelResult;
     if (out.reasoning) reasoning.push(out.reasoning);
     if (!out.calls.length) return stop(out.text);
     if (activeIsAnthropic) convo.push({ role: "assistant", content: out.raw.content });
