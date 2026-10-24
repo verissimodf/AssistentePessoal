@@ -66,7 +66,8 @@ export function AppShell() {
           </select>
           <div className="flex items-center gap-2 text-xs" title={online ? "" : t("demo_hint")}>
             <span className={`h-2 w-2 rounded-full ${online ? "bg-chart-3" : "bg-accent"} animate-pulse`} />
-            <span className="hidden text-muted-foreground md:inline">{online ? t("connected") : t("demo")}</span>
+            {/* Sempre visível: em modo demo o painel mostra dados fictícios e não deve passar por produção. */}
+            <span className="text-muted-foreground">{online ? t("connected") : t("demo")}</span>
           </div>
           {auth === "ok" && (
             <button onClick={() => logout()} className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground" aria-label={a("logout")}>
