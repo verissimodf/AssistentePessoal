@@ -398,10 +398,15 @@ export function cosine(a, b) {
   return d / (Math.sqrt(x) * Math.sqrt(y) || 1);
 }
 
+// O botão "Testar" é uma ação explícita do usuário: precisa cobrir o cold start de provedores
+// de agente (medido ~25 s no Hermes) sem esperar para sempre num provedor morto (conexão
+// recusada falha na hora).
+export const TEST_PROVIDER_TIMEOUT_MS = 45_000;
+
 export async function testProvider(
   id,
   adminId,
-  { fetchFn = (...a) => globalThis.fetch(...a), timeoutMs = 30_000 } = {},
+  { fetchFn = (...a) => globalThis.fetch(...a), timeoutMs = TEST_PROVIDER_TIMEOUT_MS } = {},
 ) {
   const cfg = providerConfig(id, adminId);
   const signal = AbortSignal.timeout(timeoutMs);
@@ -429,6 +434,8 @@ export async function testProvider(
       headers: {
         "content-type": "application/json",
         ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}),
+        // Sessão própria: o teste não deve esperar na fila de um turno em andamento.
+        ...providerHeaders(id, uid()),
       },
       // Sem `max_tokens`: um teto baixo faz provedores de agente (Hermes) truncarem e pedirem
       // continuações — o teste media a latência do loop de continuação, não a do provedor.
