@@ -1,0 +1,10 @@
+# Override proposto para /opt/laytech-ai/docker/omniroute/docker-compose.yml
+# NÃO aplicado. Ver README.md neste diretório para evidência, consumidores e rollback.
+#
+# `ports` ACUMULAM em merge de Compose: sem `!override` a lista do arquivo base continuaria
+# valendo (0.0.0.0) e a restrição não teria efeito. Requer Compose >= 2.24.
+services:
+  omniroute:
+    ports: !override
+      - "127.0.0.1:20128:20128"
+      - "127.0.0.1:3012:3012"
