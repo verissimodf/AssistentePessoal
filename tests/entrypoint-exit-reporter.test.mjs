@@ -18,8 +18,8 @@ function executar(script) {
 
 test("reporta o índice e o status do componente que terminou", () => {
   const { stderr, status } = executar(`
-    sleep 30 & p1=$!
-    true & p2=$!
+    sleep 2 & p1=$!
+    (sleep 0.3; exit 0) & p2=$!
     wait_for_first_exit "$p1" "$p2"
   `);
   assert.equal(status, 0, "o status do filho deve ser propagado");
@@ -30,8 +30,8 @@ test("reporta o índice e o status do componente que terminou", () => {
 
 test("propaga status de falha do filho", () => {
   const { stderr, status } = executar(`
-    sleep 30 & p1=$!
-    (exit 3) & p2=$!
+    sleep 2 & p1=$!
+    (sleep 0.3; exit 3) & p2=$!
     wait_for_first_exit "$p1" "$p2"
   `);
   assert.equal(status, 3);
@@ -49,8 +49,8 @@ test("distingue término normal, encerramento solicitado e falha", () => {
   ];
   for (const [codigo, esperado] of casos) {
     const { stderr, status } = executar(`
-      sleep 30 & p1=$!
-      (exit ${codigo}) & p2=$!
+      sleep 2 & p1=$!
+      (sleep 0.3; exit ${codigo}) & p2=$!
       wait_for_first_exit "$p1" "$p2"
     `);
     assert.equal(status, Number(codigo), `status ${codigo}`);
@@ -63,8 +63,8 @@ test("não falha quando o bash não suporta wait -n -p", () => {
   // Simula a ausência do recurso forçando a variável de decisão usada pela função.
   const { stderr, status } = executar(`
     EXIT_REPORTER_FORCE_FALLBACK=1
-    sleep 30 & p1=$!
-    (exit 7) & p2=$!
+    sleep 2 & p1=$!
+    (sleep 0.3; exit 7) & p2=$!
     wait_for_first_exit "$p1" "$p2"
   `);
   assert.equal(status, 7);
