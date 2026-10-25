@@ -4,7 +4,11 @@
 // Provisiona, clona, cataloga e indexa repositórios de skills de forma idempotente e segura.
 
 import { execSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, copyFileSync } from "node:fs";
+import {
+  existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, lstatSync,
+  copyFileSync, chmodSync, renameSync, rmSync,
+} from "node:fs";
+import { createHash } from "node:crypto";
 import { join, resolve, relative, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
@@ -279,6 +283,305 @@ export function runEssentialsSetup({ baseDir = BASE_DIR, bridges = false, log = 
   }
 }
 
+/**
+ * Skills externas vendorizadas: fonte fixada por commit, com manifesto e SHA256SUMS.
+ * O runtime NUNCA executa nada desse diretório; apenas copia Markdown/Documentação para o hub.
+ */
+export const BUNDLED_SKILLS_SOURCE =
+  process.env.JARVIS_BUNDLED_SKILLS_DIR ||
+  join(
+    dirname(fileURLToPath(import.meta.url)),
+    "..",
+    "skills",
+    "vendor",
+    "addyosmani-agent-skills",
+  );
+
+const BUNDLED_SOURCE_PREFIX = "addyosmani/agent-skills@";
+
+function insideRoot(root, target) {
+  const fold = (v) => (process.platform === "win32" ? v.toLowerCase() : v);
+  const r = fold(resolve(root));
+  const t = fold(resolve(target));
+  return (
+    t === r ||
+    t.startsWith(
+      r.endsWith("/") || r.endsWith("\\") ? r : r + (process.platform === "win32" ? "\\" : "/"),
+    )
+  );
+}
+
+function isSafeRelativeFile(rel) {
+  if (typeof rel !== "string" || !rel || rel.includes("\0")) return false;
+  const portable = rel.replace(/\\/g, "/");
+  if (portable.startsWith("/") || /^[a-zA-Z]:\//.test(portable) || portable.startsWith("//"))
+    return false;
+  return !portable.split("/").includes("..");
+}
+
+function sha256OfFile(filePath) {
+  return createHash("sha256").update(readFileSync(filePath)).digest("hex");
+}
+
+/** Lê e valida o manifesto. Qualquer divergência é erro — nunca "corrige" em silêncio. */
+function readBundledManifest(sourceDir) {
+  const manifestPath = join(sourceDir, "manifest.json");
+  if (!existsSync(manifestPath)) throw new Error("manifest_missing");
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  } catch {
+    throw new Error("manifest_invalid");
+  }
+  const upstream = manifest?.upstream;
+  if (
+    manifest?.schema !== 1 ||
+    !upstream ||
+    typeof upstream.repo !== "string" ||
+    !/^[0-9a-f]{40}$/i.test(String(upstream.commit || "")) ||
+    !Array.isArray(manifest.skills) ||
+    manifest.skills.length === 0
+  ) {
+    throw new Error("manifest_invalid");
+  }
+  const ids = new Set();
+  for (const skill of manifest.skills) {
+    if (typeof skill?.id !== "string" || !/^[a-z0-9][a-z0-9-]{1,63}$/.test(skill.id)) {
+      throw new Error("skill_id_invalid");
+    }
+    if (ids.has(skill.id)) throw new Error(`skill_id_duplicate:${skill.id}`);
+    ids.add(skill.id);
+    if (typeof skill.name !== "string" || !skill.name.trim() || /[\r\n]/.test(skill.name)) {
+      throw new Error(`skill_name_invalid:${skill.id}`);
+    }
+    if (
+      !isSafeRelativeFile(skill.path) ||
+      !skill.path.startsWith(`${skill.id}/`) ||
+      !skill.path.endsWith("/SKILL.md")
+    ) {
+      throw new Error(`skill_path_invalid:${skill.id}`);
+    }
+    if (
+      !Array.isArray(skill.tags) ||
+      !skill.tags.every((t) => typeof t === "string" && t.trim() && !/[\r\n]/.test(t))
+    ) {
+      throw new Error(`skill_tags_invalid:${skill.id}`);
+    }
+    if (
+      skill.category !== undefined &&
+      (typeof skill.category !== "string" || /[\r\n]/.test(skill.category))
+    ) {
+      throw new Error(`skill_category_invalid:${skill.id}`);
+    }
+    const refs = skill.references ?? [];
+    if (!Array.isArray(refs)) throw new Error(`skill_references_invalid:${skill.id}`);
+    for (const ref of refs) {
+      if (!isSafeRelativeFile(ref) || !/^references\/[A-Za-z0-9][A-Za-z0-9._-]*\.md$/.test(ref)) {
+        throw new Error(`skill_reference_invalid:${skill.id}`);
+      }
+    }
+  }
+  return manifest;
+}
+
+/** Confere TODO arquivo do SHA256SUMS; retorna o conjunto verificado. */
+function verifyBundledChecksums(sourceDir) {
+  const sumsPath = join(sourceDir, "SHA256SUMS");
+  if (!existsSync(sumsPath)) throw new Error("checksums_missing");
+  const lines = readFileSync(sumsPath, "utf8")
+    .split(/\r?\n/)
+    .filter((l) => l.trim());
+  const verified = new Set();
+  for (const line of lines) {
+    const m = line.match(/^([0-9a-f]{64})\s+\*?(.+)$/i);
+    if (!m) throw new Error("checksums_invalid");
+    const rel = m[2].replace(/^\.\//, "").trim();
+    if (!isSafeRelativeFile(rel)) throw new Error(`checksum_path_invalid:${rel}`);
+    const full = resolve(sourceDir, rel);
+    if (!insideRoot(sourceDir, full)) throw new Error(`checksum_path_invalid:${rel}`);
+    if (!existsSync(full) || !lstatSync(full).isFile())
+      throw new Error(`checksum_file_missing:${rel}`);
+    if (sha256OfFile(full) !== m[1].toLowerCase()) throw new Error(`checksum_mismatch:${rel}`);
+    verified.add(rel);
+  }
+  if (!verified.size) throw new Error("checksums_empty");
+  return verified;
+}
+
+/** Extrai descrição do frontmatter sem depender de parser YAML externo. */
+function readSkillDescription(content, id) {
+  const fm = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const raw = fm?.[1]?.match(/^description:\s*(.+)$/m)?.[1]?.trim();
+  const description = raw
+    ?.replace(/^["']|["']$/g, "")
+    .replace(/\\"/g, '"')
+    .trim();
+  if (!description) throw new Error(`skill_description_missing:${id}`);
+  return description;
+}
+
+/**
+ * Sincroniza as skills vendorizadas para o Hub Global.
+ * - valida manifesto, cobertura e checksums ANTES de tocar no catálogo;
+ * - preserva skills de terceiros; substitui apenas entradas com origem `addyosmani/agent-skills@`;
+ * - não usa rede, não executa scripts do upstream e nunca apaga skill de terceiros.
+ * Falha com `{ ok: false, reason }`; o catálogo anterior permanece intacto.
+ */
+export function syncBundledSkills({ baseDir = BASE_DIR, sourceDir = BUNDLED_SKILLS_SOURCE, log = console.log } = {}) {
+  const staging = [];
+  try {
+    // 0. Recusa hub com symlink nas raízes graváveis: evita escrever fora do diretório do hub.
+    const lstatSafe = (p) => {
+      try {
+        return lstatSync(p);
+      } catch {
+        return null;
+      }
+    };
+    const catalogPath = join(baseDir, "catalog.json");
+    const catalogStat = lstatSafe(catalogPath);
+    if (catalogStat?.isSymbolicLink()) return { ok: false, reason: "catalog_symlink", baseDir };
+    const skillsRoot = join(baseDir, "skills");
+    if (lstatSafe(skillsRoot)?.isSymbolicLink()) {
+      return { ok: false, reason: "skills_dir_symlink", baseDir };
+    }
+
+    // 1. Baseline embutida primeiro: uma falha nas skills vendorizadas não deixa o hub vazio.
+    if (!catalogStat) {
+      const r = runEssentialsSetup({ baseDir, log: () => {} });
+      if (!r.ok) return { ok: false, reason: r.reason || "builtin_provision_failed", baseDir };
+    }
+    let catalog;
+    try {
+      catalog = JSON.parse(readFileSync(catalogPath, "utf8"));
+    } catch {
+      return { ok: false, reason: "catalog_invalid", baseDir };
+    }
+    if (!catalog || !Array.isArray(catalog.skills)) return { ok: false, reason: "catalog_invalid", baseDir };
+
+    // 2. Validação completa (manifesto, cobertura e checksums) antes de qualquer escrita.
+    const manifest = readBundledManifest(sourceDir);
+    const verified = verifyBundledChecksums(sourceDir);
+    const requiredFiles = ["manifest.json"];
+    if (manifest.upstream.licenseFile) requiredFiles.push(String(manifest.upstream.licenseFile).replace(/^\.\//, ""));
+    for (const skill of manifest.skills) {
+      requiredFiles.push(skill.path);
+      for (const ref of skill.references ?? []) requiredFiles.push(`${skill.id}/${ref}`);
+    }
+    for (const rel of requiredFiles) {
+      if (!verified.has(rel)) throw new Error(`checksum_coverage_incomplete:${rel}`);
+    }
+
+    // 3. Conflitos: nunca sobrescrever skill local/terceira nem diretório sem catálogo.
+    const managed = (s) => typeof s.source === "string" && s.source.startsWith(BUNDLED_SOURCE_PREFIX);
+    const legacyUpstream = (s) => !s.source && typeof s.path === "string" && s.path.startsWith("repos/");
+    const existingById = new Map(catalog.skills.map((s) => [s.id, s]));
+    for (const skill of manifest.skills) {
+      const entry = existingById.get(skill.id);
+      if (entry && !managed(entry) && !legacyUpstream(entry)) {
+        return { ok: false, reason: `skill_id_conflict:${skill.id}`, baseDir };
+      }
+      if (!entry && existsSync(join(baseDir, "skills", skill.id))) {
+        return { ok: false, reason: `skill_dir_conflict:${skill.id}`, baseDir };
+      }
+    }
+
+    // 4. Metadados (incluindo descrição) calculados ANTES de remover/copiar qualquer arquivo.
+    const prepared = manifest.skills.map((skill) => {
+      const content = readFileSync(join(sourceDir, skill.path), "utf8");
+      const description = readSkillDescription(content, skill.id);
+      const destDir = join(baseDir, "skills", skill.id);
+      return {
+        skill,
+        destDir,
+        entry: {
+          id: skill.id,
+          name: skill.name,
+          description,
+          tags: skill.tags,
+          category: skill.category || "engineering",
+          source: `${BUNDLED_SOURCE_PREFIX}${manifest.upstream.commit}`,
+          path: `skills/${skill.id}/SKILL.md`,
+          references: (skill.references ?? []).map((ref) => `skills/${skill.id}/${ref}`),
+          fullPath: join(destDir, "SKILL.md"),
+          size: content.length,
+        },
+        files: [
+          { sourceRel: skill.path, destSub: "SKILL.md" },
+          ...(skill.references ?? []).map((ref) => ({ sourceRel: `${skill.id}/${ref}`, destSub: ref })),
+        ],
+      };
+    });
+
+    // 5. Copia para staging e troca por rename; erro de cópia não destrói o diretório anterior.
+    try {
+      for (const item of prepared) {
+        const stageDir = join(baseDir, "skills", `.sync-${item.skill.id}-${process.pid}`);
+        rmSync(stageDir, { recursive: true, force: true });
+        staging.push(stageDir);
+        for (const file of item.files) {
+          if (!isSafeRelativeFile(file.destSub)) throw new Error(`skill_path_invalid:${item.skill.id}`);
+          const dest = join(stageDir, file.destSub);
+          mkdirSync(dirname(dest), { recursive: true });
+          copyFileSync(join(sourceDir, file.sourceRel), dest);
+          chmodSync(dest, 0o644);
+        }
+      }
+      for (let i = 0; i < prepared.length; i++) {
+        const item = prepared[i];
+        const stageDir = staging[i];
+        const backup = `${item.destDir}.old-${process.pid}`;
+        const hadDest = existsSync(item.destDir);
+        rmSync(backup, { recursive: true, force: true });
+        if (hadDest) renameSync(item.destDir, backup);
+        try {
+          renameSync(stageDir, item.destDir);
+        } catch (e) {
+          if (hadDest && existsSync(backup)) renameSync(backup, item.destDir);
+          throw e;
+        }
+        if (hadDest) rmSync(backup, { recursive: true, force: true });
+      }
+    } finally {
+      for (const dir of staging) rmSync(dir, { recursive: true, force: true });
+    }
+
+    // 6. Catálogo só é trocado depois de todos os arquivos estarem no lugar.
+    const ids = new Set(prepared.map((p) => p.skill.id));
+    const kept = catalog.skills.filter((s) => !ids.has(s.id));
+    const next = [...kept, ...prepared.map((p) => p.entry)];
+    catalog.skills = next;
+    catalog.totalSkills = next.length;
+    catalog.bundled = {
+      repo: manifest.upstream.repo,
+      commit: manifest.upstream.commit,
+      license: manifest.upstream.license || null,
+      syncedAt: new Date().toISOString(),
+    };
+    const tmp = `${catalogPath}.tmp-${process.pid}`;
+    try {
+      writeFileSync(tmp, JSON.stringify(catalog, null, 2) + "\n", "utf8");
+      renameSync(tmp, catalogPath);
+    } catch (e) {
+      rmSync(tmp, { force: true });
+      throw e;
+    }
+    log(
+      `assistente-pessoal: skills vendorizadas sincronizadas em ${baseDir} (${prepared.length} de ${manifest.upstream.repo}@${manifest.upstream.commit.slice(0, 7)})`,
+    );
+    return {
+      ok: true,
+      reason: null,
+      baseDir,
+      installed: prepared.map((p) => p.skill.id),
+      totalSkills: next.length,
+      upstream: { repo: manifest.upstream.repo, commit: manifest.upstream.commit },
+    };
+  } catch (e) {
+    return { ok: false, reason: e?.message || "sync_failed", baseDir };
+  }
+}
+
 export function runSetup() {
   console.log("==================================================================");
   console.log(" Hub Global de Skills Multi-Agente — Provisionamento v1.2.1");
@@ -547,10 +850,21 @@ const isCLI =
 
 if (isCLI) {
   const args = new Set(process.argv.slice(2));
+  // Sincronização das skills vendorizadas (offline, idempotente, falha fechada). É o modo usado
+  // pelo entrypoint do container a cada boot: preserva skills de terceiros e o catálogo anterior.
+  const wantSync = args.has("--sync-bundled");
   // Padrão SEGURO: catálogo determinístico offline (sem clones de origem não verificada).
   // O modo de rede depende de opt-in explícito: --full ou JARVIS_SKILLS_SOURCE=full.
   const wantFull = args.has("--full") || process.env.JARVIS_SKILLS_SOURCE === "full";
-  if (wantFull) {
+  if (wantSync) {
+    const r = syncBundledSkills();
+    if (!r.ok) {
+      console.error(
+        `assistente-pessoal: AVISO — sincronização das skills vendorizadas falhou (${r.reason}); baseline embutida e catálogo anterior preservados.`,
+      );
+      process.exitCode = 1;
+    }
+  } else if (wantFull) {
     runSetup();
   } else {
     const r = runEssentialsSetup({ bridges: process.env.JARVIS_SKILLS_BRIDGES === "1" });

@@ -573,6 +573,9 @@ route("GET", "/api/skills/:id", "skills:read", ({ params }) => {
     if (err.message === "skill_not_found" || err.message === "skill_identifier_required") {
       throw new AuthError(404, "skill_not_found");
     }
+    if (err.message === "skill_too_large") {
+      throw new AuthError(413, "skill_too_large");
+    }
     throw err;
   }
 });

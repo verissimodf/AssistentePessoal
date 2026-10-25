@@ -107,8 +107,12 @@ LABEL org.opencontainers.image.revision="$GIT_SHA" \
 COPY --from=build /app/.output ./.output
 # Entrada do container + ponte de voz + helper de diagnóstico de saída dos componentes.
 COPY scripts/container-entrypoint.sh scripts/voice-adapter.mjs scripts/setup-global-skills.mjs ./scripts/
+# Skills vendorizadas (Markdown fixado por commit + manifesto/SHA256SUMS). Apenas conteúdo:
+# o entrypoint sincroniza no hub e nunca executa nada deste diretório.
+COPY skills/ ./skills/
 COPY scripts/lib/exit-reporter.sh ./scripts/lib/exit-reporter.sh
 RUN chmod +x scripts/container-entrypoint.sh \
+ && chmod -R a+rX /app/skills \
  && mkdir -p /app/data && chown -R 1000:1000 /app/data /home/node
 
 # Não-root por construção: vale mesmo fora do Compose (sem `--user`).

@@ -189,6 +189,11 @@ export async function handle(msg, { base = BASE, token = TOKEN } = {}) {
       } else if (name === "load_skill") {
         const skill = await call(`/api/skills/${encodeURIComponent(a.skill)}`, {}, { base, token });
         text = skill.content || "";
+        if (Array.isArray(skill.references) && skill.references.length) {
+          text += `\n\n[REFERÊNCIAS DISPONÍVEIS — carregue com load_skill usando o caminho completo]\n${skill.references
+            .map((r) => `- ${r}`)
+            .join("\n")}`;
+        }
       } else if (name === "list_skills") {
         const params = new URLSearchParams();
         if (a.query) params.set("q", a.query);

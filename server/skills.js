@@ -1,8 +1,8 @@
 // server/skills.js
 // Dynamic Skill Injector & Catalog Bridge for J.A.R.V.I.S.
 // Loads, searches, and injects agent skills on demand from the Global Skills Hub (%USERPROFILE%\.agent-skills).
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { join, resolve, sep, normalize } from "node:path";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import os from "node:os";
 
 export const GLOBAL_SKILLS_DIR = process.env.JARVIS_GLOBAL_SKILLS_DIR || join(os.homedir(), ".agent-skills");
@@ -154,9 +154,17 @@ export function matchSkillsForPrompt(prompt, limit = 5, baseDir = GLOBAL_SKILLS_
 }
 
 /**
- * Validação rigorosa contra Path Traversal.
- * Garante que o arquivo solicitado resida estritamente dentro do diretório base do Hub.
+ * Confinamento de caminho. A comparação lexical sozinha não impede um symlink dentro do hub de
+ * apontar para fora; por isso, quando o alvo existe, o caminho REAL também é verificado.
  */
+const foldPath = (value) => (process.platform === "win32" ? value.toLowerCase() : value);
+
+function isInside(root, target) {
+  const r = foldPath(root);
+  const t = foldPath(target);
+  return t === r || t.startsWith(r.endsWith(sep) ? r : r + sep);
+}
+
 export function assertSafePath(targetPath, baseDir = GLOBAL_SKILLS_DIR) {
   if (typeof targetPath !== "string" || !targetPath.trim()) {
     throw new Error("caminho_invalido");
@@ -177,19 +185,61 @@ export function assertSafePath(targetPath, baseDir = GLOBAL_SKILLS_DIR) {
 
   const root = resolve(baseDir);
   const target = resolve(root, clean);
-  const fold = (value) => process.platform === "win32" ? value.toLowerCase() : value;
-  const rootFold = fold(root);
-  const targetFold = fold(target);
 
   // Only relative paths within the catalog root are valid. POSIX absolute, drive and UNC
   // paths must not be accepted as identifiers, regardless of host platform.
   if (portable.startsWith("/") || /^[a-zA-Z]:\//.test(portable) || portable.startsWith("//")) {
     throw new Error("path_traversal_detected");
   }
-  if (!(targetFold === rootFold || targetFold.startsWith(rootFold.endsWith(sep) ? rootFold : rootFold + sep))) {
+  if (!isInside(root, target)) {
     throw new Error("path_traversal_detected");
   }
+  if (existsSync(target)) {
+    let realRoot;
+    let realTarget;
+    try {
+      realRoot = realpathSync(root);
+      realTarget = realpathSync(target);
+    } catch {
+      throw new Error("path_traversal_detected");
+    }
+    if (!isInside(realRoot, realTarget)) {
+      throw new Error("path_traversal_detected");
+    }
+  }
   return target;
+}
+
+const MAX_SKILL_REFERENCES = 50;
+const MAX_SKILL_BYTES = 2 * 1024 * 1024;
+const SAFE_REFERENCE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*\.md$/;
+
+/** Lista referências `.md` reais (sem symlink) dentro de `<skill>/references/`, em caminho
+ *  relativo ao hub — o mesmo identificador aceito por `loadSkill`. */
+function listSkillReferences(skillFilePath, baseDir) {
+  const refDir = join(dirname(skillFilePath), "references");
+  if (!existsSync(refDir)) return [];
+  let entries;
+  try {
+    entries = readdirSync(refDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const root = resolve(baseDir);
+  const realRoot = realpathSync(root);
+  const out = [];
+  for (const entry of entries) {
+    if (out.length >= MAX_SKILL_REFERENCES) break;
+    if (!entry.isFile() || !SAFE_REFERENCE_NAME.test(entry.name)) continue;
+    const full = join(refDir, entry.name);
+    try {
+      if (!isInside(realRoot, realpathSync(full))) continue;
+    } catch {
+      continue;
+    }
+    out.push(relative(root, full).replace(/\\/g, "/"));
+  }
+  return out.sort();
 }
 
 /**
@@ -258,9 +308,15 @@ export function loadSkill(identifier, baseDir = GLOBAL_SKILLS_DIR) {
     }
   }
 
-
   if (!existsSync(resolvedFilePath)) {
     throw new Error("skill_not_found");
+  }
+  const stat = statSync(resolvedFilePath);
+  if (!stat.isFile()) {
+    throw new Error("skill_not_found");
+  }
+  if (stat.size > MAX_SKILL_BYTES) {
+    throw new Error("skill_too_large");
   }
 
   const content = readFileSync(resolvedFilePath, "utf8");
@@ -269,8 +325,11 @@ export function loadSkill(identifier, baseDir = GLOBAL_SKILLS_DIR) {
     name: skill?.name || clean,
     description: skill?.description || "",
     tags: skill?.tags || [],
-    path: skill?.path || resolvedFilePath,
+    path: skill?.path || relative(resolve(baseDir), resolvedFilePath).replace(/\\/g, "/"),
     content,
+    // Referências relativas preservadas no hub, já no formato aceito por loadSkill
+    // (ex.: "skills/security-and-hardening/references/hardening-patterns.md").
+    references: listSkillReferences(resolvedFilePath, baseDir),
   };
 }
 
@@ -285,5 +344,3 @@ export {
   resetProviderTelemetry,
   compactConversationContext,
 } from "./llm.js";
-
-
