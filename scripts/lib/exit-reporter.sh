@@ -11,10 +11,12 @@ wait_for_first_exit() {
 
   if [[ "${EXIT_REPORTER_FORCE_FALLBACK:-0}" != "1" ]] &&
     ((BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1))); then
-    wait -n -p finished_pid
+    # Restringe wait ao conjunto de filhos fornecido. Sem esta lista, processos de teste
+    # ou filhos auxiliares podem ganhar a corrida e tornar a atribuição do componente instável.
+    wait -n -p finished_pid "${pids[@]}"
     status=$?
   else
-    wait -n
+    wait -n "${pids[@]}"
     status=$?
   fi
 
