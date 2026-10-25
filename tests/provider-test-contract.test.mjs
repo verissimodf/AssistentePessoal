@@ -119,6 +119,42 @@ test("não envia max_tokens (evita loop de continuação em provedores de agente
   assert.equal(corpo.messages.at(-1).content, "Responda apenas: ok");
 });
 
+test("o teste usa sessão própria (não herda a fila de um turno em andamento)", async () => {
+  const vistos = [];
+  stub({
+    chat: async (init) => {
+      vistos.push(init.headers || {});
+      const body = { choices: [{ message: { content: "ok" } }] };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+      };
+    },
+  });
+  await testProvider("hermes", adminId);
+  await testProvider("hermes", adminId);
+  await testProvider("ollama", adminId);
+  assert.match(String(vistos[0]["x-hermes-session-id"]), /^jarvis-[a-z0-9-]+$/i);
+  assert.notEqual(
+    vistos[0]["x-hermes-session-id"],
+    vistos[1]["x-hermes-session-id"],
+    "cada teste usa sessão própria",
+  );
+  assert.equal(
+    vistos[2]["x-hermes-session-id"],
+    undefined,
+    "outros provedores não recebem a sessão",
+  );
+});
+
+test("o timeout padrão do teste cobre o cold start de provedores de agente", async () => {
+  const { TEST_PROVIDER_TIMEOUT_MS } = await import("../server/llm.js");
+  assert.equal(TEST_PROVIDER_TIMEOUT_MS, 45_000);
+  assert.ok(TEST_PROVIDER_TIMEOUT_MS > 25_000, "precisa exceder o cold start medido (~25 s)");
+});
+
 test("provedor que nunca responde respeita o limite de tempo", async () => {
   stub({
     chat: (init) =>
