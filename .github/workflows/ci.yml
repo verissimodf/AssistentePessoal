@@ -112,14 +112,14 @@ jobs:
           done
           [ "$ready" = "1" ] || { echo "Timeout aguardando a API do container efêmero." >&2; exit 1; }
 
-          TOKEN=$(docker exec "$container_name" cat /app/data/bootstrap-token.txt | tr -d '\\r\\n')
+          TOKEN=$(docker exec "$container_name" cat /app/data/bootstrap-token.txt | tr -d '\r\n')
           USER="ci-smoke-$RANDOM"
           PASS="Ci#$(openssl rand -hex 12)!"
           curl --fail --silent -X POST "$API/api/auth/setup" -H 'content-type: application/json' \
-            -d "{\\"token\\":\\"$TOKEN\\",\\"username\\":\\"$USER\\",\\"password\\":\\"$PASS\\"}" >/dev/null
+            -d "{\"token\":\"$TOKEN\",\"username\":\"$USER\",\"password\":\"$PASS\"}" >/dev/null
 
           LOGIN=$(curl --fail --silent -X POST "$API/api/auth/login" -H 'content-type: application/json' \
-            -d "{\\"username\\":\\"$USER\\",\\"password\\":\\"$PASS\\"}" -c /tmp/ci-cookies)
+            -d "{\"username\":\"$USER\",\"password\":\"$PASS\"}" -c /tmp/ci-cookies)
           CSRF=$(printf '%s' "$LOGIN" | python3 -c 'import json,sys; print(json.load(sys.stdin)["csrf"])')
           authed() { curl --fail --silent -b /tmp/ci-cookies -H "x-jarvis-csrf: $CSRF" "$@"; }
 
