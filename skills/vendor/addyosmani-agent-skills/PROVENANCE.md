@@ -22,9 +22,13 @@ não é executado, não altera permissões e não substitui configuração local
 | `code-review-and-quality` | `code-review-and-quality/SKILL.md` | — |
 | `spec-driven-development` | `spec-driven-development/SKILL.md` | — |
 | `debugging-and-error-recovery` | `debugging-and-error-recovery/SKILL.md` | — |
+| `incremental-implementation` | `incremental-implementation/SKILL.md` | — |
+| `context-engineering` | `context-engineering/SKILL.md` | — |
 
-`SHA256SUMS` fixa a integridade de cada arquivo, inclusive `manifest.json`. O provisionamento falha
-fechado se o manifesto, um arquivo ou o checksum divergir.
+Sete skills vendorizadas (5 do escopo inicial + 2 complementares referenciadas por
+`spec-driven-development`), preservando a instalação seletiva. `SHA256SUMS` fixa a integridade de
+cada arquivo, inclusive `manifest.json`. O provisionamento falha fechado se o manifesto, um arquivo
+ou o checksum divergir.
 
 ## O que NÃO foi importado (decisão deliberada)
 

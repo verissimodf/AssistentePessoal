@@ -40,6 +40,8 @@ const BUNDLED_IDS = [
   "code-review-and-quality",
   "spec-driven-development",
   "debugging-and-error-recovery",
+  "incremental-implementation",
+  "context-engineering",
 ];
 
 const BASE_TMP = mkdtempSync(join(tmpdir(), "jarvis-agent-skills-"));
@@ -108,7 +110,7 @@ test("origem: commit fixado, licença preservada e SHA256SUMS correspondem aos a
     .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => line.match(/^([0-9a-f]{64})\s+\*?(.+)$/));
-  assert.equal(sums.length, 8, "manifest + LICENSE + 5 SKILL.md + 1 referência");
+  assert.equal(sums.length, 10, "manifest + LICENSE + 7 SKILL.md + 1 referência");
   for (const [, expected, rawRel] of sums) {
     const rel = rawRel.replace(/^\.\//, "");
     assert.equal(sha256(join(VENDOR, rel)), expected, `checksum de ${rel}`);
@@ -119,14 +121,14 @@ test("sincronização: adiciona as 5 skills ao catálogo nativo sem perder as 4 
   const hub = makeDir("hub-sync");
   const r = sync(hub);
   assert.equal(r.ok, true, r.reason);
-  assert.equal(r.totalSkills, 9);
+  assert.equal(r.totalSkills, 11);
   assert.deepEqual(r.installed, BUNDLED_IDS);
 
   const catalog = getCatalog(hub);
-  assert.equal(catalog.totalSkills, 9);
+  assert.equal(catalog.totalSkills, 11);
   assert.equal(catalog.bundled.commit, PINNED_COMMIT);
   const created = listSkills({ baseDir: hub });
-  assert.equal(created.length, 9);
+  assert.equal(created.length, 11);
   for (const id of BUNDLED_IDS) {
     const entry = created.find((s) => s.id === id);
     assert.ok(entry, `${id} descoberta`);
@@ -186,6 +188,11 @@ test("seleção contextual: a skill certa é escolhida, sem carregar o catálogo
     ["review this pull request diff for code quality", "code-review-and-quality"],
     ["write a PRD and specification for this new feature", "spec-driven-development"],
     ["debug why this test is failing and find the root cause", "debugging-and-error-recovery"],
+    [
+      "implement this feature in small incremental slices with a feature flag",
+      "incremental-implementation",
+    ],
+    ["optimize agent context and rules for a new session", "context-engineering"],
   ];
   for (const [query, expected] of cases) {
     const matches = matchSkillsForPrompt(query, 3, hub);
@@ -197,7 +204,7 @@ test("seleção contextual: a skill certa é escolhida, sem carregar o catálogo
     100,
     hub,
   );
-  assert.ok(broad.length < 9, "não injeta o catálogo inteiro");
+  assert.ok(broad.length < 11, "não injeta o catálogo inteiro");
 });
 
 test("referências relativas: carregáveis pelo mesmo loader, dentro do hub", () => {
@@ -401,7 +408,7 @@ test("CLI: --sync-bundled funciona isolado e falha com origem inválida", () => 
       stdio: "pipe",
     },
   );
-  assert.equal(getCatalog(hub).totalSkills, 9);
+  assert.equal(getCatalog(hub).totalSkills, 11);
 
   let failed = false;
   const badHub = makeDir("hub-cli-bad");
@@ -462,7 +469,7 @@ test("HTTP nativo: /api/skills descobre, seleciona e carrega a skill vendorizada
     assert.equal(search.status, 200);
     const searchJson = await search.json();
     assert.equal(searchJson.skills[0]?.id, "security-and-hardening");
-    assert.ok(searchJson.totalCatalog >= 9);
+    assert.ok(searchJson.totalCatalog >= 11);
 
     const detail = await fetch(`${base}/api/skills/security-and-hardening`, { headers });
     assert.equal(detail.status, 200);
