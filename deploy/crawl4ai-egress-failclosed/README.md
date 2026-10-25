@@ -34,7 +34,21 @@ sem bloqueio). Além disso, `init_permanent()` criava o browser permanente **sem
 com o proxy ausente, a configuração da requisição coincide com a padrão e o pool devolveria esse
 browser não protegido.
 
-## 3. Patches
+## 3. Imagem candidata (construída e testada, não implantada)
+
+`Dockerfile` neste diretório deriva da **mesma base pinada** em produção e aplica os dois patches
+no build, validando sintaxe e presença de `EgressNotReady`:
+
+```bash
+docker build -t crawl4ai-egress:failclosed-g10 deploy/crawl4ai-egress-failclosed/
+docker run --rm --entrypoint python3 crawl4ai-egress:failclosed-g10 -c \
+  "import sys; sys.path.insert(0,'/app'); from egress_broker import EgressNotReady; print(EgressNotReady.__name__)"
+```
+
+Imagem construída nesta rodada: `crawl4ai-egress:failclosed-g10` (base
+`unclecode/crawl4ai@sha256:bd36741e…`). Não substitui o serviço em produção.
+
+## 3.1 Patches
 
 | Arquivo | Mudança |
 |---|---|
@@ -69,11 +83,32 @@ Container `c4ai-egress-test` (imagem idêntica, rede própria, token efêmero, p
 | `enforce_egress()` sem proxy (processo novo) | **`EgressNotReady`** — fail-closed |
 | Suíte de segurança do próprio crawl4ai | 64 passam; 7 falham por caminho de repo (`/app/../utils.py`), pré-existente e independente do patch |
 
-## 5. Limites conhecidos (não resolvidos por estes patches)
+## 5. Bateria de validação na imagem candidata (esta rodada)
+
+| Caso | Resultado |
+|---|---|
+| Boot + proxy | `egress pinning proxy listening on http://127.0.0.1:<porta>`, `/health` 200 |
+| `EgressNotReady` importável | sim |
+| Público (`https://example.com/`) | 200 com conteúdo |
+| Interno direto (loopback / metadados / LAN) | 400 `URL blocked (SSRF protection)` |
+| Redirect → `127.0.0.1` | bloqueado (proxy 403) |
+| Redirect → `localtest.me` (nome público que resolve para loopback) | bloqueado |
+| Redirect → `169.254.169.254` | bloqueado |
+| **WebSocket** `Upgrade` → loopback / metadados | **403** no proxy |
+| **WSS** `CONNECT` → loopback | **403** no proxy |
+| `enforce_egress()` sem proxy | `EgressNotReady` (fail-closed) |
+| Proxy morto (`http://127.0.0.1:1`) | `proxy_config` aponta para o proxy morto — nunca conexão direta |
+| Suíte de segurança do próprio crawl4ai | 64 passam; 7 falham por caminho de repo (`/app/../utils.py`), pré-existente |
+
+Falha de inicialização é fail-closed por construção: o `lifespan` inicia o proxy antes de servir;
+uma exceção ali aborta o startup (comprovado empiricamente quando um patch com nome errado
+derrubou o worker com "Application startup failed").
+
+## 6. Limites conhecidos (não resolvidos por estes patches)
 
 - `CRAWL4AI_ALLOW_INTERNAL_URLS=true` continua sendo opt-out consciente do operador e desliga o
   bloqueio de IP no `resolve_and_pin`. Manter `false` em produção.
-- WebSocket: o proxy encaminha `CONNECT`/URL absoluta; não há teste específico de `ws://` nesta
-  validação.
+- WebSocket: validado no nível do proxy (`Upgrade`/`CONNECT` → 403 para destinos internos); não
+  foi exercitado um servidor WS público real.
 - O container em produção roda com rootfs **read-only**, o que impede patch em tempo de execução:
   a aplicação exige reconstruir a imagem ou montar os arquivos corrigidos.

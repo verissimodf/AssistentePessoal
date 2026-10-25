@@ -107,7 +107,18 @@ export async function assertModelAvailable(cfg = {}, model = "", { fetchFn = (..
   );
 }
 
-async function callOpenAI(cfg, model, system, messages, tools, signal) {
+/**
+ * Cabeçalhos específicos do provedor. O gateway do Hermes serializa turnos por sessão
+ * (`turn_facade_lease.py`): sem um id por execução, chats independentes entram na mesma fila
+ * (medido: 91s + 31s em vez de ~15s em paralelo). O id deriva da correlação do run — estável
+ * dentro de uma execução e distinto entre execuções; não carrega prompt nem segredo.
+ */
+export function providerHeaders(providerId, correlation) {
+  if (providerId !== "hermes" || !correlation) return {};
+  return { "x-hermes-session-id": `jarvis-${correlation}` };
+}
+
+async function callOpenAI(cfg, model, system, messages, tools, signal, extraHeaders = {}) {
   // stream: false explícito — gateways compatíveis com OpenAI (ex.: Omniroute) podem responder
   // em text/event-stream por padrão, e aí o r.json() abaixo quebra com
   // "Unexpected token 'd', \"data: {...\" is not valid JSON".
@@ -116,7 +127,11 @@ async function callOpenAI(cfg, model, system, messages, tools, signal) {
   const r = await fetch(`${cfg.baseUrl}/chat/completions`, {
     signal,
     method: "POST",
-    headers: { "content-type": "application/json", ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}) },
+    headers: {
+      "content-type": "application/json",
+      ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}),
+      ...extraHeaders,
+    },
     body: JSON.stringify(body),
   }).catch((e) => { throw new Error(`Não consegui conectar ao provedor "${cfg.id}" em ${cfg.baseUrl} (${e.cause?.code || e.message}). Verifique se ele está rodando ou ajuste em Configurações.`); });
   if (!r.ok) {
@@ -271,9 +286,10 @@ export async function runAgent({
         // P2-B: valida a existência do modelo antes de gastar uma chamada (fail-open se o
         // catálogo estiver inacessível). Erros de configuração NÃO entram no fallback.
         if (!provIsAnthropic) await assertModelAvailable(provCfg, provModel);
+        const extraHeaders = providerHeaders(provId, ctx.correlation);
         const out = provIsAnthropic
           ? await callAnthropic(provCfg, provModel, system, currentConvo, tools, attemptSignal)
-          : await callOpenAI(provCfg, provModel, system, currentConvo, tools, attemptSignal);
+          : await callOpenAI(provCfg, provModel, system, currentConvo, tools, attemptSignal, extraHeaders);
 
         const latencyMs = Date.now() - callStart;
         const estimatedTokens = Math.ceil(((out.text || "").length + JSON.stringify(currentConvo).length) / 4);
@@ -385,10 +401,11 @@ export function cosine(a, b) {
 export async function testProvider(
   id,
   adminId,
-  { fetchFn = (...a) => globalThis.fetch(...a), timeoutMs = 10_000 } = {},
+  { fetchFn = (...a) => globalThis.fetch(...a), timeoutMs = 30_000 } = {},
 ) {
   const cfg = providerConfig(id, adminId);
   const signal = AbortSignal.timeout(timeoutMs);
+  const startedAt = Date.now();
   try {
     if (id === "anthropic") {
       const r = await fetchFn(`${cfg.baseUrl}/v1/models`, {
@@ -413,17 +430,18 @@ export async function testProvider(
         "content-type": "application/json",
         ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}),
       },
+      // Sem `max_tokens`: um teto baixo faz provedores de agente (Hermes) truncarem e pedirem
+      // continuações — o teste media a latência do loop de continuação, não a do provedor.
       body: JSON.stringify({
         model: cfg.model || "",
-        messages: [{ role: "user", content: "ping" }],
-        max_tokens: 1,
+        messages: [{ role: "user", content: "Responda apenas: ok" }],
         stream: false,
       }),
     });
     const txt = await r.text();
     if (!r.ok) return { ok: false, detail: `${id} ${r.status}: ${txt.slice(0, 200)}` };
     return /"choices"/.test(txt)
-      ? { ok: true, detail: `${id}: resposta de chat OK` }
+      ? { ok: true, detail: `${id}: resposta de chat OK (${Date.now() - startedAt}ms)` }
       : { ok: false, detail: `resposta inesperada de ${id}: ${txt.slice(0, 160)}` };
   } catch (e) {
     const detalhe =

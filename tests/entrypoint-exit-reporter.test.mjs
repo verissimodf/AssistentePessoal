@@ -39,6 +39,26 @@ test("propaga status de falha do filho", () => {
   assert.match(stderr, /status=3/);
 });
 
+test("distingue término normal, encerramento solicitado e falha", () => {
+  const casos = [
+    ["0", /término normal/],
+    ["143", /encerramento solicitado \(SIGTERM\)/],
+    ["130", /interrompido \(SIGINT\)/],
+    ["137", /morto à força \(SIGKILL\/OOM\)/],
+    ["3", /falha/],
+  ];
+  for (const [codigo, esperado] of casos) {
+    const { stderr, status } = executar(`
+      sleep 30 & p1=$!
+      (exit ${codigo}) & p2=$!
+      wait_for_first_exit "$p1" "$p2"
+    `);
+    assert.equal(status, Number(codigo), `status ${codigo}`);
+    assert.match(stderr, esperado, `motivo para ${codigo}`);
+    assert.match(stderr, /componente 1/);
+  }
+});
+
 test("não falha quando o bash não suporta wait -n -p", () => {
   // Simula a ausência do recurso forçando a variável de decisão usada pela função.
   const { stderr, status } = executar(`

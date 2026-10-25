@@ -96,6 +96,29 @@ test("resposta 200 sem 'choices' também reprova", async () => {
   assert.match(r.detail, /inesperada/i);
 });
 
+test("não envia max_tokens (evita loop de continuação em provedores de agente)", async () => {
+  // Medido no Hermes: com max_tokens=1 a resposta trunca e o agente pede continuações
+  // (até 4), transformando um "ping" em >10s. O teste deve espelhar a chamada real.
+  let corpo = null;
+  stub({
+    chat: async (init) => {
+      corpo = JSON.parse(init.body);
+      const body = { choices: [{ message: { content: "ok" } }] };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+      };
+    },
+  });
+  const r = await testProvider("hermes", adminId);
+  assert.equal(r.ok, true);
+  assert.equal(corpo.max_tokens, undefined, "não deve limitar a saída do provedor");
+  assert.equal(corpo.stream, false);
+  assert.equal(corpo.messages.at(-1).content, "Responda apenas: ok");
+});
+
 test("provedor que nunca responde respeita o limite de tempo", async () => {
   stub({
     chat: (init) =>
