@@ -26,24 +26,30 @@ COPY . .
 # Versão por omissão = manifesto do repositório; um `--build-arg APP_VERSION` substitui.
 # `APP_VERSION` precisa de um default literal: sem ele o valor chega VAZIO e o parser não expande
 # `$VAR` dentro de valores de `LABEL`.
+# Identidade de build: nomes explícitos exigidos pelo runbook de homologação. Os ARGs antigos
+# (APP_VERSION/GIT_SHA) continuam aceitos como aliases para não quebrar builds já automatizados.
 ARG APP_VERSION=sem-build
 ARG GIT_SHA=unknown
+ARG BUILD_VERSION=sem-build
+ARG BUILD_COMMIT=unknown
+ARG BUILD_COMMIT_STATUS=unknown
+ARG SCHEMA_VERSION=unknown
 ARG BUILD_TIME=unknown
 # `RELEASE_BUILD=1` liga a validação ESTRITA dos metadados no script abaixo: um release sem
-# identidade verificável (SHA completo, versão canônica, instante RFC3339) TEM DE FALHAR o build —
-# nunca produzir uma imagem com "unknown". Builds de desenvolvimento continuam tolerantes.
+# identidade verificável (SHA completo, versão canônica, schema, status, instante RFC3339) TEM DE
+# FALHAR o build — nunca produzir uma imagem com "unknown". Builds de desenvolvimento continuam
+# tolerantes.
 ARG RELEASE_BUILD=
-# O `RUN` recebe os ARGs por expansão de SHELL (`$VAR`), não por sintaxe `${...}` — o parser não
-# expande `ARG` em valores de `RUN`/`ENV`/`LABEL`. Versão vazia/marcador → o script cai no
-# manifesto do repositório (`.app-version`, extraído do package.json no build).
-RUN APP_VERSION="$APP_VERSION" GIT_SHA="$GIT_SHA" BUILD_TIME="$BUILD_TIME" \
-      RELEASE_BUILD="$RELEASE_BUILD" node scripts/write-build-info.mjs
-# `LABEL` não executa shell, então o marcador "sem-build" (usado apenas para forçar a expansão
-# da sintaxe `$VAR`) NÃO é descartado aqui e aparece como o label literal "sem-build". Ele nunca
-# é exibido: a versão do painel vem sempre do `server/build-info.json` (manifesto do repositório,
-# normalizado pelo `RUN` acima) — o label é só o marcador de auditoria da imagem.
-LABEL org.opencontainers.image.revision="$GIT_SHA" \
-      org.opencontainers.image.version="$APP_VERSION" \
+# O `RUN` recebe os ARGs por expansão de SHELL (`$VAR`). Preferimos os nomes novos; se vierem
+# vazios, os antigos continuam valendo (compatibilidade).
+RUN if [ "$BUILD_VERSION" = "sem-build" ] && [ "$APP_VERSION" != "sem-build" ]; then BUILD_VERSION="$APP_VERSION"; fi; \
+    if [ "$BUILD_COMMIT" = "unknown" ] && [ "$GIT_SHA" != "unknown" ]; then BUILD_COMMIT="$GIT_SHA"; fi; \
+    APP_VERSION="$BUILD_VERSION" GIT_SHA="$BUILD_COMMIT" BUILD_TIME="$BUILD_TIME" \
+    SCHEMA_VERSION="$SCHEMA_VERSION" BUILD_COMMIT_STATUS="$BUILD_COMMIT_STATUS" \
+    RELEASE_BUILD="$RELEASE_BUILD" node scripts/write-build-info.mjs
+# Labels OCI: auditoria da imagem (a versão exibida vem do JSON acima).
+LABEL org.opencontainers.image.revision="$BUILD_COMMIT" \
+      org.opencontainers.image.version="$BUILD_VERSION" \
       org.opencontainers.image.created="$BUILD_TIME"
 RUN NITRO_PRESET=node-server npm run build
 
@@ -53,10 +59,18 @@ FROM node:22.22-bookworm-slim AS runtime
 # isso os ARGs são re-declarados aqui e o ficheiro gerado no estágio de build é copiado. Sem
 # estas linhas a imagem final reportaria `unknown` ("Não registrado") e não teria o label OCI —
 # foi exatamente isso que se observou num build sem elas.
-ARG APP_VERSION=sem-build
-ARG GIT_SHA=unknown
+ARG BUILD_VERSION=sem-build
+ARG BUILD_COMMIT=unknown
+ARG BUILD_COMMIT_STATUS=unknown
+ARG SCHEMA_VERSION=unknown
 ARG BUILD_TIME=unknown
 ENV NODE_ENV=production
+# Metadados também em ENV: o health continua correto mesmo se o JSON for substituído/omitido.
+ENV APP_VERSION="$BUILD_VERSION" \
+    GIT_SHA="$BUILD_COMMIT" \
+    BUILD_COMMIT_STATUS="$BUILD_COMMIT_STATUS" \
+    SCHEMA_VERSION="$SCHEMA_VERSION" \
+    BUILD_TIME="$BUILD_TIME"
 # HOME gravável pelo uid 1000 e estável: os agentes CLI recusam criar helpers sob /tmp.
 ENV HOME=/home/node
 ENV JARVIS_DATA_DIR=/app/data
@@ -100,8 +114,8 @@ COPY --from=build /app/server/node_modules ./server/node_modules
 COPY server/ ./server/
 # Identidade da árvore construída (gerada no estágio de build; `server/` do contexto não a traz).
 COPY --from=build /app/server/build-info.json ./server/build-info.json
-LABEL org.opencontainers.image.revision="$GIT_SHA" \
-      org.opencontainers.image.version="$APP_VERSION" \
+LABEL org.opencontainers.image.revision="$BUILD_COMMIT" \
+      org.opencontainers.image.version="$BUILD_VERSION" \
       org.opencontainers.image.created="$BUILD_TIME"
 # Painel já construído.
 COPY --from=build /app/.output ./.output

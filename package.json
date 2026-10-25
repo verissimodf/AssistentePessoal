@@ -1,6 +1,6 @@
 {
   "name": "assistente-pessoal-jarvis-frontend",
-  "version": "1.7.0",
+  "version": "1.7.8",
   "private": true,
   "sideEffects": false,
   "type": "module",

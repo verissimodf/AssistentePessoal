@@ -87,6 +87,22 @@ describe("Visão geral — metadados de build", () => {
     expect(screen.getByText("2026-10-18T05:33:13Z")).toBeTruthy();
   });
 
+  it("mostra o esquema efetivo e o status do commit injetados pelo build", async () => {
+    stubHealth({
+      ok: true,
+      version: "1.7.8",
+      commit: SHA,
+      commitStatus: "Registrado",
+      schemaVersion: 12,
+      buildTime: "2026-10-25T23:00:00Z",
+      setupRequired: false,
+    });
+    await renderOverview();
+    await waitFor(() => expect(screen.getByText(SHA)).toBeTruthy());
+    expect(screen.getByText("12")).toBeTruthy();
+    expect(screen.getByText(/\(Registrado\)/)).toBeTruthy();
+  });
+
   it("commit 'unknown' do build vira 'Não registrado', nunca um SHA adivinhado", async () => {
     stubHealth({
       ok: true,

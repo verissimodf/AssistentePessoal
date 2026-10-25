@@ -14,6 +14,20 @@ const commit = clean(process.env.GIT_SHA);
 // Rejeita qualquer coisa que não pareça um SHA: evita gravar um branch/tag como "commit".
 const safeCommit = SHA.test(commit) ? commit : "unknown";
 
+// Versão do schema SQLite (PRAGMA user_version) e estado do commit na árvore oficial.
+// Ambos são metadados de BUILD: o processo em runtime não tem git nem deve adivinhar.
+const rawSchema = clean(process.env.SCHEMA_VERSION);
+const schemaVersion = /^\d+$/.test(rawSchema) ? Number(rawSchema) : "unknown";
+const normalizeCommitStatus = (value) => {
+  const v = clean(value).toLowerCase();
+  if (["registrado", "registered", "official"].includes(v)) return "Registrado";
+  if (["local", "não registrado (local)", "nao registrado (local)", "unregistered"].includes(v)) {
+    return "Não registrado (local)";
+  }
+  return "unknown";
+};
+const commitStatus = normalizeCommitStatus(process.env.BUILD_COMMIT_STATUS);
+
 // Manifesto do repositório: `.app-version` gravado no build a partir do package.json. O caminho
 // segue a mesma regra do serviço — `JARVIS_DATA_DIR` → cwd, que no build resolve para `/app`.
 const readManifest = () => {
@@ -37,6 +51,8 @@ const info = {
   commit: safeCommit,
   buildTime: clean(process.env.BUILD_TIME),
   mode: clean(process.env.NODE_ENV),
+  schemaVersion,
+  commitStatus,
 };
 
 // Validação estrita de release (P0.3.1): `RELEASE_BUILD=1` exige identidade COMPLETA e válida.
@@ -50,6 +66,10 @@ if (process.env.RELEASE_BUILD === "1") {
     problems.push(`BUILD_TIME inválido ("${info.buildTime}") — tem de ser UTC em RFC3339 (ex.: 2026-10-18T17:40:00Z)`);
   if (!info.appVersion || info.appVersion === "unknown" || info.appVersion === "sem-build")
     problems.push("APP_VERSION ausente — tem de vir do manifesto (package.json) ou de --build-arg");
+  if (!/^\d+$/.test(String(info.schemaVersion)))
+    problems.push(`SCHEMA_VERSION inválido ("${info.schemaVersion}") — tem de ser o user_version numérico do SQLite`);
+  if (info.commitStatus === "unknown")
+    problems.push("BUILD_COMMIT_STATUS ausente — use 'Registrado' ou 'Não registrado (local)'");
   if (problems.length) {
     console.error(`[build-info] RELEASE_BUILD com metadados inválidos:\n - ${problems.join("\n - ")}`);
     process.exit(1);
@@ -63,5 +83,5 @@ const out = resolve(process.env.JARVIS_DATA_DIR || process.cwd(), "server", "bui
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, JSON.stringify(info, null, 2) + "\n");
 console.log(
-  `[build-info] versão=${info.appVersion} commit=${info.commit} build=${info.buildTime} modo=${info.mode}`,
+  `[build-info] versão=${info.appVersion} commit=${info.commit} status=${info.commitStatus} schema=${info.schemaVersion} build=${info.buildTime} modo=${info.mode}`,
 );

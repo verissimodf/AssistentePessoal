@@ -42,9 +42,22 @@ test("health is public and minimal", async () => {
   assert.equal(r.status, 200);
   const body = await r.json();
   // Contrato explícito: nenhum campo fora destes (nada de segredo, dono, config ou dado de sessão).
-  assert.deepEqual(Object.keys(body).sort(), ["buildTime", "commit", "mode", "ok", "setupRequired", "version"]);
+  assert.deepEqual(Object.keys(body).sort(), [
+    "buildTime",
+    "commit",
+    "commitStatus",
+    "mode",
+    "ok",
+    "schemaVersion",
+    "schemaVersionBuild",
+    "setupRequired",
+    "version",
+  ]);
   // Identidade de build injetada pelo build, nunca adivinhada em runtime.
-  for (const k of ["version", "commit", "buildTime", "mode"]) assert.equal(typeof body[k], "string", k);
+  for (const k of ["version", "commit", "buildTime", "mode", "commitStatus"])
+    assert.equal(typeof body[k], "string", k);
+  assert.equal(typeof body.schemaVersion, "number", "schemaVersion");
+  assert.ok(body.schemaVersionBuild === null || typeof body.schemaVersionBuild === "number");
 });
 
 test("every non-public route rejects anonymous callers with 401", async () => {
