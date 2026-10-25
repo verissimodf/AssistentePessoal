@@ -18,12 +18,22 @@ wait_for_first_exit() {
     status=$?
   fi
 
+  # Interpreta o status para separar término normal, encerramento solicitado e falha.
+  local motivo
+  case "$status" in
+    0) motivo="término normal" ;;
+    130) motivo="interrompido (SIGINT)" ;;
+    143) motivo="encerramento solicitado (SIGTERM)" ;;
+    137) motivo="morto à força (SIGKILL/OOM)" ;;
+    *) motivo="falha" ;;
+  esac
+
   for i in "${!pids[@]}"; do
     if [[ -n "$finished_pid" && "${pids[$i]}" == "$finished_pid" ]]; then
-      echo "assistente-pessoal: componente $i (pid $finished_pid) terminou (status=$status); encerrando o conjunto para o Docker reiniciar" >&2
+      echo "assistente-pessoal: componente $i (pid $finished_pid) terminou — $motivo (status=$status); encerrando o conjunto para o Docker reiniciar" >&2
       return "$status"
     fi
   done
-  echo "assistente-pessoal: componente desconhecido terminou (status=$status); encerrando o conjunto para o Docker reiniciar" >&2
+  echo "assistente-pessoal: componente desconhecido terminou — $motivo (status=$status); encerrando o conjunto para o Docker reiniciar" >&2
   return "$status"
 }
