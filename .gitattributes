@@ -1,0 +1,4 @@
+# Patches unified diff contêm linhas de contexto que começam com espaço (e linhas vazias de
+# contexto são um único espaço). Tratá-los como texto faz `git diff --check` acusar trailing
+# whitespace em conteúdo que é, por definição, o formato correto do patch.
+*.patch -diff
