@@ -1,0 +1,15 @@
+--- a/app/server.py
++++ b/app/server.py
+@@ -196,10 +196,8 @@
+     monitor_module.monitor_stats.start_persistence_worker()
+ 
+     # Initialize browser pool
+-    await init_permanent(BrowserConfig(
+-        extra_args=_browser_extra_args(),
+-        **config["crawler"]["browser"].get("kwargs", {}),
+-    ))
++    # Mesmo config endurecido das requisicoes: o browser permanente nao escapa do proxy.
++    await init_permanent(get_default_browser_config())
+ 
+     # Start background tasks
+     app.state.janitor = asyncio.create_task(janitor())

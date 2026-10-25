@@ -1,0 +1,32 @@
+--- a/app/egress_broker.py
++++ b/app/egress_broker.py
+@@ -176,6 +176,10 @@
+ )
+ 
+ 
++class EgressNotReady(RuntimeError):
++    """O proxy de pinning nao esta em execucao; navegar seria fail-open."""
++
++
+ def enforce_egress(browser_config) -> None:
+     """Server-side egress hardening applied to the effective browser config.
+ 
+@@ -195,12 +199,12 @@
+     for attr in ("proxy", "proxy_config"):
+         if getattr(browser_config, attr, None) is not None:
+             setattr(browser_config, attr, None)
+-    if _EGRESS_PROXY_URL and hasattr(browser_config, "proxy_config"):
+-        try:
+-            from crawl4ai import ProxyConfig
+-            browser_config.proxy_config = ProxyConfig(server=_EGRESS_PROXY_URL)
+-        except Exception:
+-            pass
++    # Fail-closed: sem o proxy de pinning o Chromium resolveria o destino sozinho
++    # (DNS rebinding) e o bloqueio de loopback/LAN deixaria de valer.
++    if not _EGRESS_PROXY_URL:
++        raise EgressNotReady("egress pinning proxy is not running")
++    from crawl4ai import ProxyConfig
++    browser_config.proxy_config = ProxyConfig(server=_EGRESS_PROXY_URL)
+     args = getattr(browser_config, "extra_args", None)
+     if args:
+         browser_config.extra_args = [

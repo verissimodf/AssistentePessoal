@@ -73,5 +73,8 @@ node scripts/voice-adapter.mjs & pids+=($!)
 PORT="$PANEL_PORT" HOST="$BIND_IP" node .output/server/index.mjs & pids+=($!)
 
 echo "assistente-pessoal: api http://${BIND_IP}:${JARVIS_PORT} | painel http://${BIND_IP}:${PANEL_PORT} | voz ${XTTS_URL}"
-# Sai quando qualquer componente morrer, para o Docker reiniciar o conjunto.
-wait -n
+# Sai quando qualquer componente morrer, para o Docker reiniciar o conjunto — registrando QUAL
+# componente saiu (sem isso um reinício gracioso fica sem causa determinável).
+# shellcheck source=lib/exit-reporter.sh
+. "$(dirname "$0")/lib/exit-reporter.sh"
+wait_for_first_exit "${pids[@]}"
