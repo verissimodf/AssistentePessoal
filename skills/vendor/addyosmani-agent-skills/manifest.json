@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "upstream": {
+    "repo": "https://github.com/addyosmani/agent-skills",
+    "commit": "aeac41d4d005999432bb7312f7ff06383a91d59d",
+    "commitDate": "2026-10-13T16:21:06-04:00",
+    "license": "MIT",
+    "licenseFile": "LICENSE"
+  },
+  "skills": [
+    {
+      "id": "security-and-hardening",
+      "name": "Security and Hardening",
+      "category": "security",
+      "tags": [
+        "security",
+        "owasp",
+        "vulnerability",
+        "injection",
+        "xss",
+        "ssrf",
+        "hardening",
+        "secrets",
+        "gdpr",
+        "authentication"
+      ],
+      "path": "security-and-hardening/SKILL.md",
+      "references": [
+        "references/hardening-patterns.md"
+      ]
+    },
+    {
+      "id": "test-driven-development",
+      "name": "Test-Driven Development",
+      "category": "engineering",
+      "tags": [
+        "tdd",
+        "tests",
+        "testing",
+        "red-green-refactor",
+        "regression",
+        "bug-fix"
+      ],
+      "path": "test-driven-development/SKILL.md",
+      "references": []
+    },
+    {
+      "id": "code-review-and-quality",
+      "name": "Code Review and Quality",
+      "category": "engineering",
+      "tags": [
+        "code-review",
+        "pull-request",
+        "diff",
+        "quality",
+        "merge"
+      ],
+      "path": "code-review-and-quality/SKILL.md",
+      "references": []
+    },
+    {
+      "id": "spec-driven-development",
+      "name": "Spec-Driven Development",
+      "category": "engineering",
+      "tags": [
+        "spec",
+        "prd",
+        "requirements",
+        "planning",
+        "architecture"
+      ],
+      "path": "spec-driven-development/SKILL.md",
+      "references": []
+    },
+    {
+      "id": "debugging-and-error-recovery",
+      "name": "Debugging and Error Recovery",
+      "category": "engineering",
+      "tags": [
+        "debugging",
+        "root-cause",
+        "triage",
+        "error",
+        "incident",
+        "failure"
+      ],
+      "path": "debugging-and-error-recovery/SKILL.md",
+      "references": []
+    },
+    {
+      "id": "incremental-implementation",
+      "name": "Incremental Implementation",
+      "category": "engineering",
+      "tags": [
+        "incremental",
+        "implementation",
+        "feature-flag",
+        "small-slices",
+        "delivery"
+      ],
+      "path": "incremental-implementation/SKILL.md",
+      "references": []
+    },
+    {
+      "id": "context-engineering",
+      "name": "Context Engineering",
+      "category": "engineering",
+      "tags": [
+        "context",
+        "prompt",
+        "agents",
+        "session",
+        "rules"
+      ],
+      "path": "context-engineering/SKILL.md",
+      "references": []
+    }
+  ]
+}

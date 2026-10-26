@@ -21,6 +21,8 @@ process.env.JARVIS_NO_LISTEN = "1";
 delete process.env.APP_VERSION;
 delete process.env.GIT_SHA;
 delete process.env.BUILD_TIME;
+delete process.env.SCHEMA_VERSION;
+delete process.env.BUILD_COMMIT_STATUS;
 
 const { auth, db } = await import("../server/db.js");
 const { createApp } = await import("../server/index.js");
@@ -72,6 +74,8 @@ test("arranque sem build → metadados 'unknown' (nunca adivinha)", () => {
   assert.equal(info.commit, "unknown");
   assert.equal(info.revision, "unknown");
   assert.equal(commitOrUnknown(), "unknown");
+  assert.equal(info.schemaVersion, null, "sem build não há schema presumido");
+  assert.equal(info.commitStatus, "unknown");
   assert.equal(typeof info.buildTime, "string", "campo presente, mesmo quando desconhecido");
 });
 
@@ -85,6 +89,9 @@ test("health expõe os campos de build sem inventar valores", async () => {
   }
   assert.equal(h.commit, "unknown", "sem build injetado o commit é 'unknown'");
   assert.ok(!isKnownCommit(h.commit), "nunca reporta um SHA que o build não injetou");
+  assert.equal(h.schemaVersion, 12, "health expõe o user_version efetivo do SQLite");
+  assert.equal(h.schemaVersionBuild, null, "schema de build ausente não é inventado");
+  assert.equal(h.commitStatus, "unknown", "status não é inferido do branch");
 });
 
 test("diagnósticos carregam commit/buildTime junto da versão", () => {
@@ -145,6 +152,20 @@ test("env de build vence o ficheiro e o script rejeita SHA malformado", async ()
   const withEnv = await import(`../server/build-info.js?env=${Date.now()}`);
   assert.equal(withEnv.buildInfo().version, "9.9.9");
   delete process.env.APP_VERSION;
+
+  // Marcadores "sem-build"/"unknown" NÃO podem apagar a identidade real do build-info.json.
+  process.env.APP_VERSION = "sem-build";
+  process.env.GIT_SHA = "unknown";
+  process.env.SCHEMA_VERSION = "unknown";
+  process.env.BUILD_COMMIT_STATUS = "unknown";
+  const withSentinels = await import(`../server/build-info.js?sentinels=${Date.now()}`);
+  assert.equal(withSentinels.buildInfo().version, "1.3.0");
+  assert.equal(withSentinels.commitOrUnknown(), SHA);
+  assert.equal(withSentinels.buildInfo().commitStatus, "unknown");
+  delete process.env.APP_VERSION;
+  delete process.env.GIT_SHA;
+  delete process.env.SCHEMA_VERSION;
+  delete process.env.BUILD_COMMIT_STATUS;
 
   process.env.JARVIS_DATA_DIR = dir;
   rmSync(dataDir, { recursive: true, force: true });
@@ -265,6 +286,8 @@ test("RELEASE_BUILD=1 com SHA completo, versão e RFC3339 aprova e grava o JSON"
         GIT_SHA: sha,
         BUILD_TIME: when,
         APP_VERSION: "1.0.0",
+        SCHEMA_VERSION: "12",
+        BUILD_COMMIT_STATUS: "Registrado",
       },
       encoding: "utf8",
     },
@@ -274,5 +297,7 @@ test("RELEASE_BUILD=1 com SHA completo, versão e RFC3339 aprova e grava o JSON"
   assert.equal(raw.commit, sha);
   assert.equal(raw.appVersion, "1.0.0");
   assert.equal(raw.buildTime, when);
+  assert.equal(raw.schemaVersion, 12);
+  assert.equal(raw.commitStatus, "Registrado");
   rmSync(dataDir, { recursive: true, force: true });
 });

@@ -6,9 +6,9 @@
 #   - O Nginx (`nginx-app`) alcança painel e API pelo DNS do serviço na mesma rede.
 #
 # Uso (somente após aprovação e com o serviço systemd original parado):
-#   docker compose -f docker-compose.jarvis.yml up -d --build
-#   docker compose -f docker-compose.jarvis.yml ps
-#   docker compose -f docker-compose.jarvis.yml logs -f
+#   docker compose -f docker-compose.yml up -d --build
+#   docker compose -f docker-compose.yml ps
+#   docker compose -f docker-compose.yml logs -f
 name: assistente-pessoal
 
 services:
@@ -19,20 +19,18 @@ services:
       args:
         # Identidade da ÁRVORE construída — injetada no `server/build-info.json` e no label OCI.
         # O commit vem SÓ daqui: o processo em runtime não tem git e nunca infere do branch.
-        # `GIT_SHA` sem valor vira "unknown" (Dockerfile tem default), e o painel diz
-        # "Não registrado" — preferível a reportar um commit que a imagem não contém.
-        GIT_SHA: ${GIT_SHA:-unknown}
-        # Versão por omissão = `package.json` do repositório (fonte versionada do código);
-        # sem `APP_VERSION` no ambiente o compose passa "sem-build" e o script cai no manifesto.
-        APP_VERSION: ${APP_VERSION:-sem-build}
+        BUILD_VERSION: ${BUILD_VERSION:-sem-build}
+        BUILD_COMMIT: ${BUILD_COMMIT:-unknown}
+        BUILD_COMMIT_STATUS: ${BUILD_COMMIT_STATUS:-unknown}
+        SCHEMA_VERSION: ${SCHEMA_VERSION:-unknown}
         BUILD_TIME: ${BUILD_TIME:-unknown}
         # `RELEASE_BUILD=1` ativa a validação ESTRITA dos metadados no build (falha sem SHA
-        # completo/versão/instante). Releases usam `RELEASE_BUILD=1`; builds de teste não.
+        # completo/versão/schema/status/instante). Releases usam `RELEASE_BUILD=1`.
         RELEASE_BUILD: ${RELEASE_BUILD:-}
     # Tag dirigida pela release (P0.3.1): um deploy exporta `IMAGE_TAG` (ex.: 1.0.0) para a nova
     # imagem NÃO sobrescrever a tag da versão em produção — que fica disponível como rollback.
     # Por omissão mantém a tag atual para não partir fluxos que correm `compose up --build` sem env.
-    image: assistente-pessoal:${IMAGE_TAG:-1.1.0}
+    image: assistente-pessoal:${IMAGE_TAG:-1.7.8}
     container_name: assistente-pessoal
     restart: unless-stopped
     # Não-root vem da própria imagem (`USER 1000:1000`), não duplicado aqui.
@@ -50,7 +48,7 @@ services:
       XTTS_URL: "http://xtts-service:8000"
       # Origens autorizadas (header Origin), sem curingas. Inclui tailnet (relé no host)
       # e o hostname HTTPS (ativado na Fase 7).
-      JARVIS_ALLOWED_ORIGINS: "http://100.87.104.126:8090,http://app.tail43f1fb.ts.net:8090,https://jarvis.laytech.com.br"
+      JARVIS_ALLOWED_ORIGINS: "http://100.87.104.126:8090,http://app.tail43f1fb.ts.net:8090,https://jarvis.laytech.com.br,http://192.168.2.40:8090"
     volumes:
       # Banco SQLite (+ WAL/SHM), master.key, vozes e backups — mesmo volume persistente.
       - /opt/laytech-ai/AssistentePessoal/data:/app/data

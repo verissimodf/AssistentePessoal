@@ -49,7 +49,7 @@ sqlite3 "file:$BK/jarvis.db?mode=ro" "PRAGMA user_version; PRAGMA integrity_chec
 1. **Parar o escritor** (o container):
    ```bash
    cd /opt/laytech-ai/AssistentePessoal
-   docker compose -f docker-compose.jarvis.yml down
+   docker compose -f docker-compose.yml down
    ```
 2. **Preservar o estado atual** (nunca sobrescrever sem cópia):
    ```bash
@@ -70,8 +70,8 @@ sqlite3 "file:$BK/jarvis.db?mode=ro" "PRAGMA user_version; PRAGMA integrity_chec
    Esperado: `5` e `ok`.
 5. **Subir o container**:
    ```bash
-   docker compose -f docker-compose.jarvis.yml up -d --no-build
-   docker compose -f docker-compose.jarvis.yml ps
+   docker compose -f docker-compose.yml up -d --no-build
+   docker compose -f docker-compose.yml ps
    curl -s http://192.168.2.40:7777/api/health
    ```
 6. **Rollback da restauração** (se algo falhar): parar o container e renomear `data` de volta para `data.pre-restore.<stamp>`.

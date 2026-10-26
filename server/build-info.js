@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const UNKNOWN = "unknown";
 // Data do build, não a hora do processo — é o que prova "quando foi isto construído".
-let FILE = { appVersion: UNKNOWN, commit: UNKNOWN, buildTime: UNKNOWN, mode: UNKNOWN };
+let FILE = { appVersion: UNKNOWN, commit: UNKNOWN, buildTime: UNKNOWN, mode: UNKNOWN, schemaVersion: UNKNOWN, commitStatus: UNKNOWN };
 
 // Localização espelha o resto do serviço: `JARVIS_DATA_DIR` → cwd (o container passa o data dir),
 // com o diretório do módulo como último recurso. Sem ficheiro → tudo `unknown`, sem exceção.
@@ -34,9 +34,13 @@ for (const path of candidates) {
   }
 }
 
+const SENTINELS = new Set(["sem-build", "unknown"]);
 const env = (name, fallback) => {
   const v = process.env[name];
-  return typeof v === "string" && v.trim() && v.trim() !== "" ? v.trim() : fallback;
+  if (typeof v !== "string") return fallback;
+  const clean = v.trim();
+  // Marcadores de "não injetado" não podem sobrescrever um valor real do build-info.json.
+  return clean && !SENTINELS.has(clean.toLowerCase()) ? clean : fallback;
 };
 
 // As variáveis de build ganham quando presentes; o ficheiro fica como base (build sem ENV).
@@ -44,6 +48,8 @@ export const APP_VERSION = env("APP_VERSION", FILE.appVersion);
 export const GIT_COMMIT = env("GIT_SHA", FILE.commit);
 export const BUILD_TIME = env("BUILD_TIME", FILE.buildTime);
 export const BUILD_MODE = env("NODE_ENV", FILE.mode);
+export const SCHEMA_VERSION = env("SCHEMA_VERSION", FILE.schemaVersion);
+export const BUILD_COMMIT_STATUS = env("BUILD_COMMIT_STATUS", FILE.commitStatus);
 
 const SHA = /^[0-9a-f]{7,40}$/i;
 export const isKnownCommit = (sha) => typeof sha === "string" && SHA.test(sha);
@@ -59,4 +65,8 @@ export const buildInfo = () => ({
   mode: BUILD_MODE,
   // A imagem Docker pode levar a revisão como label OCI; o processo só a declara se o build a injetou.
   revision: isKnownCommit(GIT_COMMIT) ? GIT_COMMIT : UNKNOWN,
+  // Esquema declarado no build (o runtime expõe também o user_version efetivo do banco).
+  schemaVersion: /^\d+$/.test(String(SCHEMA_VERSION)) ? Number(SCHEMA_VERSION) : null,
+  // "Registrado" | "Não registrado (local)" | "unknown" — nunca inferido do branch.
+  commitStatus: typeof BUILD_COMMIT_STATUS === "string" && BUILD_COMMIT_STATUS.trim() ? BUILD_COMMIT_STATUS : UNKNOWN,
 });

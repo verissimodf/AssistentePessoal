@@ -15,6 +15,7 @@ import {
   auth,
   audit,
   uid,
+  migration,
   listEvidence,
   listApprovals,
   listExecutions,
@@ -83,7 +84,14 @@ import { startTelegramPolling, sendMessage, describeSend, sendFingerprint } from
 import { getMailService, setMailTransport } from "./mail-service.js";
 import { redactAccount, ACCOUNT_TYPES, validateOutgoing, MailError } from "./mail.js";
 import { getDraftStore, setDraftStore } from "./mail-drafts.js";
-import { APP_VERSION, GIT_COMMIT, BUILD_TIME, BUILD_MODE } from "./build-info.js";
+import {
+  APP_VERSION,
+  GIT_COMMIT,
+  BUILD_TIME,
+  BUILD_MODE,
+  SCHEMA_VERSION,
+  BUILD_COMMIT_STATUS,
+} from "./build-info.js";
 
 // Identidade da ÁRVORE construída (injetada no build por `scripts/write-build-info.mjs`).
 // `APP_VERSION` é o manifesto do repositório; o commit vem SÓ do `--build-arg GIT_SHA` e pode
@@ -213,6 +221,10 @@ route("GET", "/api/health", "public", () => ({
   commit: BUILD_COMMIT,
   buildTime: BUILD_TIME,
   mode: BUILD_MODE,
+  // Esquema efetivo do banco (PRAGMA user_version aplicado no arranque) + o declarado no build.
+  schemaVersion: migration.to,
+  schemaVersionBuild: /^\d+$/.test(String(SCHEMA_VERSION)) ? Number(SCHEMA_VERSION) : null,
+  commitStatus: BUILD_COMMIT_STATUS,
   setupRequired: auth.setupRequired(),
 }));
 
@@ -572,6 +584,9 @@ route("GET", "/api/skills/:id", "skills:read", ({ params }) => {
     }
     if (err.message === "skill_not_found" || err.message === "skill_identifier_required") {
       throw new AuthError(404, "skill_not_found");
+    }
+    if (err.message === "skill_too_large") {
+      throw new AuthError(413, "skill_too_large");
     }
     throw err;
   }

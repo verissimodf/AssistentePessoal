@@ -1297,7 +1297,15 @@ export async function callTool(name, input, ctx) {
       try {
         const loaded = loadSkill(skillQuery);
         audit("skill_loaded", { skillId: loaded.id, name: loaded.name, adminId });
-        return `[SKILL ESPECIALIZADA: ${loaded.name}]\n\n${loaded.content}`;
+        // Referências ficam no hub e só podem ser lidas pelo mesmo loader; expor o caminho
+        // completo evita que o modelo tente um caminho relativo que não resolve no hub.
+        const refs =
+          Array.isArray(loaded.references) && loaded.references.length
+            ? `\n\n[REFERÊNCIAS DISPONÍVEIS — carregue com load_skill usando o caminho completo]\n${loaded.references
+                .map((r) => `- ${r}`)
+                .join("\n")}`
+            : "";
+        return `[SKILL ESPECIALIZADA: ${loaded.name}]\n\n${loaded.content}${refs}`;
       } catch (e) {
         if (e.message === "skill_not_found") {
           const suggestions = matchSkillsForPrompt(skillQuery, 3);

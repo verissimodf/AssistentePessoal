@@ -66,7 +66,7 @@ branch que está no disco. A cadeia é: `--build-arg GIT_SHA=...` → `scripts/w
   `org.opencontainers.image.version` para auditoria via `docker inspect`. O marcador literal
   `sem-build` pode aparecer no label de versão quando nenhum `APP_VERSION` é passado; ele nunca é
   exibido no painel, porque a versão vem do JSON e não do label.
-- O compose (`docker-compose.jarvis.yml`) declara esses `build.args` a partir de variáveis de
+- O compose (`docker-compose.yml`) declara esses `build.args` a partir de variáveis de
   ambiente, com `GIT_SHA` vindo do commit em construção.
 
 ## Limitações

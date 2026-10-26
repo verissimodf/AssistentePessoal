@@ -54,7 +54,16 @@ const stateKey = (s: string): TKey =>
 // Metadados de build reais: um campo `unknown`/ausente significa "o build não os injetou" — o
 // painel diz "Não registrado" em vez de derivar uma versão do branch atual (que pode não ser
 // a árvore que a imagem realmente contém).
-type Health = { ok?: boolean; version?: string; commit?: string; buildTime?: string; setupRequired?: boolean };
+type Health = {
+  ok?: boolean;
+  version?: string;
+  commit?: string;
+  buildTime?: string;
+  schemaVersion?: number;
+  schemaVersionBuild?: number | null;
+  commitStatus?: string;
+  setupRequired?: boolean;
+};
 
 const UNKNOWN_RE = /^unknown$/i;
 const known = (v?: string | null): string | null =>
@@ -201,13 +210,18 @@ function OverviewPage() {
             </div>
             <div className="text-muted-foreground">
               {t("ov_schema")}:{" "}
-              <span className="font-mono text-foreground">{diag?.versao?.banco ?? "—"}</span>
+              <span className="font-mono text-foreground">
+                {health?.schemaVersion ?? diag?.versao?.banco ?? "—"}
+              </span>
             </div>
             <div className="text-muted-foreground">
               {t("ov_commit")}:{" "}
               {/* SHA reais injetados pelo build (`--build-arg GIT_SHA` → label OCI + JSON). */}
               <span className="font-mono text-foreground">
                 {known(health?.commit) ?? known(diag?.versao?.commit) ?? t("ov_not_recorded")}
+                {health?.commitStatus && health.commitStatus !== "unknown" && (
+                  <span className="text-muted-foreground"> ({health.commitStatus})</span>
+                )}
               </span>
             </div>
             {known(health?.buildTime) && (
