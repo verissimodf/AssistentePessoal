@@ -1,4 +1,4 @@
-# Patches unified diff contêm linhas de contexto que começam com espaço (e linhas vazias de
-# contexto são um único espaço). Tratá-los como texto faz `git diff --check` acusar trailing
-# whitespace em conteúdo que é, por definição, o formato correto do patch.
-*.patch -diff
+# Skills vendorizadas: os SHA-256 são calculados sobre os bytes exatos do upstream (LF).
+# Sem esta política, o checkout no Windows converte Markdown para CRLF e a verificação
+# de integridade falha (observado no CI do PR #76).
+skills/vendor/** text eol=lf
