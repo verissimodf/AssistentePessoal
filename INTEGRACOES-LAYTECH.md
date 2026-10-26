@@ -1,7 +1,6 @@
 # Integrações LayTech — estado operacional
 
-Atualizado em **2026-10-26** para a release **1.7.8**. Este documento substitui as anotações de
-instalação de 2026-10-14; o histórico permanece nos relatórios em `docs/` e `reports/`.
+Atualizado em **2026-10-26** para a release **1.7.9**, com base no relatório de deploy pós-release. O estado das integrações protegidas permanece conforme a documentação anterior: elas não foram alteradas nem retestadas neste fluxo.
 
 ## 1. Topologia atual
 
@@ -9,7 +8,8 @@ instalação de 2026-10-14; o histórico permanece nos relatórios em `docs/` e 
 | --- | --- | --- |
 | API | `http://<ip-interno>:7777` (rede Docker) | sem porta publicada no host |
 | Painel | `http://<ip-interno>:8090` (rede Docker) | público via `https://jarvis.laytech.com.br` |
-| Container | `assistente-pessoal` | imagem `assistente-pessoal:4ad3ba2`, `healthy` |
+| Container | `assistente-pessoal` | último deploy registrado: `assistente-pessoal:a978f59`, `healthy`, `restarts=0`, versão 1.7.9, schema 12 |
+| Digest da imagem | SHA-256 | `sha256:baf162e5f576720d07b14c65e4963aa11ccade8eb13f997e5500ffcc88e9c246` (registro do deploy 1.7.9) |
 | Nginx | `nginx-app:80` | recebe do túnel Cloudflare |
 | Cloudflare | `jarvis.laytech.com.br` | TLS/HSTS no edge |
 | Dados | `/opt/laytech-ai/AssistentePessoal/data` | SQLite WAL + `master.key` 600 |
