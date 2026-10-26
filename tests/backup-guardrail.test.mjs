@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
 const scriptUrl = new URL("../deploy/backup-data.sh", import.meta.url);
-const script = readFileSync(scriptUrl, "utf8");
+const script = readFileSync(scriptUrl, "utf8").replace(/\r\n/g, "\n");
 
 test("deploy/backup-data.sh está versionado com modo Git 100755", () => {
   let out;
