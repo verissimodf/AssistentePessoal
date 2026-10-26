@@ -44,9 +44,80 @@
 
 > As seções históricas abaixo descrevem a homologação 1.1.0 e são mantidas como registro.
 
+### Arquitetura validada (1.7.8)
+
+- API Node.js pura (`server/index.js`) + painel Nitro, no mesmo container, na rede Docker
+  `CNC_APP_PROD_01`; nenhuma porta publicada no host.
+- Cloudflare (TLS/HSTS no edge) → `cloudflared` → `nginx-app:80` → `assistente-pessoal:7777/8090`.
+- SQLite WAL com esquema 12; migrações versionadas com backup verificado.
+- Hub de skills em `$HOME/.agent-skills` (11 skills), sincronizado no boot a partir de
+  `skills/vendor/` com manifesto e SHA-256.
+- Autenticação por sessão `HttpOnly`/`SameSite=Strict` + CSRF; escopos reavaliados em execução;
+  isolamento por `ownership`; ações de host sob `hostpolicy` e aprovação.
+
+### Testes e homologação
+
+| Suíte | Resultado |
+| --- | --- |
+| Backend (`node --test tests/*.test.mjs`) | **616/616** |
+| Frontend (`npx vitest run`) | **109/109** (21 arquivos) |
+| Build Vite/Nitro | **OK** |
+| Skills vendorizadas (`sha256sum -c`) | **OK** (10 arquivos) |
+| CI remoto GitHub Actions | **3/3 PASS** (Ubuntu, Windows, container) |
+| Teste HTTP externo | **12 PASS / 0 FAIL / 0 WARN** |
+| Verificador de imagem | **APROVADA** (labels, build-info, health, painel) |
+| Smoke autenticado | login/me/skills/chat/logout OK |
+
+### Limitações conhecidas
+
+- HSTS de produção é emitido no edge Cloudflare; o rascunho HTTP interno versionado **não** deve
+  conter HSTS (guardrail em `tests/tls-config.test.mjs`).
+- O hub de skills fica dentro do container (`$HOME/.agent-skills`) e é recriado no boot; skills
+  de terceiros são preservadas, mas edições locais nas 7 vendorizadas são substituídas.
+- Chat do OmniRoute validado conversacionalmente em 2026-10-26 (`PONG` via `auto/best-coding`).
+- OpenClaw tem token e responde `/healthz`/`/models`, mas o endpoint de chat do gateway está
+  desabilitado (`404`).
+- E-mail real está bloqueado por autenticação IMAP; o transporte de envio permanece mock.
+- Telegram está com token inválido/revogado (`getMe` 404).
+- Backup externo/cifrado e restore drill periódico ainda não estão implementados.
+
+### Pendências operacionais
+
+1. Revisar/rotacionar token do `cloudflared` e confirmar HSTS/Always Use HTTPS no painel Cloudflare.
+2. Corrigir token do Telegram e credencial IMAP (ou manter canais explicitamente desabilitados).
+3. Habilitar `gateway.http.endpoints` no OpenClaw somente após decisão de capacidade e teste
+   autorizado; até lá, manter a integração desabilitada para agentes.
+4. Confirmar orçamento e provedores conectados antes de usar OmniRoute para chat.
+5. Implementar backup externo cifrado + restore drill (RPO/RTO propostos em
+   `docs/BACKUP-E-RESTAURACAO.md`).
+6. ~~Commitar/implantar a atualização `nodemailer@10.1.4`~~ **resolvida na release 1.7.9** (pin exato publicado).
+7. ~~Commitar a correção de permissão de `deploy/backup-data.sh`~~ **resolvida na release 1.7.9**
+   (modo `100755` versionado + guardrail `tests/backup-guardrail.test.mjs`).
+8. Definir retenção de imagens: a imagem anterior não está mais no host; rollback exige rebuild a
+   partir da tag/commit anterior.
+
+### Histórico de releases
+
+| Versão | Data | Estado |
+| --- | --- | --- |
+| 1.7.9 | 2026-10-26 | Margem de hardening (HSTS/CI, nodemailer, backup) |
+| 1.7.8 | 2026-10-26 | **Homologada em produção** (este bloco) |
+| 1.7.7 | 2026-10-25 | Deploy anterior (provider test/session timeout) |
+| 1.7.5 / 1.7.6 | 2026-10-24/25 | Publicação e hardening de egress |
+| 1.1.0 | 2026-10-21 | Homologação histórica (seções abaixo) |
+
+### Referências
+
+- `reports/JARVIS-AGENT-SKILLS-INTEGRATION-01.md` — integração inicial (histórico).
+- `reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md` — homologação definitiva 1.7.8.
+- `reports/JARVIS-RELEASE-CLOSURE-178.md` — auditoria de encerramento (2026-10-26).
+- `docs/ARQUITETURA.md`, `docs/CONFIGURACAO.md`, `docs/BACKUP-E-RESTAURACAO.md`,
+  `docs/OPERACAO-SLO-E-INCIDENTES.md`.
+
+
 ---
 
-## 1. Visão Geral da Arquitetura Atual
+## Histórico 1.1.0 — Visão Geral da Arquitetura
 
 O **AssistentePessoal (J.A.R.V.I.S.)** é uma plataforma modular de assistência pessoal autônoma e conversacional projetada para operar com **privacidade estrita por padrão (Local-First)**, sem dependência de serviços externos em nuvem não autorizados, com isolamento multi-administrador e persistência local criptografada.
 
@@ -106,7 +177,7 @@ O **AssistentePessoal (J.A.R.V.I.S.)** é uma plataforma modular de assistência
 
 ---
 
-## 2. Matriz de Maturidade dos Componentes (v1.1.0)
+## Histórico 1.1.0 — Matriz de Maturidade dos Componentes
 
 | Módulo / Arquivo | Status | Diagnóstico Técnico / Testes Associados |
 |---|---|---|
@@ -127,7 +198,7 @@ O **AssistentePessoal (J.A.R.V.I.S.)** é uma plataforma modular de assistência
 
 ---
 
-## 3. Checklist de Homologação (Critérios de Aceite v1.1.0)
+## Histórico 1.1.0 — Checklist de Homologação
 
 Todos os itens abaixo foram formalmente testados e aprovados:
 
@@ -151,7 +222,7 @@ Todos os itens abaixo foram formalmente testados e aprovados:
 
 ---
 
-## 4. Resumo das Suítes de Testes Executadas
+## Histórico 1.1.0 — Resumo das Suítes de Testes
 
 ### 4.1 Backend (Node.js Native Test Runner)
 - **Comando:** `node --test tests/*.test.mjs`
@@ -189,7 +260,7 @@ Todos os itens abaixo foram formalmente testados e aprovados:
 
 ---
 
-## 5. Conclusão e Assinatura de Homologação
+## Histórico 1.1.0 — Conclusão e Assinatura
 
 O projeto **J.A.R.V.I.S. (Assistente Pessoal)** atendeu plenamente a **100% dos requisitos arquiteturais, de segurança, de desempenho e de testes automatizados** para o lançamento da **Versão v1.1.0**.
 

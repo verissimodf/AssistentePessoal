@@ -1,224 +1,139 @@
 # 🏛️ Arquitetura do Sistema e Fluxo de Dados
 
-Este documento detalha a estrutura de software do **AssistentePessoal** e como os componentes locais interagem entre si para garantir privacidade absoluta, baixa latência e execução offline.
+Documento atualizado para a release **1.7.8** (esquema SQLite **12**). Descreve a topologia real,
+os componentes e os limites de confiança. Para configuração, ver `docs/CONFIGURACAO.md`.
 
 ---
 
-## 1. Visão Geral da Arquitetura
-
-O sistema é dividido em três camadas principais operando inteiramente no ecossistema do usuário hospedeiro (*host*):
-
-```mermaid
-graph TD
-    %% Camadas
-    subgraph Client [Camada do Cliente - Frontend]
-        UI[Painel Web: React + Tailwind]
-        Three[Núcleo Holográfico: Three.js]
-        WebAudio[Web Audio API: Captura de Voz]
-    end
-
-    subgraph Core [Camada do Servidor - Node.js Backend]
-        API[Servidor HTTP / api/health]
-        AgentEngine[Gerenciador de Agentes e Ferramentas]
-        SecurityLayer[Camada de Segurança: AES-256-GCM]
-        BotEngine[Orquestrador de Bots Autônomos]
-    end
-
-    subgraph PythonVoice [Módulo de Voz Opcional - Python]
-        XTTS[Módulo de Voz: XTTS-v2 / Kokoro]
-    end
-
-    subgraph DataStore [Camada de Persistência Local]
-        DB[(SQLite Embutido)]
-        VectorDB[(Memória Semântica: Embeddings)]
-    end
-
-    subgraph External [Provedores de IA Externos / Nuvem]
-        Ollama[Ollama - 100% Offline]
-        CloudAI[OpenAI / Anthropic / Gemini]
-    end
-
-    %% Conexões
-    UI <-->|API REST / WebSockets| API
-    WebAudio -->|Áudio Bruto| API
-    API <--> AgentEngine
-    API <--> BotEngine
-    AgentEngine <--> SecurityLayer
-    SecurityLayer <--> DB
-    AgentEngine <--> VectorDB
-    
-    %% Conexões de Voz
-    API <-->|IPC / Requisições Internas| XTTS
-    
-    %% Saídas de IA
-    AgentEngine <-->|Localhost| Ollama
-    AgentEngine <-->|HTTPS com Chave Criptografada| CloudAI
-```
-
----
-
-## 2. Fluxo de Execução: Da Entrada de Voz à Ação do Sistema
-
-O diagrama abaixo ilustra o ciclo de vida de uma interação iniciada pelo usuário via comando de voz (por exemplo, usando a *Wake Word* "Jarvis"):
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Usuario as Usuário
-    participant UI as Painel Web (React/Three.js)
-    participant Core as Servidor Core (Node.js)
-    participant Python as Serviço de Voz (Python)
-    participant DB as Banco SQLite / Embeddings
-    participant IA as Provedor de IA (Ollama/Nuvem)
-
-    Usuario->>UI: Fala "Jarvis, execute comando X"
-    UI->>Core: Envia Stream de Áudio / Texto capturado
-    Note over UI,Core: O Avatar 3D muda o estado para "Pensando"
-    
-    Core->>DB: Busca contexto na Memória Semântica (Busca Vetorial)
-    DB-->>Core: Retorna fatos e notas recentes
-    
-    Core->>IA: Envia Prompt Consolidado (Instruções + Contexto)
-    IA-->>Core: Retorna resposta em texto + intenção de ferramenta
-    
-    alt Execução de Comando no Host (Se Ativado)
-        Core->>Core: Valida comando contra a Whitelist de Segurança
-        Core->>Usuario: Executa ação no PC (ex: abrir app, ler arquivo)
-    end
-    
-    Core->>Python: Envia resposta de texto para conversão
-    Python->>Core: Retorna buffer de áudio clonado (XTTS-v2)
-    
-    Core->>UI: Envia resposta de texto e áudio clonado
-    Note over UI: O Avatar 3D move os lábios no estado "Falando"
-    UI->>Usuario: Reproduz voz e atualiza o painel
-```
-
----
-
-## 3. Segurança e Isolamento de Dados
-
-A arquitetura impõe três barreiras rígidas para garantir a integridade do ambiente do usuário:
-
-* **Isolamento de Rede:** O servidor Node.js escuta estritamente na interface de loopback `127.0.0.1`. Requisições externas vindas de fora da máquina local ou de origens não autorizadas são rejeitadas imediatamente no nível de middleware.
-* **Criptografia em Repouso:** Dados salvos na pasta `data/` não ficam em texto limpo. Chaves de APIs externas e históricos confidenciais passam pela `SecurityLayer` antes de tocar o arquivo SQLite, utilizando cifra **AES-256-GCM**.
-* **Auditoria de Host:** Toda e qualquer chamada de sistema ou bot autônomo acionado gera logs imutáveis gravados localmente, permitindo auditoria completa de processos criados pelo assistente.
-* 
-
-## 4. Sistema de Autonomia dos Bots (3 Níveis)
-
-O assistente possui um motor de orquestração autônomo (`BotEngine`) baseado em gatilhos (*triggers*) como horários, intervalos de tempo, arquivos alterados ou mensagens recebidas. Para garantir que a IA não execute ações indesejadas no sistema, a autonomia é rigidamente dividida em 3 níveis configuráveis:
-
-```mermaid
-graph TD
-    N1[Nível 1: Apenas Notificação] -->|Apenas Alerta| UI[Painel / Log]
-    N2[Nível 2: Semi-Autônomo] -->|Solicita| Proxy[Aprovação Manual no Painel]
-    N3[Nível 3: Totalmente Autônomo] -->|Executa Direto| Host[Sistema Operacional]
-
-    style N1 fill:#f9f,stroke:#333,stroke-width:2px
-    style N2 fill:#bbf,stroke:#333,stroke-width:2px
-    style N3 fill:#fbb,stroke:#333,stroke-width:2px
-```
-
-### Detalhamento dos Níveis:
-
-*   **Nível 1: Assistido / Informativo (Modo Seguro)**
-    *   **Como funciona:** O bot é disparado por um gatilho, analisa o contexto via IA, mas **não executa nenhuma alteração física ou comando**.
-    *   **Comportamento:** Ele apenas gera uma notificação visual no painel web, envia um alerta nos canais de comunicação integrados (Telegram/WhatsApp) ou grava a sugestão em log. Ele avisa o que *deveria* ser feito, mas não age.
-*   **Nível 2: Semi-Autônomo (Confirmação Obrigatória)**
-    *   **Como funciona:** O bot decide qual ação ou comando do host precisa ser executado, mas a requisição entra em uma **fila de espera**.
-    *   **Comportamento:** O indicador do painel web pisca e exibe um pop-up de auditoria. O comando só é disparado no terminal se o usuário clicar fisicamente em **"Aprovar"**. Caso seja rejeitado, a ação é descartada e o bot aprende com a recusa.
-*   **Nível 3: Autônomo (Modo J.A.R.V.I.S. Total)**
-    *   **Como funciona:** O bot tem permissão livre para tomar decisões e executar ferramentas em segundo plano sem intervenção humana.
-    *   **Comportamento:** Dispara scripts, manipula arquivos permitidos na *whitelist*, gerencia comunicações e interage com o sistema operacional. **Requisição obrigatória:** Exige que as travas de segurança do arquivo `SECURITY.md` estejam explicitamente aceitas no ambiente.
-
----
-
-## 5. Guia de Configuração: Inicialização Automática (Boot)
-
-Para transformar o projeto em um assistente de segundo plano real que liga junto com o computador, configure os inicializadores nativos do sistema operacional:
-
-### 🪟 No Windows (Via Pasta Inicializar)
-
-O método mais simples e seguro no Windows sem exigir privilégios de Administrador é usar o menu `Startup`:
-
-1. Pressione as teclas `Win + R` para abrir a caixa Executar.
-2. Digite `shell:startup` e pressione **Enter**. Isso abrirá a pasta de Inicialização do seu usuário.
-3. Clique com o botão direito dentro da pasta, vá em **Novo > Atalho**.
-4. No campo de localização, clique em procurar e selecione o arquivo do seu repositório: `C:\Caminho\Para\AssistentePessoal\scripts\jarvis.cmd`.
-5. Avance, dê o nome de "Jarvis" e conclua. 
-6. *(Opcional)* Nas propriedades do atalho, você pode configurá-lo para iniciar em modo **Minimizado** para não abrir a janela do prompt na sua tela ao ligar.
-
-### 🐧 No Linux (Via Systemd Service)
-
-Para distribuições Linux (Ubuntu, Debian, Fedora), a melhor prática de mercado é criar um serviço do sistema:
-
-1. Crie um arquivo de serviço para o Systemd:
-   ```bash
-   sudo nano /etc/systemd/system/jarvis.service
-   ```
-2. Cole a configuração abaixo ajustando os caminhos para as pastas corretas do seu usuário:
-   ```ini
-   [Unit]
-   Description=Servico Local do Assistente Pessoal J.A.R.V.I.S.
-   After=network.target
-
-   [Service]
-   Type=simple
-   User=SEU_USUARIO_LINUX
-   WorkingDirectory=/home/SEU_USUARIO/AssistentePessoal
-   ExecStart=/home/SEU_USUARIO/AssistentePessoal/scripts/jarvis.sh
-   Restart=on-failure
-   RestartSec=10
-
-   [Install]
-   WantedBy=multi-user.target
-   ```
-3. Recarregue os daemons, habilite o serviço para iniciar no boot e ligue-o agora:
-   ```bash
-   sudo systemctl daemon-reload
-   sudo systemctl enable jarvis.service
-   sudo systemctl start jarvis.service
-   ```
-4. Para checar se está rodando perfeitamente: `sudo systemctl status jarvis.service`.
-
-## 6. Arquitetura Simplificada
+## 1. Topologia de produção
 
 ```text
-Navegador ── http://localhost:8080 (painel)
-   │  detecta automaticamente
-   ▼
-http://127.0.0.1:7777 (server/index.js)
-   ├─ settings.js   chaves cifradas AES-256-GCM
-   ├─ db.js         SQLite embutido (node:sqlite) em data/
-   ├─ llm.js        provedores + laço de ferramentas do agente + embeddings
-   ├─ tools.js      pesquisa, memória, comandos, CLIs, mensagens, e-mail, agenda,
-   │                context7_docs (MCP), crawl_page (crawl4ai), openhands_task (OpenHands),
-   │                document_search (Fase 3 — documentos TXT do próprio administrador)
-   ├─ hostpolicy.js regras de segurança dos comandos
-   ├─ bots.js       agendador, observador de arquivos, gatilhos de texto
-   ├─ comms.js      Telegram, WhatsApp, Signal, IMAP/SMTP, ICS
-   ├─ voice.js      TTS e clonagem ──► scripts/voz/voice_service.py (127.0.0.1:7778)
-   └─ mcp.js        servidor MCP (stdio) para Claude Desktop/Code, Codex, OpenCode
+Internet
+  └─ Cloudflare (TLS 1.2/1.3, HSTS, WAF)
+       └─ cloudflared (túnel no host, systemd)
+            └─ nginx-app :80  (rede Docker CNC_APP_PROD_01)
+                 ├─ /api/  -> assistente-pessoal:7777
+                 └─ /      -> assistente-pessoal:8090
+                      └─ volume persistente -> /app/data
 ```
 
-**Acesso pela rede privada (Tailscale)**: `scripts/tailnet-proxy.mjs` publica as portas 7777 (API) e
-8090 (painel) no IP do tailnet, encaminhando para o loopback — sem expor na LAN. O painel detecta o
-endereço do serviço pelo hostname da página (`src/lib/bridge.ts`).
+- **Um container de aplicação** (`assistente-pessoal`) serve API e painel; não há `ports:` no
+  host. A exposição pública é responsabilidade do Nginx + Cloudflare.
+- O container roda como **UID/GID 1000**, com `no-new-privileges` e `cap_drop: ALL`; o IP é fixo
+  na rede Docker privada (`<ip-interno>` nesta instalação).
+- O volume `/opt/laytech-ai/AssistentePessoal/data` contém `jarvis.db` (+ WAL/SHM),
+  `master.key` (600), `voices/`, `backups/`, documentos e o store do Gigabrain.
+- O hub de skills fica em `$HOME/.agent-skills` **dentro do container** e é sincronizado no boot
+  a partir de `skills/vendor/` (imagem). Não é um volume persistente.
 
-**Integração painel ↔ serviço**: o painel testa `http://localhost:7777/api/health` a cada 10 s.
-Se responder, tudo passa a usar o serviço local; se não, entra em modo demonstração (dados em
-`localStorage`). Não há token para parear: o serviço só escuta em localhost e só aceita origens
-`localhost`/`127.0.0.1` (configure outras em `JARVIS_ALLOWED_ORIGINS`).
+### Desenvolvimento local
 
-## 7. API
-| Método | Rota | Função |
-|---|---|---|
-| GET | `/api/health` | estado |
-| GET/PUT | `/api/settings` | configurações (segredos mascarados) |
-| POST | `/api/providers/:id/test` | testa provedor |
-| POST | `/api/chat` | conversa com o agente ativo |
-| POST | `/api/approvals/:id` | aprova/nega comando |
-| CRUD | `/api/memories`, `/api/agents`, `/api/bots` | dados |
-| POST | `/api/bots/:id/run`, GET `/api/bots/:id/runs` | execuções |
-| POST | `/api/tts`, `/api/voice/clone` | voz |
+```text
+Navegador -> Vite (8080) -> API Node (127.0.0.1:7777) -> SQLite em ./data
+                              └─ ponte de voz (7778) -> xtts-service (opcional)
+```
+
+O painel e a API são processos separados no modo local; em produção o entrypoint sobe API, ponte
+de voz e painel no mesmo container e encerra o conjunto se um componente morrer.
+
+---
+
+## 2. Componentes
+
+| Camada | Módulo | Responsabilidade |
+| --- | --- | --- |
+| HTTP/API | `server/index.js` | rotas, autenticação, CSRF, escopos, CORS/Origin, erros |
+| Auth | `server/auth.js` | sessões, tokens de serviço, escopos, `isVerifiedAdmin` |
+| Banco | `server/db.js`, `server/migrations.js` | SQLite WAL, migrações versionadas, backup verificado |
+| Settings | `server/settings.js` | configuração pessoal/global, AES-256-GCM, proveniência |
+| Ownership | `server/ownership.js` | isolamento por administrador e transferência explícita |
+| LLM/router | `server/llm.js` | providers, fallback, timeouts, telemetria, testes de provider |
+| Agentes/ferramentas | `server/tools.js`, `server/bots.js` | tool calling, autonomia, aprovações, auditoria |
+| Host | `server/hostpolicy.js` | allowlist/negação de comandos e ações no host |
+| Skills | `server/skills.js`, `scripts/setup-global-skills.mjs` | catálogo, carregamento sob demanda, checksums, confinamento |
+| Integrações HTTP | `server/http-integration.js` | allowlist de integração, timeout, limite de prompt/resposta |
+| Comunicações | `server/comms.js`, `server/mail-service.js` | Telegram/WhatsApp/Signal, IMAP/SMTP, calendário |
+| RAG | `server/documents.js` | ingestão, chunks, embeddings, busca híbrida |
+| Voz | `scripts/voice-adapter.mjs`, `server/voice.js` | TTS local/remoto e ponte de voz |
+| Painel | `src/` (React/TanStack/Vite/Nitro) | UI, bridge HTTP, estados de saúde/diagnóstico |
+
+---
+
+## 3. Fluxo de uma mensagem
+
+1. O painel envia `POST /api/chat` com cookie de sessão e `X-Jarvis-CSRF`.
+2. O servidor valida origem, sessão, CSRF e escopo; resolve o agente e o provedor.
+3. O router monta o contexto (instruções, memória/RAG, histórico compactado) e chama o provedor
+   com timeout e fallback para o próximo provider elegível.
+4. Se o modelo pedir uma ferramenta, `callTool` revalida o escopo **no momento da execução**;
+   ações de host entram na fila de aprovação quando a autonomia exige.
+5. A resposta é persistida na conversa; a auditoria registra metadados (nunca prompt/conteúdo).
+6. TTS (quando habilitado) recebe o texto e devolve áudio; o painel reproduz.
+
+Falhas de provider são tipadas e não vazam payload/chave nos logs. O fallback local (Ollama) é o
+caminho seguro quando um gateway externo está indisponível.
+
+---
+
+## 4. Skills: descoberta e carregamento
+
+- Catálogo em `JARVIS_GLOBAL_SKILLS_DIR/catalog.json`; cada skill em
+  `skills/<id>/SKILL.md` (referências em `skills/<id>/references/`).
+- `GET /api/skills` lista/busca; `GET /api/skills/:id` carrega; as ferramentas `load_skill`
+  (chat/MCP) fazem o mesmo sob o escopo `skills:read`.
+- O provisionamento é offline e falha fechado: valida `manifest.json` + `SHA256SUMS`, copia para
+  staging, troca por `rename` e só então grava o catálogo. Skills de terceiros são preservadas.
+- Conteúdo Markdown é **dado não confiável**: não é executado, não altera permissões e não entra
+  no system prompt permanente. Caminhos são confinados por `realpath`; symlink para fora,
+  travessia e arquivos > 2 MiB são recusados.
+- Estado atual: **11 skills** (4 embutidas + 7 vendorizadas de `addyosmani/agent-skills@aeac41d4`).
+
+---
+
+## 5. Segurança e limites de confiança
+
+| Limite | Controle |
+| --- | --- |
+| Internet → edge | TLS/HSTS/WAF Cloudflare; Nginx só na rede Docker |
+| Cliente → API | sessão `HttpOnly`/`SameSite=Strict`, CSRF, Origin allowlist |
+| API → recursos | escopos de rota e de ferramenta reavaliados; `ownership` por admin |
+| Agente → host | `hostpolicy`, allowlist, aprovação humana, auditoria imutável |
+| Skills/LLM → filesystem | confinamento de caminho, sem execução, limite de tamanho |
+| API → integrações | URL da configuração (admin), Bearer do settings, timeout/limite |
+| Segredos | AES-256-GCM em repouso; `master.key` 600; nunca em logs/relatórios |
+
+Rotas públicas são apenas `GET /api/health`, `POST /api/auth/setup` e `POST /api/auth/login`.
+Tudo o mais exige sessão/token e escopo. O CSRF é obrigatório em toda mutação com cookie.
+
+---
+
+## 6. Dados e migrações
+
+- SQLite nativo (`node:sqlite`) em WAL, `busy_timeout=5000`, transações `BEGIN IMMEDIATE`.
+- `PRAGMA user_version` é a versão do schema; a release 1.7.8 usa **12** (`document_chunks`).
+- Cada migração roda em transação, compara contagens/hashes das tabelas preservadas e exige backup
+  verificado antes de alterar. Falha → rollback e erro explícito.
+- `master.key` é obrigatória para decifrar settings; o backup precisa incluir banco **e** chave.
+
+---
+
+## 7. Observabilidade e operação
+
+- `/api/health` (público) expõe `ok`, versão, commit/status, build time, modo, esquema efetivo e
+  `setupRequired`.
+- `/api/diagnostics` (sessão) inventaria providers, integrações, skills, contagens e integridade.
+- `/api/router/telemetry` (escopo `skills:read`) expõe chamadas, falhas, latência e fallbacks.
+- Docker healthcheck, logs do container, auditoria e `PRAGMA integrity_check` são as fontes
+  disponíveis. Não há Prometheus/Grafana instalados; SLOs e alertas propostos estão em
+  `docs/OPERACAO-SLO-E-INCIDENTES.md`.
+
+---
+
+## 8. Deploy e rollback
+
+- Build multi-stage (`Dockerfile`), runtime `node:22.22-bookworm-slim`, `tini`, usuário 1000.
+- Metadados de build vêm de `BUILD_VERSION`/`BUILD_COMMIT`/`BUILD_COMMIT_STATUS`/
+  `SCHEMA_VERSION`; o processo não infere commit do branch.
+- Compose ativo: `docker-compose.yml` (serviço `assistente`), imagem `assistente-pessoal:<sha>`.
+- Rollback: `IMAGE_TAG=<tag-anterior> docker compose -f docker-compose.yml up -d --no-build`,
+  mantendo banco + `master.key` compatíveis. Runbook: `docs/RUNBOOK-RELEASE-2026-10-18.md`.

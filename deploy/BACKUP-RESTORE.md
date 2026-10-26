@@ -67,16 +67,18 @@ sqlite3 "file:$BK/jarvis.db?mode=ro" "PRAGMA user_version; PRAGMA integrity_chec
    ```bash
    sqlite3 "file:data/jarvis.db?mode=ro" "PRAGMA user_version; PRAGMA integrity_check;"
    ```
-   Esperado: `5` e `ok`.
+   Esperado: `12` e `ok` (release 1.7.9; confira o esquema da sua versão).
 5. **Subir o container**:
    ```bash
    docker compose -f docker-compose.yml up -d --no-build
    docker compose -f docker-compose.yml ps
-   curl -s http://192.168.2.40:7777/api/health
+   curl -s http://<ip-interno>:7777/api/health
    ```
 6. **Rollback da restauração** (se algo falhar): parar o container e renomear `data` de volta para `data.pre-restore.<stamp>`.
 
 ## Limitações conhecidas
+
+- Este runbook é operacional; a política completa (RPO/RTO, cifragem, off-host, retenção e restore drill) está em [`docs/BACKUP-E-RESTAURACAO.md`](../docs/BACKUP-E-RESTAURACAO.md). O timer systemd **está instalado/habilitado**; em 2026-10-25 ele falhava porque o script não tinha bit de execução (`203/EXEC`), corrigido localmente com `chmod 755` e validado em 2026-10-26.
 
 - O destino fica no **mesmo disco** (`/opt`). Protege contra erro humano e corrupção lógica, **não** contra falha do disco — replicar para outro host/volume quando houver.
 - Não há backup do `-wal` em tempo real: `VACUUM INTO` já consolida o conteúdo confirmado.

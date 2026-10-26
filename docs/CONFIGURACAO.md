@@ -1,109 +1,124 @@
 # Configuração
 
-Tudo é configurado no painel (**Configurações**) e salvo cifrado em `data/jarvis.db`.
+Atualizado para **1.7.8** (esquema 12). A configuração de aplicação é feita no painel e persistida
+cifrada em `data/jarvis.db`; variáveis de ambiente cobrem infraestrutura e segurança.
 
 ## Proveniência dos valores
 
-A aba **Proveniência** mostra, para cada caminho efetivo de configuração, de onde o valor vem
-(`GET /api/settings/provenance`, `settings:read`):
+A aba **Proveniência** mostra, para cada caminho efetivo, de onde o valor vem
+(`GET /api/settings/provenance`, escopo `settings:read`):
 
-- **padrão** — valor de fábrica (`PERSONAL_DEFAULTS`/`GLOBAL_DEFAULTS`), nada gravado;
-- **pessoal** — gravado no registro pessoal **deste** administrador (`admin_settings`);
-- **global** — política da instalação (`host`, `integrations`, `voice.localVoiceUrl`), que um
-  administrador sem `allowGlobal` não altera.
+- **padrão** — valor de fábrica (`PERSONAL_DEFAULTS`/`GLOBAL_DEFAULTS`);
+- **pessoal** — `admin_settings` do administrador;
+- **global** — política da instalação (`host`, `integrations`, `voice.localVoiceUrl`), alterável
+  apenas por administrador verificado.
 
-Regras de exposição (servidor nunca devolve valores):
+Segredos aparecem somente como `secret: true`; variáveis sensíveis aparecem como
+definida/não definida, sem valor. O servidor nunca devolve chaves, tokens ou senhas.
 
-- segredos (`apiKey`, `token`, ...) aparecem **apenas** como marca `secret` — nem mascarados;
-- variáveis de ambiente sensíveis (`JARVIS_MASTER_KEY`, `JARVIS_SERVICE_TOKEN`, `JARVIS_DATA_DIR`,
-  `JARVIS_URL`) aparecem só como **definida/não definida**, com "valor não exibido";
-- as demais variáveis permitidas na allowlist (`NODE_ENV`, `JARVIS_HOST`, `JARVIS_PORT`,
-  `JARVIS_COOKIE_SECURE`, `JARVIS_ALLOWED_ORIGINS`, `JARVIS_MAX_UPLOAD`, `JARVIS_MAX_DOCUMENT`,
-  `JARVIS_MAIL_TRANSPORT`, `JARVIS_NO_LISTEN`) aparecem com o valor.
+## Variáveis de ambiente
 
-Limite honesto: o inventário cobre o **formato efetivo do servidor**. Campos que o painel completa
-com o catálogo local quando o registro não os guarda (ex.: outros campos de um provedor parcial)
-não têm caminho efetivo e por isso não são listados — a origem deles é o catálogo do painel, não um
-valor gravado.
+| Variável | Efeito |
+| --- | --- |
+| `JARVIS_DATA_DIR` | diretório de dados (`/app/data` no container) |
+| `JARVIS_HOST` / `JARVIS_PORT` | bind da API; o entrypoint usa o IP do container, nunca `0.0.0.0` |
+| `PANEL_PORT` | porta do painel (8090 no container) |
+| `JARVIS_ALLOWED_ORIGINS` | origens permitidas, separadas por vírgula |
+| `JARVIS_COOKIE_SECURE` | `1` para cookie `Secure` em HTTPS |
+| `JARVIS_MAX_UPLOAD` / `JARVIS_MAX_DOCUMENT` | limites de upload/documento |
+| `JARVIS_MASTER_KEY` | chave mestra alternativa ao `data/master.key` |
+| `JARVIS_SERVICE_TOKEN` | token de serviço para MCP/scripts (criado no painel) |
+| `JARVIS_GLOBAL_SKILLS_DIR` | hub de skills (padrão `$HOME/.agent-skills`) |
+| `JARVIS_SKILLS_SETUP` | `builtin` (padrão), `off` ou `full` (rede opt-in) |
+| `JARVIS_MAIL_TRANSPORT` | `imap` ativa o adaptador real de e-mail; ausente = mock |
+| `XTTS_URL` | endpoint do TTS local (padrão `http://xtts-service:8000`) |
+| `JARVIS_NO_LISTEN` | `1` para testes sem abrir socket |
 
 ## Provedores de IA
-| Provedor | URL base padrão | Chave |
-|---|---|---|
-| Ollama | `http://localhost:11434/v1` | não |
-| Anthropic | `https://api.anthropic.com` | console.anthropic.com |
-| OpenAI | `https://api.openai.com/v1` | platform.openai.com |
-| HuggingFace | `https://router.huggingface.co/v1` | huggingface.co/settings/tokens |
-| Omniroute | `http://localhost:20128/v1` | painel do Omniroute |
-| OpenCode Go | `https://opencode.ai/zen/v1` | opencode.ai |
-| OpenRouter / Groq / Gemini | compatíveis com OpenAI | sites dos provedores |
-| OpenWebUI | `http://localhost:3000/api` | OpenWebUI → Configurações → Conta → Chave de API |
-| Headroom (proxy local) | `http://127.0.0.1:8787/v1` | token do proxy (`HEADROOM_PROXY_TOKEN`) |
-| Compatível com OpenAI | qualquer `/v1` | opcional |
 
-O raciocínio do modelo (quando o provedor o devolve) aparece em **Raciocínio** na conversa.
+Os endereços abaixo refletem a topologia Docker atual; no modo local use `127.0.0.1`/`localhost`.
 
-## Ferramentas de integração (agentes)
-Além das ferramentas nativas, o agente pode chamar serviços locais:
+| Provedor | URL base padrão | Chave | Estado 2026-10-26 |
+| --- | --- | --- | --- |
+| Ollama | `http://ollama-llm:11434/v1` | não | **OPERATIONAL** (`/models` 200, 9 modelos) |
+| Anthropic | `https://api.anthropic.com` | sim | BLOCKED-CONFIGURATION sem chave |
+| OpenAI | `https://api.openai.com/v1` | sim | BLOCKED-CONFIGURATION sem chave |
+| HuggingFace | `https://router.huggingface.co/v1` | sim | não testado |
+| OmniRoute | `http://omniroute:20128/v1` | sim | **OPERATIONAL** (`/models` 200, 268 modelos; chat real 200 `PONG`) |
+| OpenCode Go | `https://opencode.ai/zen/v1` | sim | não testado |
+| OpenRouter / Groq / Gemini | compatíveis com OpenAI | sim | não testados |
+| OpenWebUI | `http://openwebui:8080/api` | sim | não testado |
+| Headroom | `http://headroom:8787/v1` | sim | **OPERATIONAL** (`/models` 200, 9 modelos; chat 200) |
+| Compatível com OpenAI | qualquer `/v1` | opcional | conforme configuração |
 
-| Ferramenta | Serviço | Parâmetros |
-|---|---|---|
-| `context7_docs` | Context7 MCP (`http://127.0.0.1:8000/mcp`) | `library`, `topic` |
-| `crawl_page` | crawl4ai (`http://127.0.0.1:11235`) | `url` |
-| `openhands_task` | OpenHands (`http://127.0.0.1:8085`) | `task` |
-
-Habilite-as em **Agentes → Ferramentas** e configure as URLs/chaves em **Configurações → Integrações**.
+O estado “operacional” exige uma chamada real bem-sucedida; a mera presença do adaptador no código
+não basta. O fallback local (Ollama) continua sendo o caminho seguro quando um gateway falha.
 
 ## Integrações de agentes
-- **CLI** (Claude Code, Codex, OpenCode, Hermes): o comando usa `{prompt}` como marcador. Ex.: `claude -p {prompt} --output-format text`. O CLI precisa estar instalado e logado.
-- **HTTP** (OpenClaw, Odysseus, OpenWebUI, Headroom, OpenHands, crawl4ai): informe a URL compatível com OpenAI; use como provedor “Compatível com OpenAI” num agente.
-- **MCP** (Context7): informe a URL do servidor MCP (`http://127.0.0.1:8000/mcp`); o agente usa a ferramenta `context7_docs`.
-- **Claude Desktop (MCP)**: em `claude_desktop_config.json`:
-  ```json
-  { "mcpServers": { "jarvis": { "command": "node", "args": ["C:/jarvis/server/mcp.js"],
-      "env": { "JARVIS_SERVICE_TOKEN": "jst_..." } } } }
-  ```
-  Crie o token em **Configurações → Segurança → Tokens de serviço**, marcando só os escopos necessários (ex.: `chat`, `memories:read`). Ele aparece uma vez e pode ser revogado a qualquer momento. Tokens nunca aprovam ações no host.
-  O mesmo servidor MCP serve para Claude Code (`claude mcp add jarvis node /caminho/server/mcp.js`), Codex e OpenCode.
 
-## Comunicação
-| Canal | O que preencher |
-|---|---|
-| Telegram | Crie um bot com @BotFather (`botToken`) e envie uma mensagem a ele; `chatId` aparece em `https://api.telegram.org/bot<TOKEN>/getUpdates`. O Jarvis responde mensagens desse chat. |
-| WhatsApp | Meta for Developers → WhatsApp Cloud API: `token`, `phoneNumberId`, `to` (número com DDI). |
-| Signal | Instale e registre o [signal-cli](https://github.com/AsamK/signal-cli); `number` (seu) e `to`. |
-| Gmail | Ative verificação em 2 etapas e crie uma **senha de app**; `user` + `appPassword`. |
-| Outlook | `user` + senha de app (conta Microsoft → Segurança). |
-| Agenda | URL ICS secreta (Google Agenda → Configurações → Endereço secreto em formato iCal; Outlook → Publicar calendário). |
+| Integração | Tipo | Endereço/config | Estado |
+| --- | --- | --- | --- |
+| Claude Code / Codex / OpenCode | CLI | comando com `{prompt}` | depende do CLI instalado/logado |
+| Hermes | CLI/HTTP | gateway local | `/models` 200; chat depende de sessão/gateway |
+| OpenClaw | HTTP | `http://openclaw:18789/v1` | **BLOCKED-CONFIGURATION** — `/healthz`/`/models` 200, chat 404 |
+| Odysseus | HTTP | `http://odysseus:8000/v1` | não exposto como ferramenta de agente |
+| OpenHands | HTTP | `http://127.0.0.1:8085` | primeira execução pode montar runtime e demorar |
+| Context7 | MCP | `http://127.0.0.1:8000/mcp` | ferramenta `context7_docs` |
+| crawl4ai | HTTP | `http://<ip-crawl4ai>:11235` | ferramenta `crawl_page` (fail-closed egress) |
+| Headroom | HTTP | `http://headroom:8787/v1` | proxy de contexto; ver provedores |
+| REA | CLI | `rea-agents` na imagem | ferramenta `rea_analyze` com aprovação |
+| Gigabrain | CLI/MCP | store em `data/gigabrain/` | ferramentas `gigabrain_recall/remember` |
 
-## Voz e ativação
-- **Palmas duplas**: ajuste a sensibilidade e use **Testar palmas** (8 s).
-- **Chamar pelo nome**: diga o nome do assistente (Geral → Nome do assistente).
-- **Atalho**: `Ctrl+Shift+J` com o painel em foco.
-- **Motor de voz**: navegador, Kokoro (local), XTTS-v2 (voz clonada local) ou ElevenLabs.
-- **Voz clonada**: 10–60 s de fala limpa; com XTTS a amostra fica só em `data/voices/`.
+### OpenClaw
 
-## Bots autônomos
-| Gatilho | Valor |
-|---|---|
-| Diariamente às | `08:00` |
-| A cada (minutos) | `30` |
-| Comando de voz | frase, ex.: `modo reunião` |
-| Arquivo alterado | caminho de pasta ou arquivo |
-| Mensagem recebida | palavra que deve aparecer na mensagem do Telegram |
+- O adaptador HTTP (`server/http-integration.js`) já aplica allowlist de integração, Bearer do
+  settings, timeout de 30 s, limite de prompt/resposta e auditoria sem conteúdo.
+- O gateway atual tem `gateway.http.endpoints = null`; `/v1/chat/completions` responde **404**.
+  `gateway.trustedProxies` está restrito a loopback e `auth.mode = token`.
+- Para habilitar: configurar o endpoint de chat no gateway, validar o token e executar um teste
+  autorizado com mensagem sintética. Até lá, a integração deve permanecer **desabilitada para
+  agentes**; não há execução de ferramentas pelo agente remoto.
 
-Autonomia: *Pedir confirmação*, *Só ações seguras* (lista permitida) ou *Autônomo total*. Limite de passos: 1–50.
+### OmniRoute e Headroom
 
-## 1. Segurança e Criptografia
+- São componentes **independentes e complementares**: OmniRoute multiplexa provedores;
+  Headroom é um proxy local de contexto/compactação. O J.A.R.V.I.S. fala com cada um como
+  provider OpenAI-compatible.
+- OmniRoute: `auto/best-coding` disponível no catálogo; logs do gateway mostram pools `auto/*`
+  vazios para alguns aliases. Não habilite chamadas pagas sem confirmar provedores conectados e
+  orçamento.
+- Headroom: requer token (`HEADROOM_PROXY_TOKEN` no serviço); a porta é publicada só em loopback.
+  Chat sintético validado em 2026-10-26.
+- Falhas de gateway caem no fallback local (Ollama); não há loops de retry infinito — o router
+  tem timeout por tentativa e circuit breaker.
 
-• ENCRYPTION_KEY: Esta é a variável mais importante. Ela cifra as senhas de e-mail e chaves de API armazenadas no banco SQLite. Se você perder essa chave, o assistente não conseguirá descriptografar seus tokens antigos.
-• BOT_AUTONOMY_LEVEL: Controla os três níveis de autonomia descritos no guia de arquitetura. O valor padrão 1 garante que nenhum script do host rode sem o seu comando direto.
+## Comunicações
 
-## 2. Provedores de IA (DEFAULT_AI_PROVIDER)
+| Canal | Configuração | Estado 2026-10-26 |
+| --- | --- | --- |
+| Telegram | `botToken` + `chatId` | token/chat presentes; `getMe` **404** (token inválido/revogado) — BLOCKED-CONFIGURATION |
+| WhatsApp Cloud API | `token`, `phoneNumberId`, `to` | não testado |
+| Signal | `number`, `to` (signal-cli) | desabilitado |
+| Gmail | `user` + `appPassword` | conta habilitada; login IMAP real **authenticationFailed** |
+| Outlook | `user` + `appPassword` | não configurado |
+| Agenda ICS | `icsUrl` | não testado |
 
-• Se definido como ollama, o assistente funcionará inteiramente sem internet, consumindo os modelos baixados na sua própria máquina.
-• Se mudar para openai ou anthropic, certifique-se de colar a respectiva chave de API nos campos abaixo dela.
+- `JARVIS_MAIL_TRANSPORT` ausente mantém o envio de e-mail em **mock**; nenhuma mensagem real foi
+  enviada nesta auditoria.
+- Para e-mail real: corrigir a senha de app/permissão IMAP, definir `JARVIS_MAIL_TRANSPORT=imap`,
+  testar leitura e só depois habilitar envio (com aprovação humana).
+- Para Telegram: gerar novo token no @BotFather, atualizar no painel e validar `getMe`; não envie
+  mensagens a terceiros sem autorização.
 
-## 3. Canais de Comunicação
+## Voz
 
-• TELEGRAM_ALLOWED_CHAT_IDS: Uma lista separada por vírgulas contendo os IDs numéricos das contas permitidas a conversar com o seu assistente. Isso impede que terceiros adicionem o seu bot no Telegram e executem comandos na sua máquina.
-• EMAIL_PASSWORD: Para provedores como o Gmail, você não deve usar sua senha real de login, mas sim uma Senha de Aplicativo gerada dentro das configurações de segurança da sua conta Google.
+- Motor: Web Speech API (navegador), XTTS-v2/Kokoro local via `xtts-service`, ou ElevenLabs.
+- Voz clonada: amostra de 10–60 s; arquivos em `data/voices/`.
+- A ponte `scripts/voice-adapter.mjs` traduz `/tts` para o serviço local. Sem `xtts-service`, o
+  painel usa o fallback do navegador.
+
+## Bots e autonomia
+
+Gatilhos: horário, intervalo, arquivo alterado, mensagem recebida e comando de voz. Autonomia:
+*Pedir confirmação* (padrão), *Só ações seguras* (allowlist) ou *Autônomo total* (exceto comandos
+destrutivos). O limite de passos é 1–50. Toda execução é auditada.

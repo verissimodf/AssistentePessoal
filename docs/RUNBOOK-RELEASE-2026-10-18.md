@@ -1,6 +1,6 @@
 # Runbook de release — P0.3 (2026-10-18)
 
-## Release atual — 1.7.8 (2026-10-25)
+## Release atual — 1.7.8 (2026-10-26)
 
 | Item | Valor |
 | --- | --- |
@@ -22,12 +22,18 @@ export BUILD_VERSION="$VERSION" BUILD_COMMIT="$COMMIT_SHA" \
 export IMAGE_TAG="$SHORT_SHA"
 docker compose -f docker-compose.yml build
 bash scripts/verificar-imagem-release.sh "assistente-pessoal:$IMAGE_TAG" "$COMMIT_SHA" "$VERSION"
-docker compose -f docker-compose.yml up -d
+docker compose -f docker-compose.yml up -d --no-build
 curl -s http://192.168.2.40:7777/api/health
 ```
 
 O health esperado contém `"version":"1.7.8"`, `"commit":"<SHA>"`, `"commitStatus":"Registrado"`,
-`"schemaVersion":12`. As seções históricas abaixo (P0.3, 2026-10-18) permanecem como registro.
+`"schemaVersion":12` e `"schemaVersionBuild":12`. As seções históricas abaixo (P0.3, 2026-10-18)
+permanecem como registro.
+
+> **Pós-release 1.7.8 (auditoria 2026-10-26):** a correção `nodemailer@10.1.4` e as atualizações
+> documentais estão no working tree da branch `chore/jarvis-release-closure-178`, **sem commit ou
+> deploy**. O HSTS de produção é emitido no edge Cloudflare; o rascunho HTTP interno versionado
+> não contém HSTS (guardrail `tests/tls-config.test.mjs`).
 
 ---
 

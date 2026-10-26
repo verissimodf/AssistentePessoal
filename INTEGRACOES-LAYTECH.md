@@ -1,125 +1,109 @@
-# Assistente Pessoal (Jarvis) — Integração LayTech
+# Integrações LayTech — estado operacional
 
-Documento operacional da instalação do **AssistentePessoal**
-(`github.com/laytech-ia-debug/AssistentePessoal`) no servidor LayTech, em substituição ao
-**OpenJarvis** local. Verificado ao vivo em **2026-10-14**.
+Atualizado em **2026-10-26** para a release **1.7.8**. Este documento substitui as anotações de
+instalação de 2026-10-14; o histórico permanece nos relatórios em `docs/` e `reports/`.
 
-## 1. Local e versões
-
-- Código: `/opt/laytech-ai/AssistentePessoal` (branch `main`).
-- Node: v22.22.2 · npm 11.19.0 (o ambiente tem `NODE_ENV=production`; use `npm install --include=dev`).
-- Dados: `/opt/laytech-ai/AssistentePessoal/data/` (`jarvis.db`, `master.key` modo `600`, `voices/`).
-- Build do painel: `NITRO_PRESET=node-server npm run build` → `.output/`.
-
-## 2. Portas e serviços
+## 1. Topologia atual
 
 | Componente | Endereço | Observação |
 | --- | --- | --- |
-| API local | `http://127.0.0.1:7777` | loopback |
-| Painel web | `http://localhost:8090` | **8080 é do `odysseus-searxng-1`** |
-| Ponte de voz | `http://127.0.0.1:7778` | traduz `/tts` → `xtts-service` (`8010`) |
-| Tailnet (Tailscale) | `http://100.100.100.101:8090` (painel) e `:7777` (API) | só no tailnet; sem LAN |
-| MCP (stdio) | `server/mcp.js` | `jarvis_ask`, `jarvis_remember`, `jarvis_recall` |
+| API | `http://<ip-interno>:7777` (rede Docker) | sem porta publicada no host |
+| Painel | `http://<ip-interno>:8090` (rede Docker) | público via `https://jarvis.laytech.com.br` |
+| Container | `assistente-pessoal` | imagem `assistente-pessoal:4ad3ba2`, `healthy` |
+| Nginx | `nginx-app:80` | recebe do túnel Cloudflare |
+| Cloudflare | `jarvis.laytech.com.br` | TLS/HSTS no edge |
+| Dados | `/opt/laytech-ai/AssistentePessoal/data` | SQLite WAL + `master.key` 600 |
+| MCP | `server/mcp.js` (stdio) | requer token de serviço com escopo mínimo |
 
-Serviço systemd **user**: `assistente-pessoal.service` (habilitado, `Linger=yes`), que sobe API +
-ponte de voz + painel + relé Tailscale via `scripts/start-local.sh`.
+O serviço systemd de usuário (`assistente-pessoal.service`) e o relé Tailscale descritos em
+documentos antigos não são o caminho de produção atual; a produção usa o container + Nginx +
+Cloudflare. Se o Tailscale for reativado, valide novamente as origens permitidas.
 
-```bash
-systemctl --user status assistente-pessoal.service
-systemctl --user restart assistente-pessoal.service
-journalctl --user -u assistente-pessoal.service -n 50 --no-pager
-```
+## 2. Provedores e integrações (verificado em 2026-10-26)
 
-## 3. Provedores de IA (cifrados AES-256-GCM em `data/jarvis.db`)
-
-| Provedor | URL base | Modelo | Teste |
+| Integração | Endereço | Configuração | Estado |
 | --- | --- | --- | --- |
-| `ollama` (ollama-llm) | `http://127.0.0.1:11434/v1` | `qwen2.5:7b` (embed `nomic-embed-text`) | ✅ 13 modelos |
-| `omniroute` | `http://127.0.0.1:20128/v1` | `auto/best-coding` | ✅ 254 modelos |
-| `hermes` | `http://127.0.0.1:8642/v1` | `hermes-agent` | ✅ 1 modelo |
-| `headroom` | `http://127.0.0.1:8787/v1` | `qwen2.5:7b` | ✅ 13 modelos |
-| `openclaw` | `http://127.0.0.1:18789/v1` | — | ⚠️ 403 `proxy_attribution_required` |
+| Ollama | `http://ollama-llm:11434/v1` | modelo `qwen2.5:7b` | **OPERATIONAL** — `/models` 200 (9), chat real |
+| Headroom | `http://headroom:8787/v1` | token no serviço, `qwen2.5:7b` | **OPERATIONAL** — `/models` 200 (9), chat 200 (~6,4 s) |
+| OmniRoute | `http://omniroute:20128/v1` | `auto/best-coding`, chave | **OPERATIONAL** — `/models` 200 (268); chat real 200 (`Beam-1.0-501B-A23B`, `PONG`) |
+| Hermes | gateway local | sessão por execução | **PASS-WITH-CONDITIONS** — `/models` 200 (1); chat depende do gateway |
+| OpenClaw | `http://openclaw:18789/v1` | token presente, `kind: http` | **BLOCKED-CONFIGURATION** — `/healthz` 200, `/models` 200, chat 404 |
+| OpenAI / Anthropic | APIs públicas | chave ausente | **BLOCKED-CONFIGURATION** |
+| Context7 | `http://127.0.0.1:8000/mcp` | MCP | ferramenta `context7_docs`; não revalidado nesta auditoria |
+| crawl4ai | `http://<ip-crawl4ai>:11235` | fail-closed egress | ferramenta `crawl_page`; não revalidado nesta auditoria |
+| OpenHands | `http://127.0.0.1:8085` | HTTP | primeira execução pode montar runtime e demorar |
+| Odysseus | `http://odysseus:8000/v1` | HTTP | não exposto como ferramenta de agente |
+| REA | `rea-agents` na imagem | CLI/argv fixo | `rea_analyze` com aprovação |
+| Gigabrain | MCP stdio | `data/gigabrain/` | `gigabrain_recall`/`remember` |
 
-## 4. Ferramentas de agente (integrações)
+### 2.1 OpenClaw
 
-| Ferramenta | Serviço | Endereço | Teste |
+O adaptador `server/http-integration.js` já implementa:
+
+- allowlist de integração `kind: "http"` e `enabled: true`;
+- URL vinda da configuração do administrador (sem URL arbitrária do modelo);
+- `Authorization: Bearer` do segredo configurado;
+- timeout de 30 s, limite de prompt (8.000) e de resposta (8.000);
+- contrato OpenAI (`POST {base}/chat/completions`), extração de `choices[0].message.content`;
+- auditoria apenas de ids/status, nunca prompt/resposta/chave.
+
+Estado do gateway (`/home/node/.openclaw/openclaw.json`, sem expor segredos):
+
+- `gateway.http.endpoints = null` → **chat desabilitado**;
+- `gateway.trustedProxies = ["127.0.0.1/32", "::1/128"]` (correto; não inclui a sub-rede de clientes);
+- `auth.mode = "token"` e token presente;
+- `GET /healthz` 200; `GET /models` 200; `GET /v1/models` 404; `POST /v1/chat/completions` 404.
+
+**Ação necessária (produção, fora deste repositório):** habilitar o endpoint de chat no gateway,
+confirmar o token e executar um teste autorizado com mensagem sintética. Até lá, manter a
+integração desabilitada para agentes. O agente remoto não recebe ferramentas nem shell.
+
+### 2.2 OmniRoute e Headroom
+
+São **independentes e complementares**:
+
+- **OmniRoute** (`omniroute:20128/v1`) é um gateway multi-provedor. O catálogo tem 268 modelos e
+  `auto/best-coding`. Chat conversacional real validado em 2026-10-26 com as credenciais já
+  existentes (HTTP 200, `finish: stop`, resposta verificável `"PONG"`; nada foi alterado).
+  O backend `auto/best-coding` responde em modo **streaming (SSE)** e pode gastar tokens de
+  raciocínio antes do conteúdo (use orçamento de tokens adequado, ~300). Não faça chamadas pagas
+  adicionais sem confirmar provedores conectados e orçamento.
+- **Headroom** (`headroom:8787/v1`) é um proxy local de contexto/compactação, com 9 modelos e chat
+  sintético validado. Ele não substitui o OmniRoute.
+- O router do J.A.R.V.I.S. tem timeout por tentativa, fallback para Ollama e telemetria em
+  `/api/router/telemetry` (escopo `skills:read`). Falhas de gateway não devem gerar loop infinito;
+  monitore `fallbacksTriggered` e a taxa de erro.
+
+## 3. E-mail e Telegram (estado atual)
+
+| Canal | Configuração | Teste 2026-10-26 | Estado |
 | --- | --- | --- | --- |
-| `context7_docs` | Context7 MCP (HTTP) | `http://127.0.0.1:8000/mcp` | ✅ retorna docs |
-| `crawl_page` | crawl4ai | `http://192.168.2.29:11235` (Bearer) | ✅ markdown |
-| `openhands_task` | OpenHands | `http://127.0.0.1:8085` | ✅ cria conversa |
-| `cli_agent` | Claude Code / Codex / OpenCode / Hermes | CLIs locais | `opencode run` ✅ |
-| `rea_analyze` | REA (`rea-agents@6.5.0` na imagem) | argv fixo, Evidence em `data/rea/` | ✅ (`tests/rea-analyze.test.mjs`) |
-| `gigabrain_recall` / `gigabrain_remember` | Gigabrain (`@legendaryvibecoder/gigabrain@0.11.0` na imagem) | MCP stdio, argv fixo, store em `data/gigabrain/` | ✅ (`tests/gigabrain.test.mjs`) |
-| `run_command` | Host (ações no host) | — | ✅ (com aprovação) |
+| Telegram | token + chatId presentes | `getMe` HTTP **404** | **BLOCKED-CONFIGURATION** (token inválido/revogado) |
+| Gmail | conta + appPassword presentes | IMAP `authenticationFailed` | **BLOCKED-CONFIGURATION** (credencial/permissão) |
+| Envio de e-mail | `JARVIS_MAIL_TRANSPORT` ausente | não testado | **mock** (nenhuma mensagem real) |
+| WhatsApp | não testado | — | NOT-TESTED |
+| Signal | desabilitado | — | desabilitado |
 
-Integrações HTTP informativas: OpenClaw, Odysseus, Headroom.
+Nenhuma mensagem foi enviada a terceiros. Para habilitar:
 
-## 5. Agentes
+1. Telegram: novo token no @BotFather, atualizar no painel, validar `getMe` e testar apenas no chat
+   autorizado.
+2. Gmail: corrigir senha de app/permissão IMAP, definir `JARVIS_MAIL_TRANSPORT=imap`, testar
+   leitura e só depois envio com aprovação humana.
 
-| Agente | Provedor | Modelo | Estado |
-| --- | --- | --- | --- |
-| `jarvis` (J.A.R.V.I.S.) | `ollama` | `qwen2.5:7b` | **ativo** |
-| `omniroute` | `omniroute` | `auto/best-coding` | disponível |
-| `hermes` | `hermes` | `hermes-agent` | disponível |
-| `headroom` | `headroom` | `qwen2.5:7b` | disponível |
+## 4. Segurança operacional
 
-## 6. Ações no host
+- Não publicar portas do container; a borda é Nginx/Cloudflare.
+- Não colocar tokens em documentos, issues, logs ou relatórios.
+- Integrações HTTP usam URL de configuração, não do modelo; não há SSRF arbitrário nesse caminho.
+- Ações de host continuam sob `hostpolicy` + aprovação; agentes não recebem shell irrestrito.
+- O HSTS de produção é emitido no edge; o rascunho HTTP interno versionado não deve conter HSTS
+  (`tests/tls-config.test.mjs`).
 
-Habilitadas (`host.enabled = true`) com **lista permitida** e **aprovação no painel** (o chat usa
-autonomia `confirm`: o agente propõe o comando e o usuário aprova). Comandos destrutivos
-(`rm -rf /`, `mkfs`, `shutdown`, fork bomb…) são sempre recusados por `server/hostpolicy.js`.
-Para autonomia total em bots, use `safe` (só a lista permitida) ou `full` (roda tudo, menos perigosos).
+## 5. Limitações conhecidas
 
-## 7. Acesso pela rede privada Tailscale
-
-`scripts/tailnet-proxy.mjs` escuta **apenas no IP Tailscale** (`100.87.104.126`) e encaminha para o
-loopback — sem abrir na LAN e sem `sudo`. O `start-local.sh` adiciona o IP e o MagicDNS
-(`app.tail43f1fb.ts.net`) a `JARVIS_ALLOWED_ORIGINS`. O painel detecta o serviço pelo hostname da
-página (`src/lib/bridge.ts`), então funciona igual em `localhost` e no tailnet.
-
-Abrir de outro dispositivo: **`http://100.100.100.101:8090`** (ou `http://app.tail43f1fb.ts.net:8090`).
-
-Alternativa nativa com TLS (requer `sudo tailscale set --operator=$USER` uma vez):
-`tailscale serve --bg --https=443 http://127.0.0.1:8090` e `--https=8443 http://127.0.0.1:7777`.
-
-## 8. Voz clonada (preservada do OpenJarvis)
-
-`scripts/voice-adapter.mjs` (7778) converte `POST /tts` para `POST /voice/speak` (form-urlencoded) do
-`xtts-service` (`127.0.0.1:8010`), usando o speaker clonado **`jarvis-ptbr`**. `voice.tts = "xtts"`.
-Voz local nativa do projeto (Kokoro/Coqui) não instalada: exige Python 3.10–3.12 (host tem 3.14).
-
-## 9. Substituição do OpenJarvis (reversível)
-
-Parados e **desabilitados**: `jarvis.service`, `jarvis-scheduler.service`, `jarvis-voice.service`,
-`jarvis-health.timer`. Mantidos `jarvis-backup.timer` e `jarvis-logrotate.timer` (preservam os dados).
-Dados do OpenJarvis intactos em `~/.openjarvis`.
-
-**Rollback:** `bash /opt/laytech-ai/AssistentePessoal-integration-backup-20261014T001749/rollback.sh`
-
-## 10. Limitações conhecidas
-
-- **OpenClaw**: `/v1/*` exige `gateway.trustedProxies` no gateway (403). Só `/healthz` responde.
-- **Odysseus** (`127.0.0.1:7000`): app web com login, sem endpoint OpenAI aberto.
-- **OpenHands**: a 1ª conversa monta a imagem de runtime (`ghcr.io/all-hands-ai/runtime:...`) **dentro
-  do processo do servidor**, que fica sem responder (inclusive `/health`) até terminar — pode levar
-  dezenas de minutos. Depois fica rápido. O OpenHands já usa o **headroom** como condenser
-  (`http://headroom-internal:8787/v1`). Se travar, reinicie o container `openhands` e tente de novo.
-- **Headroom**: exige token (`HEADROOM_PROXY_TOKEN`) para bind em `0.0.0.0`; a porta é publicada só em
-  `127.0.0.1`. O `docker-compose.yaml` estava inválido e foi corrigido (backup ao lado).
-- **CLI agents**: `claude`/`codex` falham por configuração de modelo do próprio CLI.
-
-## 11. Verificação (2026-10-14)
-
-| # | Item | Resultado |
-| --- | --- | --- |
-| 1 | Testes do painel / política do host | ✅ 7/7 · 6/6 |
-| 2 | `GET /api/health` (loopback e tailnet) | ✅ |
-| 3 | Provedores ollama/omniroute/hermes/headroom | ✅ |
-| 4 | Chat pelos agentes | ✅ |
-| 5 | Memória + recall semântico | ✅ |
-| 6 | MCP `jarvis` (OpenCode/Codex/Claude) | ✅ conectado |
-| 7 | `context7_docs` / `crawl_page` / `openhands_task` | ✅ |
-| 8 | Ações no host (aprovação + bloqueio de destrutivos) | ✅ |
-| 9 | Acesso Tailscale (painel + API) | ✅ |
-| 10 | Chaves cifradas (`enc:`) e `master.key` 600 | ✅ |
-| 11 | Voz clonada (`/api/tts`) | ✅ |
+- OpenClaw sem endpoint de chat; Odysseus sem endpoint OpenAI aberto.
+- OpenHands pode ficar indisponível durante a primeira montagem do runtime.
+- OmniRoute depende de provedores conectados/cota; Headroom depende do token do proxy.
+- E-mail/Telegram exigem correção de credenciais; não há teste real de envio.
+- Não há monitoramento contínuo de integrações; os testes acima são pontuais.

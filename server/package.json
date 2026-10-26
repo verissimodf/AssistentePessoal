@@ -1,6 +1,6 @@
 {
   "name": "jarvis-local-server",
-  "version": "1.1.0",
+  "version": "1.7.9",
   "private": true,
   "type": "module",
   "description": "Serviço local do Jarvis: API, memória, agentes, bots, voz e ações no host.",
@@ -15,10 +15,9 @@
   "dependencies": {
     "dotenv": "^16.4.5",
     "imapflow": "^1.0.170",
-    "nodemailer": "^10.1.0"
+    "nodemailer": "10.1.4"
   },
   "devDependencies": {
     "@types/node": "^22.13.0"
   }
 }
-

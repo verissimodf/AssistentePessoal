@@ -7,3 +7,7 @@
 # Sem esta política, o checkout no Windows converte Markdown para CRLF e a verificação
 # de integridade falha (observado no CI do PR #76).
 skills/vendor/** text eol=lf
+
+# Scripts bash devem permanecer LF (bash interpreta CRLF como literal e falha; e os
+# guarda-corpos que fixam shebang/erros de conversão comparam bytes LF canônicos).
+*.sh text eol=lf

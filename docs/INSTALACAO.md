@@ -1,4 +1,4 @@
-# Guia de Instalação e Configuração — J.A.R.V.I.S. (v1.7.0)
+# Guia de Instalação e Configuração — J.A.R.V.I.S. (v1.7.8)
 
 Este guia cobre o passo a passo completo para instalação, configuração de permissões, execução em segundo plano e inicialização automática como serviço persistente tanto em **Windows 10/11** quanto em **Servidores Linux (Ubuntu, Debian, CentOS, RHEL)**.
 
@@ -46,8 +46,8 @@ O instalador gera o arquivo `.env` a partir do template `.env.example`. Caso des
    ```env
    JARVIS_MASTER_KEY=sua_chave_mestra_secreta_aqui
    JARVIS_HOST=127.0.0.1
-   PORT=7777
-   VITE_PORT=8080
+   JARVIS_PORT=7777
+   PANEL_PORT=8090
    ```
 
 ### 3.3. Instalação Rápida e Execução em Background
@@ -148,13 +148,18 @@ curl http://127.0.0.1:7777/api/health
 ```json
 {
   "ok": true,
-  "version": "1.7.0",
-  "name": "Jarvis",
-  "mode": "production"
+  "version": "1.7.8",
+  "commit": "<sha>",
+  "buildTime": "<RFC3339>",
+  "mode": "production",
+  "schemaVersion": 12,
+  "schemaVersionBuild": 12,
+  "commitStatus": "Registrado",
+  "setupRequired": false
 }
 ```
 
-Acesse o painel no navegador em: **`http://localhost:8080`**.
+Acesse o painel no navegador em **`http://localhost:8080`** (modo dev) ou **`http://localhost:8090`** (build de produção local). Em produção o painel é servido por `https://jarvis.laytech.com.br`; ver `README.md` e `docs/RUNBOOK-RELEASE-2026-10-18.md`.
 
 ---
 
