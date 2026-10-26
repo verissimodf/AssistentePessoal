@@ -1,5 +1,36 @@
 # Runbook de release — P0.3 (2026-10-18)
 
+## Release atual — 1.7.8 (2026-10-25)
+
+| Item | Valor |
+| --- | --- |
+| Versão | `1.7.8` (`package.json`) |
+| Esquema | `12` (`PRAGMA user_version`, migração `document_chunks`) |
+| Compose ativo | `docker-compose.yml` (serviço `assistente`) |
+| Build args | `BUILD_VERSION`, `BUILD_COMMIT`, `BUILD_COMMIT_STATUS`, `SCHEMA_VERSION`, `BUILD_TIME`, `RELEASE_BUILD=1` |
+| Health | `/api/health` expõe `version`, `commit`, `commitStatus`, `schemaVersion`, `schemaVersionBuild`, `buildTime` |
+
+```bash
+cd /opt/laytech-ai/AssistentePessoal
+COMMIT_SHA=$(git rev-parse HEAD)
+SHORT_SHA=$(git rev-parse --short HEAD)
+VERSION=$(node -p 'require("./package.json").version')
+STATUS="Registrado"   # use "Não registrado (local)" se a árvore não estiver na main remota
+export BUILD_VERSION="$VERSION" BUILD_COMMIT="$COMMIT_SHA" \
+       BUILD_COMMIT_STATUS="$STATUS" SCHEMA_VERSION=12 \
+       BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) RELEASE_BUILD=1
+export IMAGE_TAG="$SHORT_SHA"
+docker compose -f docker-compose.yml build
+bash scripts/verificar-imagem-release.sh "assistente-pessoal:$IMAGE_TAG" "$COMMIT_SHA" "$VERSION"
+docker compose -f docker-compose.yml up -d
+curl -s http://192.168.2.40:7777/api/health
+```
+
+O health esperado contém `"version":"1.7.8"`, `"commit":"<SHA>"`, `"commitStatus":"Registrado"`,
+`"schemaVersion":12`. As seções históricas abaixo (P0.3, 2026-10-18) permanecem como registro.
+
+---
+
 Runbook do release candidato **P0.3** sobre o J.A.R.V.I.S. em produção. Neste documento
 consta exatamente o que foi validado, o que falta validar e o que **exige autorização do dono**.
 **Nenhum destes passos foi executado em produção** — apenas em cópias isoladas e num contentor
@@ -84,9 +115,9 @@ GIT_SHA=$(git rev-parse HEAD)           # SHA explícito — nunca inferido do b
 APP_VERSION=$(node -p 'require("./package.json").version')
 export GIT_SHA APP_VERSION BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) RELEASE_BUILD=1
 export IMAGE_TAG="$APP_VERSION"      # tag da release; a tag anterior fica como rollback
-docker compose -f docker-compose.jarvis.yml build
+docker compose -f docker-compose.yml build
 bash scripts/verificar-imagem-release.sh "assistente-pessoal:$IMAGE_TAG" "$GIT_SHA" "$APP_VERSION"  # tem de APROVAR
-docker compose -f docker-compose.jarvis.yml up -d
+docker compose -f docker-compose.yml up -d
 ```
 
 O `compose` injeta `GIT_SHA`/`APP_VERSION`/`BUILD_TIME`/`RELEASE_BUILD` como build args; o processo
@@ -97,8 +128,8 @@ SHA completo, versão e instante RFC3339 o build **falha** (nunca uma imagem com
 ## 6. Verificações pós-arranque
 
 ```bash
-docker compose -f docker-compose.jarvis.yml ps          # healthy
-docker compose -f docker-compose.jarvis.yml logs | grep -E "schema|backup verificado"
+docker compose -f docker-compose.yml ps          # healthy
+docker compose -f docker-compose.yml logs | grep -E "schema|backup verificado"
 #   esperado: [db] schema v10 → v11; backup verificado em /app/data/backups/jarvis-<ISO>-v10.db
 docker inspect assistente-pessoal --format '{{json .Config.Labels}}'   # revision/version reais
 docker exec assistente-pessoal cat /app/server/build-info.json         # commit = GIT_SHA acima
@@ -177,14 +208,14 @@ Abortar e não prosseguir se qualquer um ocorrer:
 ```bash
 cd /opt/laytech-ai/AssistentePessoal
 # 1) parar o serviço candidato
-docker compose -f docker-compose.jarvis.yml down
+docker compose -f docker-compose.yml down
 # 2) restaurar banco e master.key do conjunto pré-migração (parar primeiro: WAL!)
 cp data/backups/manual-<TS>-prerelease-v10.db data/jarvis.db
 rm -f data/jarvis.db-wal data/jarvis.db-shm      # só depois de o serviço estar parado
 # 3) voltar à imagem anterior (tag já presente nesta máquina)
 git checkout <commit anterior>                   # se o código também tiver de voltar
-docker compose -f docker-compose.jarvis.yml build
-docker compose -f docker-compose.jarvis.yml up -d
+docker compose -f docker-compose.yml build
+docker compose -f docker-compose.yml up -d
 # 4) verificar
 curl -s http://192.168.2.40:7777/api/health     # ok:true, setupRequired:false
 node --no-warnings -e 'import("node:sqlite").then(({DatabaseSync})=>{const d=new DatabaseSync("data/jarvis.db",{readOnly:true});console.log(d.prepare("PRAGMA user_version").get().user_version, d.prepare("PRAGMA integrity_check").get().integrity_check)})'
