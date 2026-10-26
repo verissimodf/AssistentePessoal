@@ -1,14 +1,37 @@
 # 📋 Relatório de Auditoria Técnica e Homologação (Production Readiness)
 **Projeto:** J.A.R.V.I.S. (Assistente Pessoal Local)
-**Versão Atual:** 1.7.8
-**Data da Homologação Atual:** 26 de Outubro de 2026
-**Status do Release:** ✅ **HOMOLOGADO EM PRODUÇÃO (616 backend + 109 frontend; CI remoto 3/3)**
-**Commit SHA Base:** `4ad3ba20a5a6dbccdabe5a8390e45484e1584ce9` (branch `main`)
+**Versão Atual:** 1.7.9
+**Data do último release/deploy registrado:** 26 de Outubro de 2026
+**Status do Release:** ✅ **RELEASE 1.7.9 PUBLICADA; CI 3/3 PASS. O relatório pós-deploy registra container healthy, commit a978f596 e schema 12.**
+**Commit da release atual:** `a978f5960ec2a60a45b7fee8f38d0f4f8d50b17e` (branch `main`)
 **Repositório Oficial:** `https://github.com/verissimodf/AssistentePessoal`
 
 ---
 
-## Homologação 1.7.8 — 26/10/2026
+## Estado da release 1.7.9 — 26/10/2026
+
+> Base: PR [#77](https://github.com/verissimodf/AssistentePessoal/pull/77), checks de CI e relatório executivo pós-deploy de 2026-10-26. Os dados do container e do host nesta seção são os resultados registrados no relatório de implantação; não representam monitoramento contínuo.
+
+| Item | Valor |
+| --- | --- |
+| Release | **1.7.9** |
+| PR | **[#77](https://github.com/verissimodf/AssistentePessoal/pull/77)** — merged |
+| Merge commit | `a978f5960ec2a60a45b7fee8f38d0f4f8d50b17e` |
+| Tag | **[`v1.7.9`](https://github.com/verissimodf/AssistentePessoal/releases/tag/v1.7.9)** |
+| CI do PR | Run `40260338645` — Ubuntu, Windows e container: **3/3 PASS** |
+| CI pós-merge | Run `40260876853` — Ubuntu, Windows e container: **3/3 PASS** |
+| Testes | Backend **622/622** · TLS/HSTS **4/4** · frontend **109/109** · testes de e-mail mock **87/87** |
+| Segurança de dependências | `npm audit` raiz/servidor: **0/0** reportado; árvore do servidor fixa `nodemailer@10.1.4` |
+| Smoke de segurança externo | **12 PASS / 0 FAIL / 0 WARN**, conforme relatório |
+| Imagem | `assistente-pessoal:a978f59` |
+| Digest da imagem | `sha256:baf162e5f576720d07b14c65e4963aa11ccade8eb13f997e5500ffcc88e9c246` |
+| Estado pós-deploy registrado | `healthy`, `restarts=0`, versão **1.7.9**, commit `a978f596`, schema **12**, `setupRequired=false` |
+| OmniRoute | Chat via configuração existente: HTTP **200**, resposta verificável `PONG`; nenhuma configuração alterada |
+| Backup local | Checksums **6/6 OK**, `integrity_check=ok`, schema **12**; ensaio de restauração isolada reportado como PASS |
+| Backup externo | **BLOCKED-CONFIGURATION** — destino OAuth `rclone gdrive:` sem token válido; não declarar off-host como concluído |
+| Integrações protegidas | Hermes, OpenClaw, Telegram, Gmail/IMAP e e-mail real não foram alterados nem testados neste fluxo |
+
+## Histórico — homologação 1.7.8 — 26/10/2026
 
 | Item | Valor |
 | --- | --- |
