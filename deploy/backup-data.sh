@@ -30,8 +30,16 @@ sqlite3 "file:$SRC/jarvis.db?mode=ro" "VACUUM INTO '$OUT/jarvis.db'"
 cp -p "$SRC/master.key" "$OUT/master.key"
 if [ -d "$SRC/voices" ]; then cp -a "$SRC/voices" "$OUT/voices"; fi
 
-# 3) manifesto + verificação de integridade da cópia
-( cd "$OUT" && sha256sum jarvis.db master.key > SHA256SUMS.txt )
+# 3) manifesto + verificação de integridade da cópia.
+#    O manifesto cobre TODOS os artefatos incluídos no backup (banco, chave e vozes)
+#    e é gerado por último, sem referência a si mesmo.
+(
+  cd "$OUT" &&
+  sha256sum jarvis.db master.key > SHA256SUMS.txt &&
+  if [ -d voices ]; then
+    find voices -type f -print0 | sort -z | xargs -0 sha256sum >> SHA256SUMS.txt
+  fi
+)
 if ! sqlite3 "file:$OUT/jarvis.db?mode=ro" "PRAGMA integrity_check;" | grep -qx ok; then
   echo "backup-data: cópia com integridade inválida em $OUT" >&2
   exit 1
@@ -39,5 +47,24 @@ fi
 
 # 4) retenção simples: mantém os $KEEP mais recentes
 ls -1dt "$DEST"/*/ 2>/dev/null | tail -n +$((KEEP + 1)) | xargs -r rm -rf
+
+# 5) cópia externa opcional (off-host): exige JARVIS_BACKUP_REMOTE (ex. "gdrive:jarvis").
+#    Falha suave: um problema de rede/credencial não invalida o backup local já verificado.
+#    Atalho de cifragem em trânsito/repouso: usar um remote `crypt` do rclone no destino.
+if [ -n "${JARVIS_BACKUP_REMOTE:-}" ]; then
+  if ! command -v rclone >/dev/null 2>&1; then
+    echo "backup-data: aviso — JARVIS_BACKUP_REMOTE configurado mas rclone ausente; cópia externa ignorada" >&2
+  else
+    if rclone copy "$OUT" "$JARVIS_BACKUP_REMOTE/$STAMP" --transfers 2 --quiet; then
+      if rclone lsl "$JARVIS_BACKUP_REMOTE/$STAMP" --quiet | grep -q jarvis.db; then
+        echo "backup-data: cópia externa ok em $JARVIS_BACKUP_REMOTE/$STAMP"
+      else
+        echo "backup-data: aviso — cópia externa não confirmada em $JARVIS_BACKUP_REMOTE/$STAMP" >&2
+      fi
+    else
+      echo "backup-data: aviso — falha na cópia externa ($JARVIS_BACKUP_REMOTE); backup local permanece válido" >&2
+    fi
+  fi
+fi
 
 echo "backup-data: ok em $OUT (retenção $KEEP)"
