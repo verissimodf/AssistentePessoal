@@ -159,6 +159,10 @@ Summary: PASS=12 FAIL=0 WARN=0 (exit 0)
 
 Os demais headers de segurança continuam vindo da aplicação e foram confirmados no edge. A mudança ficou restrita ao vhost do J.A.R.V.I.S.; os outros vhosts não foram alterados para não ampliar exposição sem pedido.
 
+O rascunho HTTP interno versionado (`deploy/nginx-jarvis.laytech.com.br.conf`) **não** contém
+HSTS: o guardrail `tests/tls-config.test.mjs` exige HSTS apenas no bloco HTTPS do template. Em
+produção o header é emitido no edge Cloudflare; o template direto com TLS já o traz no bloco 443.
+
 ### 2.7 Ocorrências e transparência
 
 1. **Deploy interino acidental:** o corpo inicial do PR foi passado ao shell com backticks, que foram interpretados como substituição de comandos e dispararam um `docker compose up` antes do merge. A produção permaneceu `healthy`, com 11 skills e banco íntegro; o build final foi refeito a partir do merge `4ad3ba2` e reimplantado com release/esquema/commit corretos. Nenhum dado foi perdido. O PR foi recriado usando `--body-file`.

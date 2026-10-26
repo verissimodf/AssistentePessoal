@@ -4,6 +4,89 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 
 ---
 
+## [1.7.9] — 2026-10-26
+
+### Segurança
+- **HSTS:** removido o `add_header Strict-Transport-Security` do hop HTTP interno
+  (`deploy/nginx-jarvis.laytech.com.br.conf`), regressão introduzida em
+  `f1965d462c3c30cb9b8d9dbea42f607a8dce2f0d` que quebrava o guardrail
+  `tests/tls-config.test.mjs` (“HSTS existe somente no bloco HTTPS, com always e sem preload”)
+  e o CI. A diretiva continua no bloco 443 do template TLS (`always`, sem `preload`, conforme
+  o guardrail) e na borda Cloudflare em produção.
+- `nodemailer` atualizado de `10.1.1` para **`10.1.4`** (pin exato) no `server/package.json` e
+  lockfile, corrigindo GHSA-8c8m-p3m8-cjg8, GHSA-m943-m63m-w62w e GHSA-85x2-q946-cp5h
+  (addressparser: comentários aninhados, `;` em grupo e `>` em quoted local part).
+  `npm audit` do backend e da raiz: **0 vulnerabilidades**.
+
+### Corrigido
+- `deploy/backup-data.sh` versionado com modo **`100755`** (estava `100644`; o timer systemd
+  falhava com `203/EXEC` desde 2026-10-25).
+- `SHA256SUMS.txt` do backup passou a cobrir **todos** os artefatos incluídos (banco, chave
+  mestra e vozes), sem autorreferência ao próprio manifesto.
+- Cópia externa de backup **opcional e fail-soft** via `JARVIS_BACKUP_REMOTE` (rclone);
+  sem destino configurado o comportamento é inalterado. Reconexão do OAuth do remote
+  pendente (`rclone config reconnect gdrive:`) — armazenamento externo permanece
+  **BLOCKED-CONFIGURATION**.
+- `server/package.json`/`package-lock.json` alinhados na versão da release (o lock ainda dizia
+  1.0.0/1.1.0).
+
+### Adicionado
+- `tests/backup-guardrail.test.mjs`: guarda o modo Git executável do script de backup, o uso de
+  `VACUUM INTO`, a validação de integridade, o manifesto completo e a cópia externa opt-in.
+- Validação conversacional real via **OmniRoute** (`auto/best-coding` → `Beam-1.0-501B-A23B`):
+  `POST /chat/completions` **200**, resposta `"PONG"` — provedor agora **OPERATIONAL**
+  (integração atualizada em `INTEGRACOES-LAYTECH.md`).
+
+### Documentação
+- README, arquitetura, configuração, backup (incl. ensaio de restauração isolado validado),
+  integrações, SLOs/incidentes, índice documental e relatórios de auditoria alinhados ao estado
+  real; documentos históricos preservados.
+
+---
+
+## [1.7.8] — 2026-10-26
+
+### Adicionado
+- **Sete skills vendorizadas** de `addyosmani/agent-skills` no commit fixado
+  `aeac41d4d005999432bb7312f7ff06383a91d59d` (MIT): `security-and-hardening`,
+  `test-driven-development`, `code-review-and-quality`, `spec-driven-development`,
+  `debugging-and-error-recovery`, `incremental-implementation` e `context-engineering`.
+  Catálogo do hub: **11 skills** (4 embutidas + 7 vendorizadas).
+- `manifest.json`, `PROVENANCE.md` e `SHA256SUMS` (10 arquivos verificados) para as skills
+  vendorizadas; `sha256sum -c` validado em Linux e no CI Windows (LF preservado por
+  `.gitattributes`).
+- Sincronização offline e idempotente do hub no boot (`setup-global-skills.mjs --sync-bundled`),
+  com preservação de skills de terceiros, detecção de conflito de id/diretório e falha fechada.
+- Referências relativas de skills listadas/carregadas pelo mesmo loader (`load_skill`/MCP), com
+  caminho completo retornado ao agente.
+- Metadados de build `BUILD_VERSION`, `BUILD_COMMIT`, `BUILD_COMMIT_STATUS` e `SCHEMA_VERSION`
+  (ARG/ENV no Dockerfile); `/api/health` expõe `schemaVersion`, `schemaVersionBuild` e
+  `commitStatus`; painel mostra esquema e status do commit.
+- HSTS (`max-age=31536000; includeSubDomains; preload`) no vhost `jarvis.laytech.com.br`, validado
+  localmente e no edge Cloudflare.
+
+### Segurança
+- Confinamento de caminho por `realpath` no hub de skills, bloqueio de symlink para fora,
+  validação de nomes de referência e limite de 2 MiB por arquivo.
+- `GET /api/skills/:id` mapeia `skill_too_large` para HTTP 413; escopos e rotas de skills
+  permanecem `skills:read`, sem rota pública nova.
+- Nenhum script/hook do upstream foi importado ou executado; conteúdo Markdown é tratado como
+  dado não confiável.
+
+### Corrigido
+- Compatibilidade Windows/CRLF nos checksums das skills (`.gitattributes`).
+- Deploy interino com metadados `unknown` foi detectado e corrigido pelo build final `4ad3ba2`
+  com release/esquema/commit exatos.
+- Compose ativo consolidado em `docker-compose.yml`; `docker-compose.jarvis.yml` removido.
+
+### Operacional
+- PR **#76**, merge `4ad3ba2`, tag `v1.7.8`, imagem `assistente-pessoal:4ad3ba2` + `:latest`
+  (digest `sha256:de0017e8…`), container `healthy`/`restarts=0`.
+- CI remoto 3/3 (Ubuntu, Windows, container); backend 616/616, frontend 109/109; teste HTTP
+  externo 12 PASS / 0 FAIL / 0 WARN.
+
+---
+
 
 ## [1.2.2] — Memória compartilhada local (Gigabrain)
 ### Adicionado

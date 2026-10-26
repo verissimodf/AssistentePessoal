@@ -21,6 +21,8 @@ período foi aplicado. A definição e a execução dependem de autorização do
 | --- | --- | --- |
 | Banco principal | enquanto o serviço existir | nunca expurgar rotineiramente |
 | Backups automáticos | **últimos 20 ficheiros OU 90 dias** (o critério que for atingido primeiro), com **mínimo de 3 cópias** (1 local, 1 offline) | os dois backups pré-migração atuais só saem com autorização explícita |
+
+> **Estado em 2026-10-26:** a implementação atual (`deploy/backup-data.sh`) mantém **7** backups locais e não tem cópia offline. A meta 20/90 + off-host continua sendo **proposta**, não aplicada.
 | master.key | **indefinida** | nunca expurgar; guarda offline cifrada, fora da máquina, com cópia registada por hash |
 | Auditoria | **365 dias** em detalhe; depois agregação (contagens por ação/mês) e remoção do detalhe | preserva rastreabilidade sem manter detalhe vivo |
 | Evidências de execução | **180 dias** | inclui `provider_message_id`/`conversation_id` (identificadores continuam em auditoria agregada) |
