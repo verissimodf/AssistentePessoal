@@ -1,10 +1,48 @@
 # 📋 Relatório de Auditoria Técnica e Homologação (Production Readiness)
-**Projeto:** J.A.R.V.I.S. (Assistente Pessoal Local)  
-**Versão Alvo:** 1.1.0 (Homologado v1.1.0 — RAG Semântico Híbrido & Ingestão Multiformato)  
-**Data da Auditoria e Homologação:** 21 de Outubro de 2026  
-**Status do Release:** ✅ **HOMOLOGADO PARA PRODUÇÃO (100% Testes Verdes — 483 Testes)**  
-**Commit SHA Base:** `3cff990` (branch `main`)  
-**Repositório Oficial:** `https://github.com/verissimodf/AssistentePessoal`  
+**Projeto:** J.A.R.V.I.S. (Assistente Pessoal Local)
+**Versão Atual:** 1.7.8
+**Data da Homologação Atual:** 26 de Outubro de 2026
+**Status do Release:** ✅ **HOMOLOGADO EM PRODUÇÃO (616 backend + 109 frontend; CI remoto 3/3)**
+**Commit SHA Base:** `4ad3ba20a5a6dbccdabe5a8390e45484e1584ce9` (branch `main`)
+**Repositório Oficial:** `https://github.com/verissimodf/AssistentePessoal`
+
+---
+
+## Homologação 1.7.8 — 26/10/2026
+
+| Item | Valor |
+| --- | --- |
+| Release | **1.7.8** |
+| Esquema SQLite | **12** (`PRAGMA user_version`, migração `document_chunks`) |
+| Commit | `4ad3ba2` — **Registrado** (merge na `main` remota) |
+| PR | **#76** — `MERGED` em 2026-10-26T00:13:53Z |
+| Merge commit | `4ad3ba20a5a6dbccdabe5a8390e45484e1584ce9` |
+| Tag | **`v1.7.8`** (publicada) |
+| Imagem | `assistente-pessoal:4ad3ba2` + `:latest` |
+| Digest | `sha256:de0017e874fec404dc3482527af20d0af6422216b9d1d79372b5bdeb0eda0657` |
+| CI remoto | Ubuntu 1m12s · Windows 4m41s · Container 51s — **3/3 PASS** |
+| Testes locais | Backend **616/616** · Frontend **109/109** · build Vite/Nitro OK |
+| Skills no hub | **11** (4 embutidas + 7 vendorizadas de `addyosmani/agent-skills@aeac41d4`) |
+| Segurança externa | `test_jarvis_security.sh`: **12 PASS / 0 FAIL / 0 WARN** |
+| HSTS | `max-age=31536000; includeSubDomains; preload` (local e externo) |
+| Backup pré-deploy | `/opt/laytech-ai/backups/pre-1.7.8-20261026T001411Z` (db + master.key, verificado) |
+
+### Rastro Git/deploy
+
+1. Branch `feat/agent-skills-hardening-v1.7.8` → PR **#76**.
+2. CI remoto 3/3 verde (run `40247922128`).
+3. Merge commit **`4ad3ba2`** na `main`; `git pull --ff-only` sincronizado.
+4. Tag anotada **`v1.7.8`** publicada.
+5. Build com `BUILD_VERSION=1.7.8`, `BUILD_COMMIT=4ad3ba2…`, `BUILD_COMMIT_STATUS=Registrado`, `SCHEMA_VERSION=12`, `BUILD_TIME=2026-10-26T00:14:17Z`, `RELEASE_BUILD=1`.
+6. Deploy `IMAGE_TAG=4ad3ba2 docker compose -f docker-compose.yml up -d --no-build`; `healthy`, `restarts=0`.
+7. Health: versão 1.7.8, commit `4ad3ba2…`, status `Registrado`, esquema 12; hub com 11 skills.
+
+### Ocorrências corrigidas durante a homologação
+
+- **Windows/CRLF:** o checkout do GitHub Actions converteu Markdown para CRLF e quebrou os checksums byte-exatos. Corrigido com `.gitattributes` (`skills/vendor/** text eol=lf`), preservando a regra pré-existente de `*.patch -diff`.
+- **Deploy interino acidental:** o corpo do PR continha backticks interpretados pelo shell, disparando um `docker compose up` antes do merge com metadados `unknown`. Detectado imediatamente; a produção permaneceu `healthy` e o build final `4ad3ba2` foi refeito e reimplantado com release/esquema/commit exatos. Nenhum dado foi perdido (banco íntegro, backup verificado).
+
+> As seções históricas abaixo descrevem a homologação 1.1.0 e são mantidas como registro.
 
 ---
 

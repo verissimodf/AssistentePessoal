@@ -1,3 +1,5 @@
+> **Nota:** relatório histórico da integração inicial (5 skills, sem deploy). O estado final homologado está em `reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md`.
+
 # JARVIS-AGENT-SKILLS-INTEGRATION-01 — Relatório de execução
 
 **Data:** 2026-10-25
