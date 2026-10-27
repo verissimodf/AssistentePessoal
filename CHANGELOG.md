@@ -21,9 +21,11 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   existentes; backup verificado continua sendo requisito de migração.
 - Backend **632/632**, frontend **109/109**, TypeScript limpo, build de produção concluído e
   configuração Compose válida; `npm audit` produção sem vulnerabilidades.
-- Implantada em 2026-10-27 como `assistente-pessoal:1.8.1`, commit `138e36e`; `/api/health`
-  confirmou versão/commit/schema 14, painel HTTP 200, SQLite íntegro, zero violações FK e
-  container `healthy` sem reinícios. Inbox histórica ainda aguarda reivindicação explícita.
+- Publicada em `origin/main` e reconstruída em 2026-10-27 como `assistente-pessoal:1.8.1`, commit
+  `4556df8` (manifest `sha256:45ba84fe…`). `/api/health` confirmou versão/commit/schema 14,
+  painel HTTP 200, SQLite íntegro, zero violações FK e container `healthy` sem reinícios.
+- Inbox AgentMail reivindicada explicitamente (`ownership.origin=claimed`); zero eventos sem owner.
+  Não houve leitura de conteúdo nem envio real nesta validação.
 
 ## [1.8.0] — 2026-10-27
 

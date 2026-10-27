@@ -12,9 +12,9 @@ memória, agentes e integrações com serviços da máquina. O desenho padrão �
 dados, banco, documentos, memórias e segredos ficam na máquina do operador; chamadas externas só
 acontecem quando o provedor/integração correspondente está configurado e habilitado.
 
-> **Estado atual:** release **1.8.1** implantada, esquema SQLite **14**, container `healthy` e
-> smoke test de API/painel aprovado em 2026-10-27. A inbox AgentMail existente requer reivindicação
-> explícita no painel antes de habilitar leitura e envio. Evidências em
+> **Estado atual:** release **1.8.1** publicada e implantada, esquema SQLite **14**, container
+> `healthy` e smoke test de API/painel aprovado em 2026-10-27. A inbox AgentMail desta instalação
+> já foi reivindicada explicitamente; novas inboxes legadas também exigem claim no painel. Evidências em
 > [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md).
 > Ver [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md) e
 > [`reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md`](reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md).
@@ -310,8 +310,8 @@ depende de `.gitattributes` para preservar LF nas skills.
 {
   "ok": true,
   "version": "1.8.1",
-  "commit": "138e36e56dcb7f38d867e810946527a8cd340d4b",
-  "buildTime": "2026-10-27T20:18:44Z",
+  "commit": "4556df8db445d5c54f1f49998015eba83e1f5486",
+  "buildTime": "2026-10-27T20:41:49Z",
   "mode": "production",
   "schemaVersion": 14,
   "schemaVersionBuild": 14,
@@ -323,9 +323,7 @@ depende de `.gitattributes` para preservar LF nas skills.
 - `schemaVersion` é o `PRAGMA user_version` efetivo do banco; `schemaVersionBuild` é o valor
   declarado no build.
 - `commitStatus` é metadado **injetado no build**, não uma checagem de Git em runtime. Use
-  `Registrado` após merge/tag remota e `Não registrado (local)` em build local. A imagem atual
-  reporta `Registrado`, embora seus commits ainda não estejam no remoto; esta divergência ficou
-  registrada em `HOMOLOGACAO_STATUS.md` e deve ser corrigida no próximo build/publicação.
+  `Registrado` após merge/tag remota e `Não registrado (local)` em build local.
 - Diagnóstico operacional autenticado: `GET /api/diagnostics` (sessão de administrador).
 - Telemetria do roteador: `GET /api/router/telemetry` (escopo `skills:read`).
 - Runbook de release e verificação de imagem:

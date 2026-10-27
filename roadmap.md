@@ -4,17 +4,18 @@ Atualizado após a release **1.8.1** (27/10/2026). Este roadmap separa pendênci
 ideias de produto; as propostas abaixo **não estão aprovadas nem comprometidas**. O foco é primeiro
 fechar e medir os fluxos existentes, mantendo a diretriz local-first e as barreiras de autorização.
 
-## Pendências de conclusão da 1.8.1
+## Fechamento operacional da 1.8.1
 
-- [ ] Um administrador reivindicar a inbox AgentMail configurada em **Configurações → Integrações**.
-  A migração v14 deliberadamente não atribui owner a registros antigos; após o claim, validar leitura
-  de metadados/eventos. Não enviar e-mail real durante a validação sem autorização do operador.
+- [x] Inbox AgentMail reivindicada explicitamente; owner confirmado como `claimed` e zero eventos sem
+  owner. Nenhum corpo de mensagem foi lido nesta validação.
+- [x] Commits `138e36e..4556df8` publicados em `origin/main`; imagem reconstruída com SHA publicado e
+  `commitStatus=Registrado`.
+
+## Pendências operacionais
+
 - [ ] Decidir se os clientes diretos do MCP hospedado AgentMail em `.mcp.json`/`opencode.json` devem
   ser removidos/desabilitados. Eles são um caminho independente que não herda ownership, aprovação
   D9 ou auditoria do Jarvis; a integração server-side já oferece o caminho protegido.
-- [ ] Publicar os commits locais da release no remoto por meio do fluxo normal do repositório. Até lá,
-  o deployment local é reproduzível pelo SHA do build documentado em `HOMOLOGACAO_STATUS.md`, mas não
-  está disponível em `origin/main`.
 - [ ] Reduzir dívida do lint em lotes pequenos; o diagnóstico da 1.8.1 encontrou 363 ocorrências
   Prettier nos arquivos analisados, além de poucas regras antigas. Evitar reformatar todo o código de
   uma vez junto de mudanças funcionais.

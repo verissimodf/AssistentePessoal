@@ -36,8 +36,8 @@ medição de carregamento antes de alterar a divisão de bundles.
 
 - A integração AgentMail foi testada por mocks na suíte. O webhook assinado e envio D9 foram
   validados na release 1.8.0, mas **não foram repetidos** após o isolamento/claim da v1.8.1.
-- No deploy atual há um evento histórico de inbox ainda sem owner. Até o admin reivindicar a inbox,
-  o sistema oculta os eventos e bloqueia leitura/envio. Não foi feita atribuição automática.
+- No deploy atual há uma inbox explicitamente reivindicada (`ownership.origin=claimed`) e zero
+  eventos sem owner. Não consultamos o conteúdo do evento e não repetimos o E2E contra o provider.
 - OmniRoute, Headroom, Ollama, OpenClaw, Telegram, Gmail, serviços de voz e demais provedores não
   foram retestados nesta entrega; seus estados em `INTEGRACOES-LAYTECH.md` são fotografias com a data
   declarada naquele documento.

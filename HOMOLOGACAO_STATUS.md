@@ -2,8 +2,8 @@
 **Projeto:** J.A.R.V.I.S. (Assistente Pessoal Local)
 **Versão Atual:** 1.8.1
 **Data do último release/deploy registrado:** 27 de Outubro de 2026
-**Status do Release:** ✅ **1.8.1 implantada localmente; container healthy, schema 14, smoke de API/painel aprovado. Commit ainda não publicado no remoto.**
-**Commit da imagem atual:** `138e36e56dcb7f38d867e810946527a8cd340d4b` (branch `main`)
+**Status do Release:** ✅ **1.8.1 publicada em `origin/main` e implantada; container healthy, schema 14, smoke de API/painel aprovado.**
+**Commit da imagem atual:** `4556df8db445d5c54f1f49998015eba83e1f5486` (branch `main`)
 **Repositório Oficial:** `https://github.com/verissimodf/AssistentePessoal`
 
 ---
@@ -13,24 +13,21 @@
 | Item | Evidência local pós-deploy |
 | --- | --- |
 | Versão / esquema | `1.8.1` / SQLite `14` |
-| Commit construído | `138e36e56dcb7f38d867e810946527a8cd340d4b` (`main`, commit local; ainda não publicado no remoto) |
-| Imagem | `assistente-pessoal:1.8.1`, manifest `sha256:2e54a3644fc37f2408951c7a7611fb79a564e058fa5c72a93cb56e1618b4a117` |
+| Commit construído | `4556df8db445d5c54f1f49998015eba83e1f5486` (`main`, publicado em `origin/main`) |
+| Imagem | `assistente-pessoal:1.8.1`, manifest `sha256:45ba84fe689815984168bd9fb8cc36041de489822c02ddede9abfd956bcec15b` |
+| Build | `2026-10-27T20:41:49Z`, `commitStatus=Registrado`, schema de build 14 |
 | Container | `running`, `healthy`, `restarts=0`; volume de dados e rede Docker mantidos |
 | Smoke | `/api/health` reporta versão/commit/schema esperados; painel HTTP `200` |
 | Banco | `integrity_check=ok`, `foreign_key_check=0`; migração v13→v14 com backup verificado automático |
 | Backup pré-release | `/app/data/backups/pre-1.8.1-20261027T202000Z.db` + `master.key`, integridade verificada |
 | Testes locais | Backend **632/632**, frontend **109/109**, `tsc --noEmit` sem erros, build Vite/Nitro OK |
-| AgentMail | Inbox existente preservada, sem owner automático; 1 evento histórico não exposto até reivindicação explícita no painel |
+| AgentMail | 1 inbox com ownership `claimed`; zero eventos sem owner. Não foi lido conteúdo nem enviado e-mail nesta validação |
 | Lint | Ainda falha por divergência de formatação Prettier no repositório e regras antigas; 363 ocorrências Prettier nos arquivos examinados |
 
-**Divergência de metadados:** o endpoint reporta `commitStatus=Registrado`, valor injetado durante o
-build. A branch local contém commits ainda não enviados ao remoto; portanto, esse valor não comprova
-publicação. O próximo build deve usar `BUILD_COMMIT_STATUS="Não registrado (local)"` enquanto a
-árvore estiver local-only, ou publicar a release pelo fluxo normal antes de marcar `Registrado`.
-
-O comando inicial de `compose up` manteve o serviço antigo por uma variável `IMAGE_TAG` já definida
-no ambiente; o deploy foi concluído com `IMAGE_TAG=1.8.1` explícito e recriação forçada apenas do
-serviço `assistente`.
+Os três commits pendentes foram enviados em fast-forward para `origin/main` (`01f910d..4556df8`). A
+imagem foi reconstruída a partir do commit publicado; o primeiro `compose up` manteve o container
+antigo devido a um `IMAGE_TAG` definido no ambiente, então o deploy foi repetido com `IMAGE_TAG=1.8.1`
+explícito e recriação somente do serviço `assistente`.
 
 ---
 
