@@ -1,6 +1,6 @@
 # 🏛️ Arquitetura do Sistema e Fluxo de Dados
 
-Documento atualizado para a release **1.8.2** (esquema SQLite **15**). Descreve a topologia real,
+Documento atualizado para a release **1.9.0** (esquema SQLite **18**). Descreve a topologia real,
 os componentes e os limites de confiança. Para configuração, ver `docs/CONFIGURACAO.md`.
 
 ---
@@ -49,13 +49,17 @@ de voz e painel no mesmo container e encerra o conjunto se um componente morrer.
 | Ownership | `server/ownership.js` | isolamento por administrador e transferência explícita |
 | LLM/router | `server/llm.js` | providers, fallback, timeouts, telemetria, testes de provider |
 | Agentes/ferramentas | `server/tools.js`, `server/bots.js` | tool calling, autonomia, aprovações, auditoria |
+| Fila de scheduler | `server/jobs.js` | jobs SQLite idempotentes, payload cifrado, leases e recovery sem replay cego |
+| Retenção de memória | `server/memory-retention.js` | política opt-in por admin, quarentena, restore e purga limitada |
+| OAuth de e-mail | `server/oauth.js` | Gmail/Graph, Authorization Code + PKCE, refresh token cifrado e envio opcional |
+| STT local | `server/stt.js`, `Dockerfile.stt` | validação de upload e adaptador privado whisper.cpp CPU |
 | Host | `server/hostpolicy.js` | allowlist/negação de comandos e ações no host |
 | Skills | `server/skills.js`, `scripts/setup-global-skills.mjs` | catálogo, carregamento sob demanda, checksums, confinamento |
 | Integrações HTTP | `server/http-integration.js` | allowlist de integração, timeout, limite de prompt/resposta |
 | Comunicações | `server/comms.js`, `server/mail-service.js` | Telegram/WhatsApp/Signal, IMAP/SMTP, calendário |
 | AgentMail | `server/agentmail.js` | webhook Svix, leitura sob demanda, envio D9 e ownership explícito da inbox |
 | RAG | `server/documents.js` | ingestão, chunks, embeddings, busca híbrida |
-| Voz | `scripts/voice-adapter.mjs`, `server/voice.js` | TTS local/remoto e ponte de voz |
+| Voz | `scripts/voice-adapter.mjs`, `server/voice.js`, `src/lib/voice.ts` | TTS e escolha entre reconhecimento do navegador ou STT local |
 | Painel | `src/` (React/TanStack/Vite/Nitro) | UI, bridge HTTP, estados de saúde/diagnóstico |
 
 ---
@@ -118,16 +122,19 @@ caminho seguro quando um gateway externo está indisponível.
 | API → integrações | URL da configuração (admin), Bearer do settings, timeout/limite |
 | Segredos | AES-256-GCM em repouso; `master.key` 600; nunca em logs/relatórios |
 
-Rotas públicas são `GET /api/health`, `POST /api/auth/setup`, `POST /api/auth/login` e o webhook
-`POST /api/integrations/agentmail/webhook`, que exige assinatura Svix válida e falha fechado sem
-segredo. Tudo o mais exige sessão/token e escopo. O CSRF é obrigatório em toda mutação com cookie.
+Rotas públicas incluem `GET /api/health`, `POST /api/auth/setup`, `POST /api/auth/login`, o callback
+`GET /api/oauth/callback` (state opaco, one-use, PKCE e erro redirecionado sem detalhe) e o webhook
+`POST /api/integrations/agentmail/webhook` (assinatura Svix). Tudo o mais exige sessão/token e
+escopo. O CSRF é obrigatório em toda mutação com cookie.
 
 ---
 
 ## 6. Dados e migrações
 
 - SQLite nativo (`node:sqlite`) em WAL, `busy_timeout=5000`, transações `BEGIN IMMEDIATE`.
-- `PRAGMA user_version` é a versão do schema; a release 1.8.2 usa **15**. A v15 cria o ledger
+- `PRAGMA user_version` é a versão do schema; a release 1.9.0 usa **18**. As v16–v18 adicionam
+  fila durável de scheduler, políticas de retenção e conexões OAuth com backup verificado e
+  preservação das linhas anteriores. A v15 cria o ledger
   idempotente `bot_schedule_claims`; v14 adicionou `agentmail_inboxes` e ownership explícito.
 - Cada migração roda em transação, compara contagens/hashes das tabelas preservadas e exige backup
   verificado antes de alterar. Falha → rollback e erro explícito.

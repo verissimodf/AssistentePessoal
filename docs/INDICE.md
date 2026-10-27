@@ -1,6 +1,6 @@
 # Índice documental
 
-Atualizado em 2026-10-27 (release 1.8.2, schema 15). Documentos históricos permanecem identificados como tal.
+Atualizado em 2026-10-27 (candidato 1.9.0, schema 18). Documentos históricos permanecem identificados como tal.
 
 ## Comece por aqui
 
@@ -8,14 +8,15 @@ Atualizado em 2026-10-27 (release 1.8.2, schema 15). Documentos históricos perm
 | --- | --- |
 | [`README.md`](../README.md) | visão geral, arquitetura, instalação, testes e links |
 | [`CHANGELOG.md`](../CHANGELOG.md) | mudanças por release e hardening |
-| [`HOMOLOGACAO_STATUS.md`](../HOMOLOGACAO_STATUS.md) | estado 1.8.2 implantado, testes, histórico e pendências |
+| [`HOMOLOGACAO_STATUS.md`](../HOMOLOGACAO_STATUS.md) | estado operacional e evidências da release |
 
 ## Arquitetura e configuração
 
 | Documento | Para quê |
 | --- | --- |
-| [`ARQUITETURA.md`](ARQUITETURA.md) | topologia, componentes, fluxo, confiança e dados (schema 15) |
+| [`ARQUITETURA.md`](ARQUITETURA.md) | topologia, componentes, fluxo, confiança e dados (schema 18) |
 | [`CONFIGURACAO.md`](CONFIGURACAO.md) | variáveis, provedores, integrações, canais e voz (inclui AgentMail) |
+| [`OPERACAO-FILA-STT-OAUTH-RETENCAO.md`](OPERACAO-FILA-STT-OAUTH-RETENCAO.md) | operação da fila, retenção, OAuth e STT local |
 | [`PAINEL.md`](PAINEL.md) | uso do painel web |
 | [`NAVEGADOR.md`](NAVEGADOR.md) | ferramenta de navegador e política de rede |
 

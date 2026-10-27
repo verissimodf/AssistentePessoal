@@ -1,0 +1,19 @@
+# CPU-only, pinned whisper.cpp service. No host ports; only the app network can reach it.
+FROM debian:bookworm-slim AS build
+ARG WHISPER_COMMIT=21ba6d269a02c14309355cb96822db6058d4cf48
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates cmake build-essential git && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+RUN git init && git remote add origin https://github.com/ggml-org/whisper.cpp.git && git fetch --depth 1 origin "$WHISPER_COMMIT" && git checkout FETCH_HEAD
+RUN cmake -S . -B build -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON -DGGML_NATIVE=OFF \
+ && cmake --build build --config Release --target whisper-server -j2
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates ffmpeg libgomp1 && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --uid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin whisper
+COPY --from=build /src/build/bin/whisper-server /usr/local/bin/whisper-server
+COPY --from=build /src/build/bin/*.so* /usr/local/lib/
+COPY scripts/stt-entrypoint.sh /usr/local/bin/stt-entrypoint
+RUN ldconfig && chmod 0555 /usr/local/bin/stt-entrypoint
+USER 10001:10001
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/stt-entrypoint"]

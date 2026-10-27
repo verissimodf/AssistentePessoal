@@ -1,6 +1,6 @@
 # Configuração
 
-Atualizado para **1.8.2** (esquema 15). A configuração de aplicação é feita no painel e persistida
+Atualizado para **1.9.0** (esquema 18). A configuração de aplicação é feita no painel e persistida
 cifrada em `data/jarvis.db`; variáveis de ambiente cobrem infraestrutura e segurança.
 
 ## Proveniência dos valores
@@ -32,7 +32,15 @@ definida/não definida, sem valor. O servidor nunca devolve chaves, tokens ou se
 | `JARVIS_SKILLS_SETUP` | `builtin` (padrão), `off` ou `full` (rede opt-in) |
 | `JARVIS_MAIL_TRANSPORT` | `imap` ativa o adaptador real de e-mail; ausente = mock |
 | `XTTS_URL` | endpoint do TTS local (padrão `http://xtts-service:8000`) |
+| `JARVIS_STT_URL` | serviço local whisper.cpp; profile Docker `stt`, padrão interno `http://stt:8080` |
+| `GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI` | app OAuth Gmail; callback `/api/oauth/callback` |
+| `MICROSOFT_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI` | app OAuth Microsoft Graph; callback `/api/oauth/callback` |
+| `MICROSOFT_OAUTH_TENANT` | tenant Microsoft (padrão `common`) |
 | `JARVIS_NO_LISTEN` | `1` para testes sem abrir socket |
+
+OAuth e STT são capacidades opcionais. O OAuth precisa de aplicações registradas e credenciais no
+`.env`; valores vazios desativam a conexão. Configuração operacional, callbacks, escopos e modelo
+local fixado por hash: [`OPERACAO-FILA-STT-OAUTH-RETENCAO.md`](OPERACAO-FILA-STT-OAUTH-RETENCAO.md).
 
 ## Provedores de IA
 

@@ -4,7 +4,13 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { migrate, currentVersion, snapshotCounts, targetVersion, MIGRATIONS } from "../server/migrations.js";
+import {
+  migrate,
+  currentVersion,
+  snapshotCounts,
+  targetVersion,
+  MIGRATIONS,
+} from "../server/migrations.js";
 
 // Builds a database exactly as v1.0.0 (pre-auth) left it, with real rows in every table.
 function legacyDb() {
@@ -58,40 +64,182 @@ test("migration is idempotent: second run does nothing and makes no new backup",
 test("v14 preserva ownership existente ao ampliar o tipo permitido", () => {
   const { db, dir } = legacyDb();
   migrate(db, dir, { migrations: MIGRATIONS.slice(0, 13) });
-  db.prepare("INSERT INTO admins (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)")
-    .run("admin-v14", "admin-v14", "hash", "2026-10-27T00:00:00Z");
+  db.prepare(
+    "INSERT INTO admins (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
+  ).run("admin-v14", "admin-v14", "hash", "2026-10-27T00:00:00Z");
   const row = ["agent", "agent-existente", "admin-v14", "2026-10-27T00:00:00Z", "claimed"];
-  db.prepare("INSERT INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin) VALUES (?, ?, ?, ?, ?)").run(...row);
+  db.prepare(
+    "INSERT INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin) VALUES (?, ?, ?, ?, ?)",
+  ).run(...row);
 
   const result = migrate(db, dir, { migrations: MIGRATIONS.slice(13, 14) });
   assert.equal(result.from, 13);
   assert.equal(result.to, 14);
   assert.deepEqual(
-    Object.values(db.prepare("SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership").get()),
+    Object.values(
+      db
+        .prepare(
+          "SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership",
+        )
+        .get(),
+    ),
     row,
   );
   assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
-  assert.throws(() => db.prepare("INSERT INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin) VALUES ('inbox', 'x', 'admin-v14', 'now', 'claimed')").run(), /CHECK constraint failed/);
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          "INSERT INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin) VALUES ('inbox', 'x', 'admin-v14', 'now', 'claimed')",
+        )
+        .run(),
+    /CHECK constraint failed/,
+  );
 });
 
 test("v15 cria ledger idempotente sem alterar linhas preservadas", () => {
   const { db, dir } = legacyDb();
   migrate(db, dir, { migrations: MIGRATIONS.slice(0, 14) });
   const before = snapshotCounts(db);
-  const result = migrate(db, dir, { migrations: MIGRATIONS.slice(14) });
+  const result = migrate(db, dir, { migrations: MIGRATIONS.slice(14, 15) });
   assert.equal(result.from, 14);
   assert.equal(result.to, 15);
   assert.deepEqual(snapshotCounts(db), before);
   assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
   assert.deepEqual(
-    db.prepare('PRAGMA table_info("bot_schedule_claims")').all().map((c) => c.name),
+    db
+      .prepare('PRAGMA table_info("bot_schedule_claims")')
+      .all()
+      .map((c) => c.name),
     ["trigger_key", "bot_id", "trigger_type", "status", "run_id", "claimed_at", "updated_at"],
   );
   const claim = ["bot:daily:2026-10-27", "bot", "daily", "claimed", "2026-10-27", "2026-10-27"];
-  db.prepare("INSERT INTO bot_schedule_claims (trigger_key, bot_id, trigger_type, status, claimed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(...claim);
+  db.prepare(
+    "INSERT INTO bot_schedule_claims (trigger_key, bot_id, trigger_type, status, claimed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(...claim);
   assert.throws(
-    () => db.prepare("INSERT INTO bot_schedule_claims (trigger_key, bot_id, trigger_type, status, claimed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(...claim),
+    () =>
+      db
+        .prepare(
+          "INSERT INTO bot_schedule_claims (trigger_key, bot_id, trigger_type, status, claimed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(...claim),
     /UNIQUE constraint failed/,
+  );
+});
+
+test("v16 cria fila de jobs, amplia ownership e preserva recursos existentes", () => {
+  const { db, dir } = legacyDb();
+  migrate(db, dir, { migrations: MIGRATIONS.slice(0, 15) });
+  db.prepare(
+    "INSERT INTO admins (id, username, password_hash, created_at) VALUES ('admin-v16','admin-v16','hash','now')",
+  ).run();
+  db.prepare(
+    "INSERT INTO ownership (resource_type,resource_id,owner_admin_id,assigned_at,origin) VALUES ('bot','keep-bot','admin-v16','now','created')",
+  ).run();
+  const result = migrate(db, dir, { migrations: MIGRATIONS.slice(15, 16) });
+  assert.equal(result.from, 15);
+  assert.equal(result.to, 16);
+  assert.equal(
+    db
+      .prepare(
+        "SELECT owner_admin_id FROM ownership WHERE resource_type='bot' AND resource_id='keep-bot'",
+      )
+      .get().owner_admin_id,
+    "admin-v16",
+  );
+  assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          "INSERT INTO ownership (resource_type,resource_id,owner_admin_id,assigned_at,origin) VALUES ('invalid','x','admin-v16','now','created')",
+        )
+        .run(),
+    /CHECK constraint failed/,
+  );
+  assert.deepEqual(
+    db
+      .prepare('PRAGMA table_info("durable_jobs")')
+      .all()
+      .map((c) => c.name),
+    [
+      "id",
+      "idempotency_key",
+      "bot_id",
+      "trigger_type",
+      "occurrence_key",
+      "encrypted_payload",
+      "status",
+      "attempts",
+      "available_at",
+      "lease_owner",
+      "lease_until",
+      "run_id",
+      "last_error",
+      "created_at",
+      "updated_at",
+    ],
+  );
+});
+
+test("v17 adiciona política de retenção sem remover nem alterar memórias", () => {
+  const { db, dir } = legacyDb();
+  migrate(db, dir, { migrations: MIGRATIONS.slice(0, 16) });
+  db.prepare(
+    "INSERT INTO admins (id, username, password_hash, created_at) VALUES ('admin-v17','admin-v17','hash','now')",
+  ).run();
+  db.prepare(
+    "INSERT INTO memories(id,content,tags,embedding,created_at) VALUES('keep-memory','private fact','',NULL,'2025-01-01T00:00:00.000Z')",
+  ).run();
+  const before = db
+    .prepare("SELECT id,content,tags,embedding,created_at FROM memories WHERE id='keep-memory'")
+    .get();
+  const result = migrate(db, dir, { migrations: MIGRATIONS.slice(16, 17) });
+  assert.equal(result.to, 17);
+  assert.deepEqual(
+    db
+      .prepare("SELECT id,content,tags,embedding,created_at FROM memories WHERE id='keep-memory'")
+      .get(),
+    before,
+  );
+  assert.equal(
+    db.prepare("SELECT 1 FROM memory_retention_anchors WHERE memory_id='keep-memory'").get(),
+    undefined,
+  );
+  assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
+});
+
+test("v18 adiciona OAuth e preserva todos os vínculos ownership", () => {
+  const { db, dir } = legacyDb();
+  migrate(db, dir, { migrations: MIGRATIONS.slice(0, 17) });
+  db.prepare(
+    "INSERT INTO admins(id,username,password_hash,created_at) VALUES('admin-v18','admin-v18','hash','now')",
+  ).run();
+  const existing = ["bot", "old-owned-bot", "admin-v18", "now", "created"];
+  db.prepare(
+    "INSERT INTO ownership(resource_type,resource_id,owner_admin_id,assigned_at,origin) VALUES(?,?,?,?,?)",
+  ).run(...existing);
+  const before = db
+    .prepare("SELECT resource_type,resource_id,owner_admin_id,assigned_at,origin FROM ownership")
+    .all();
+  const result = migrate(db, dir, { migrations: MIGRATIONS.slice(17, 18) });
+  assert.equal(result.to, 18);
+  assert.deepEqual(
+    db
+      .prepare("SELECT resource_type,resource_id,owner_admin_id,assigned_at,origin FROM ownership")
+      .all(),
+    before,
+  );
+  assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
+  assert.throws(
+    () =>
+      db
+        .prepare(
+          "INSERT INTO ownership(resource_type,resource_id,owner_admin_id,assigned_at,origin) VALUES('invalid','x','admin-v18','now','created')",
+        )
+        .run(),
+    /CHECK constraint failed/,
   );
 });
 
@@ -100,7 +248,14 @@ test("failure mid-migration rolls back completely (no partial schema)", () => {
   const before = snapshotCounts(db);
   assert.throws(() => migrate(db, dir, { failAfterSql: 1 }), /desfeita/);
   assert.equal(currentVersion(db), 0);
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name IN ('admins','sessions','service_tokens')").get().n, 0);
+  assert.equal(
+    db
+      .prepare(
+        "SELECT COUNT(*) n FROM sqlite_master WHERE name IN ('admins','sessions','service_tokens')",
+      )
+      .get().n,
+    0,
+  );
   assert.deepEqual(snapshotCounts(db), before);
   // and a later normal run succeeds
   assert.equal(migrate(db, dir).to, targetVersion());
@@ -109,25 +264,45 @@ test("failure mid-migration rolls back completely (no partial schema)", () => {
 test("database triggers: max two admins and last active admin is protected", () => {
   const { db, dir } = legacyDb();
   migrate(db, dir);
-  const ins = db.prepare("INSERT INTO admins (id, username, password_hash, created_at) VALUES (?, ?, 'x', 'now')");
+  const ins = db.prepare(
+    "INSERT INTO admins (id, username, password_hash, created_at) VALUES (?, ?, 'x', 'now')",
+  );
   ins.run("a1", "ana");
   assert.throws(() => db.prepare("DELETE FROM admins WHERE id='a1'").run(), /last_admin_protected/);
-  assert.throws(() => db.prepare("UPDATE admins SET active=0 WHERE id='a1'").run(), /last_admin_protected/);
+  assert.throws(
+    () => db.prepare("UPDATE admins SET active=0 WHERE id='a1'").run(),
+    /last_admin_protected/,
+  );
   ins.run("a2", "bia");
   assert.throws(() => ins.run("a3", "caio"), /admin_limit_reached/);
   db.prepare("UPDATE admins SET active=0 WHERE id='a2'").run(); // allowed: a1 still active
-  assert.throws(() => db.prepare("UPDATE admins SET active=0 WHERE id='a1'").run(), /last_admin_protected/);
+  assert.throws(
+    () => db.prepare("UPDATE admins SET active=0 WHERE id='a1'").run(),
+    /last_admin_protected/,
+  );
   ins.run("a3", "caio"); // a disabled admin frees its slot
-  assert.throws(() => db.prepare("UPDATE admins SET active=1 WHERE id='a2'").run(), /admin_limit_reached/); // no 3rd via reactivation
+  assert.throws(
+    () => db.prepare("UPDATE admins SET active=1 WHERE id='a2'").run(),
+    /admin_limit_reached/,
+  ); // no 3rd via reactivation
 });
 
 test("verification detects content changes, not only row counts", async () => {
   const { db, dir } = legacyDb();
   const { snapshotContent } = await import("../server/migrations.js");
   const before = snapshotContent(db);
-  const sneaky = [{ version: 1, name: "edita conteúdo", sql: "UPDATE memories SET content='alterado' WHERE id='m1';" }];
+  const sneaky = [
+    {
+      version: 1,
+      name: "edita conteúdo",
+      sql: "UPDATE memories SET content='alterado' WHERE id='m1';",
+    },
+  ];
   assert.throws(() => migrate(db, dir, { migrations: sneaky }), /alterou dados preservados/);
   assert.equal(currentVersion(db), 0);
   assert.deepEqual(snapshotContent(db), before);
-  assert.equal(db.prepare("SELECT content FROM memories WHERE id='m1'").get().content, "prefere café");
+  assert.equal(
+    db.prepare("SELECT content FROM memories WHERE id='m1'").get().content,
+    "prefere café",
+  );
 });

@@ -1,9 +1,9 @@
-# 🤖 AssistentePessoal (J.A.R.V.I.S.) — v1.8.2
+# 🤖 AssistentePessoal (J.A.R.V.I.S.) — v1.9.0
 
-[![Version](https://img.shields.io/badge/version-1.8.2-blue.svg?style=flat-square)](package.json)
+[![Version](https://img.shields.io/badge/version-1.9.0-blue.svg?style=flat-square)](package.json)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg?style=flat-square&logo=node.js)](https://nodejs.org/)
-[![Test Suite](https://img.shields.io/badge/tests-636%20backend%20%2B%20109%20frontend-success.svg?style=flat-square)](tests/)
-[![Schema](https://img.shields.io/badge/schema-15-informational.svg?style=flat-square)](server/migrations.js)
+[![Test Suite](https://img.shields.io/badge/tests-652%20backend%20%2B%20109%20frontend-success.svg?style=flat-square)](tests/)
+[![Schema](https://img.shields.io/badge/schema-18-informational.svg?style=flat-square)](server/migrations.js)
 [![Privacy](https://img.shields.io/badge/privacy-local--first-blueviolet.svg?style=flat-square)](#-segurança-e-privacidade)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
 
@@ -12,10 +12,9 @@ memória, agentes e integrações com serviços da máquina. O desenho padrão �
 dados, banco, documentos, memórias e segredos ficam na máquina do operador; chamadas externas só
 acontecem quando o provedor/integração correspondente está configurado e habilitado.
 
-> **Estado atual:** release **1.8.2** publicada e implantada, esquema SQLite **15**, container
-> `healthy` e smoke test de API/painel aprovado em 2026-10-27. A inbox AgentMail desta instalação
-> já foi reivindicada explicitamente; novas inboxes legadas também exigem claim no painel. Evidências em
-> [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md).
+> **Estado do candidato 1.9.0:** implementações e testes locais concluídos para fila durável,
+> retenção de memória, OAuth Gmail/Microsoft e STT local; migrações v16–v18. A validação final e
+> operacionalização estão registradas em [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
 > Ver [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md) e
 > [`reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md`](reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md).
 
@@ -156,9 +155,15 @@ variáveis de ambiente são de infraestrutura/segurança:
 | `JARVIS_SKILLS_SETUP` | `builtin` (padrão), `off` ou `full` (modo de rede opt-in) |
 | `JARVIS_MAIL_TRANSPORT` | `imap` ativa o adaptador real de e-mail; ausente = mock |
 | `XTTS_URL` | endpoint do serviço de voz local (padrão `http://xtts-service:8000`) |
+| `JARVIS_STT_URL` | endpoint interno whisper.cpp (`http://stt:8080`); habilite compose profile `stt` |
+| `GOOGLE_OAUTH_*` | Client ID, secret e callback OAuth do Gmail (opcional) |
+| `MICROSOFT_OAUTH_*` | Client ID, secret, callback e tenant Microsoft Graph (opcional) |
 
 Detalhes de provedores, integrações, canais e proveniência de valores:
 [`docs/CONFIGURACAO.md`](docs/CONFIGURACAO.md).
+
+Fila durável, retomada segura, retenção de memória, OAuth e ativação do STT local estão descritos
+em [`docs/OPERACAO-FILA-STT-OAUTH-RETENCAO.md`](docs/OPERACAO-FILA-STT-OAUTH-RETENCAO.md).
 
 ---
 
@@ -188,7 +193,7 @@ de exploração.
 
 ## 💾 Banco, backup e recuperação
 
-- SQLite nativo em WAL, esquema **14** (`PRAGMA user_version`), migrações versionadas com backup
+- SQLite nativo em WAL, esquema **18** (`PRAGMA user_version`), migrações versionadas com backup
   verificado antes de alterar o schema.
 - Backup consistente: `VACUUM INTO` (ou `.backup`) do banco **e** cópia de `master.key`; sem a
   chave o serviço não inicia. Ver [`docs/BACKUP-E-RESTAURACAO.md`](docs/BACKUP-E-RESTAURACAO.md) e

@@ -60,15 +60,36 @@ test("health is public and minimal", async () => {
   assert.ok(body.schemaVersionBuild === null || typeof body.schemaVersionBuild === "number");
 });
 
+test("OAuth public callback fails closed for unknown state and never returns provider errors", async () => {
+  const r = await fetch(`${base}/api/oauth/callback?state=invalid&code=not-a-real-code`, {
+    redirect: "manual",
+    headers: { origin: ORIGIN },
+  });
+  assert.equal(r.status, 303);
+  assert.equal(r.headers.get("location"), "/configuracoes?oauth=failed");
+  assert.equal(r.headers.get("cache-control"), "no-store");
+});
+
 test("every non-public route rejects anonymous callers with 401", async () => {
-  const publicOnes = routeTable().filter((r) => r.access === "public").map((r) => `${r.method} ${r.pattern}`);
+  const publicOnes = routeTable()
+    .filter((r) => r.access === "public")
+    .map((r) => `${r.method} ${r.pattern}`);
   // O webhook AgentMail é público por natureza (o provider que entrega), MAS não confia em
   // chamador anônimo: a rota verifica a assinatura Svix com segredo administrativo e é
   // fail-closed (503) sem integração ativa — coberta por tests/agentmail.test.mjs.
-  assert.deepEqual(publicOnes.sort(), ["GET /api/health", "POST /api/auth/login", "POST /api/auth/setup", "POST /api/integrations/agentmail/webhook"]);
+  assert.deepEqual(publicOnes.sort(), [
+    "GET /api/health",
+    "GET /api/oauth/callback",
+    "POST /api/auth/login",
+    "POST /api/auth/setup",
+    "POST /api/integrations/agentmail/webhook",
+  ]);
   for (const r of routeTable().filter((x) => x.access !== "public")) {
     const path = r.pattern.replace(/:(\w+)/g, "x");
-    const res = await req(path, { method: r.method, body: r.method === "GET" || r.method === "DELETE" ? undefined : {} });
+    const res = await req(path, {
+      method: r.method,
+      body: r.method === "GET" || r.method === "DELETE" ? undefined : {},
+    });
     assert.equal(res.status, 401, `${r.method} ${r.pattern}`);
   }
 });
@@ -80,7 +101,12 @@ test("untrusted origin is refused even for public routes", async () => {
 test("concurrent bootstrap attempts produce exactly one admin", async () => {
   const { token, file } = auth.ensureBootstrap();
   const results = await Promise.all(
-    Array.from({ length: 8 }, (_, i) => req("/api/auth/setup", { method: "POST", body: { token, username: `adm${i}`, password: PW } })),
+    Array.from({ length: 8 }, (_, i) =>
+      req("/api/auth/setup", {
+        method: "POST",
+        body: { token, username: `adm${i}`, password: PW },
+      }),
+    ),
   );
   const codes = results.map((r) => r.status);
   assert.equal(codes.filter((c) => c === 200).length, 1, String(codes));
@@ -88,7 +114,15 @@ test("concurrent bootstrap attempts produce exactly one admin", async () => {
   assert.equal(existsSync(file), false);
   assert.equal(auth.listAdmins().length, 1);
   // reuse after success is refused
-  assert.equal((await req("/api/auth/setup", { method: "POST", body: { token, username: "x9x", password: PW } })).status, 409);
+  assert.equal(
+    (
+      await req("/api/auth/setup", {
+        method: "POST",
+        body: { token, username: "x9x", password: PW },
+      })
+    ).status,
+    409,
+  );
 });
 
 test("login sets HttpOnly SameSite=Strict cookie and returns CSRF token", async () => {
@@ -106,35 +140,88 @@ test("login sets HttpOnly SameSite=Strict cookie and returns CSRF token", async 
 
 test("CSRF: state-changing requests without/with wrong token are refused (logout included)", async () => {
   const body = { content: "teste csrf" };
-  assert.equal((await req("/api/memories", { method: "POST", body, cookie: session.cookie })).status, 403);
-  assert.equal((await req("/api/memories", { method: "POST", body, cookie: session.cookie, csrf: "errado" })).status, 403);
-  assert.equal((await req("/api/auth/logout", { method: "POST", body: {}, cookie: session.cookie })).status, 403);
-  assert.equal((await req("/api/memories", { method: "POST", body, cookie: session.cookie, csrf: session.csrf })).status, 200);
+  assert.equal(
+    (await req("/api/memories", { method: "POST", body, cookie: session.cookie })).status,
+    403,
+  );
+  assert.equal(
+    (await req("/api/memories", { method: "POST", body, cookie: session.cookie, csrf: "errado" }))
+      .status,
+    403,
+  );
+  assert.equal(
+    (await req("/api/auth/logout", { method: "POST", body: {}, cookie: session.cookie })).status,
+    403,
+  );
+  assert.equal(
+    (
+      await req("/api/memories", {
+        method: "POST",
+        body,
+        cookie: session.cookie,
+        csrf: session.csrf,
+      })
+    ).status,
+    200,
+  );
 });
 
 test("service token: scope enforced on route; admin-only routes refused; revocation immediate", async () => {
-  const mk = await req("/api/auth/tokens", { method: "POST", body: { name: "mcp", scopes: ["memories:read"] }, ...session });
+  const mk = await req("/api/auth/tokens", {
+    method: "POST",
+    body: { name: "mcp", scopes: ["memories:read"] },
+    ...session,
+  });
   assert.equal(mk.status, 200);
   const { id, token } = await mk.json();
   assert.equal((await req("/api/memories", { bearer: token })).status, 200);
-  assert.equal((await req("/api/memories", { method: "POST", body: { content: "x" }, bearer: token })).status, 403);
+  assert.equal(
+    (await req("/api/memories", { method: "POST", body: { content: "x" }, bearer: token })).status,
+    403,
+  );
   assert.equal((await req("/api/settings", { bearer: token })).status, 403);
-  assert.equal((await req("/api/approvals/x", { method: "POST", body: { approve: true }, bearer: token })).status, 403);
-  assert.equal((await req("/api/auth/tokens", { method: "POST", body: { name: "y", scopes: ["chat"] }, bearer: token })).status, 403);
+  assert.equal(
+    (await req("/api/approvals/x", { method: "POST", body: { approve: true }, bearer: token }))
+      .status,
+    403,
+  );
+  assert.equal(
+    (
+      await req("/api/auth/tokens", {
+        method: "POST",
+        body: { name: "y", scopes: ["chat"] },
+        bearer: token,
+      })
+    ).status,
+    403,
+  );
   assert.equal((await req(`/api/auth/tokens/${id}`, { method: "DELETE", ...session })).status, 200);
   assert.equal((await req("/api/memories", { bearer: token })).status, 401);
 });
 
 test("tool scope is re-checked on the execution path", async () => {
   const { callTool } = await import("../server/tools.js");
-  const out = await callTool("run_command", { command: "ls" }, { autonomy: "full", pending: [], principal: { type: "service", tokenId: "t", scopes: ["chat"] } });
+  const out = await callTool(
+    "run_command",
+    { command: "ls" },
+    {
+      autonomy: "full",
+      pending: [],
+      principal: { type: "service", tokenId: "t", scopes: ["chat"] },
+    },
+  );
   assert.match(out, /Permissão negada/);
   const none = await callTool("recall", { query: "x" }, { autonomy: "full", pending: [] });
   assert.match(none, /Permissão negada/);
 });
 
 test("third admin refused over HTTP; bootstrap file contained token only", async () => {
-  const add = (u) => req("/api/auth/admins", { method: "POST", body: { username: u, password: PW, currentPassword: PW }, ...session });
+  const add = (u) =>
+    req("/api/auth/admins", {
+      method: "POST",
+      body: { username: u, password: PW, currentPassword: PW },
+      ...session,
+    });
   assert.equal((await add("segunda")).status, 200);
   const third = await add("terceira");
   assert.equal(third.status, 409);
@@ -143,54 +230,107 @@ test("third admin refused over HTTP; bootstrap file contained token only", async
 });
 
 test("bots created now record an owner; approvals cannot be resolved twice", async () => {
-  const r = await req("/api/bots", { method: "POST", body: { name: "b", goal: "g", enabled: false }, ...session });
+  const r = await req("/api/bots", {
+    method: "POST",
+    body: { name: "b", goal: "g", enabled: false },
+    ...session,
+  });
   const bot = await r.json();
   assert.equal(bot.owner_admin_id, auth.listAdmins()[0].id);
   const { db } = await import("../server/db.js");
-  db.prepare("INSERT INTO approvals (id, command, status, created_at) VALUES ('ap1','echo oi','pending','now')").run();
+  db.prepare(
+    "INSERT INTO approvals (id, command, status, created_at) VALUES ('ap1','echo oi','pending','now')",
+  ).run();
   // Phase 2: an approval without owner is invisible; give this one a real owner for the race check.
-  assert.equal((await req("/api/approvals/ap1", { method: "POST", body: { approve: false }, ...session })).status, 404);
+  assert.equal(
+    (await req("/api/approvals/ap1", { method: "POST", body: { approve: false }, ...session }))
+      .status,
+    404,
+  );
   const { assignNew } = await import("../server/ownership.js");
   assignNew("approval", "ap1", auth.listAdmins()[0].id);
-  const [a, b] = await Promise.all([1, 2].map(() => req("/api/approvals/ap1", { method: "POST", body: { approve: false }, ...session })));
+  const [a, b] = await Promise.all(
+    [1, 2].map(() =>
+      req("/api/approvals/ap1", { method: "POST", body: { approve: false }, ...session }),
+    ),
+  );
   assert.deepEqual([a.status, b.status].sort(), [200, 409]);
 });
 
 test("bot scopes are sanitized on save: wildcard/admin-only scopes are dropped", async () => {
-  const r = await req("/api/bots", { method: "POST", body: { name: "s", goal: "g", enabled: false, scopes: ["*", "approvals:resolve", "web", "comms:send"] }, ...session });
+  const r = await req("/api/bots", {
+    method: "POST",
+    body: {
+      name: "s",
+      goal: "g",
+      enabled: false,
+      scopes: ["*", "approvals:resolve", "web", "comms:send"],
+    },
+    ...session,
+  });
   assert.deepEqual((await r.json()).scopes, ["web", "comms:send"]);
-  const d = await req("/api/bots", { method: "POST", body: { name: "d", goal: "g", enabled: false }, ...session });
+  const d = await req("/api/bots", {
+    method: "POST",
+    body: { name: "d", goal: "g", enabled: false },
+    ...session,
+  });
   assert.deepEqual((await d.json()).scopes, ["web", "memories:read"]);
 });
 
 test("upload limit is enforced on bytes read, even without Content-Length (chunked)", async () => {
   const boundary = "----jarvis";
-  const head = new TextEncoder().encode(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="v.wav"\r\nContent-Type: audio/wav\r\n\r\n`);
+  const head = new TextEncoder().encode(
+    `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="v.wav"\r\nContent-Type: audio/wav\r\n\r\n`,
+  );
   const chunk = new Uint8Array(64 * 1024);
   let sent = 0;
   const body = new ReadableStream({
     pull(c) {
       if (sent === 0) c.enqueue(head);
-      if (sent > 600_000) { c.enqueue(new TextEncoder().encode(`\r\n--${boundary}--\r\n`)); return c.close(); }
-      sent += chunk.length; c.enqueue(chunk);
+      if (sent > 600_000) {
+        c.enqueue(new TextEncoder().encode(`\r\n--${boundary}--\r\n`));
+        return c.close();
+      }
+      sent += chunk.length;
+      c.enqueue(chunk);
     },
   });
   const r = await fetch(base + "/api/voice/clone", {
-    method: "POST", duplex: "half", body,
-    headers: { origin: ORIGIN, cookie: session.cookie, "x-jarvis-csrf": session.csrf, "content-type": `multipart/form-data; boundary=${boundary}` },
+    method: "POST",
+    duplex: "half",
+    body,
+    headers: {
+      origin: ORIGIN,
+      cookie: session.cookie,
+      "x-jarvis-csrf": session.csrf,
+      "content-type": `multipart/form-data; boundary=${boundary}`,
+    },
   }).catch((e) => ({ status: "conn-closed:" + e.message }));
   // Em Linux o fetch lê HTTP 413; no Windows/Undici o teardown do socket durante streaming resulta em early-abort
-  assert.ok(r.status === 413 || r.status === "conn-closed:fetch failed", `status esperado 413 ou early-abort, recebido: ${r.status}`);
+  assert.ok(
+    r.status === 413 || r.status === "conn-closed:fetch failed",
+    `status esperado 413 ou early-abort, recebido: ${r.status}`,
+  );
 });
 
 test("HTTP local throttling: failures on other accounts from 127.0.0.1 do not block a valid login", async () => {
-  for (let i = 0; i < 25; i++) await req("/api/auth/login", { method: "POST", body: { username: `fantasma${i}`, password: "errada-errada" } });
+  for (let i = 0; i < 25; i++)
+    await req("/api/auth/login", {
+      method: "POST",
+      body: { username: `fantasma${i}`, password: "errada-errada" },
+    });
   const username = auth.listAdmins()[0].username;
   const ok = await req("/api/auth/login", { method: "POST", body: { username, password: PW } });
   assert.equal(ok.status, 200);
   // and again after more failures (counters touched by the valid login were cleared)
-  await req("/api/auth/login", { method: "POST", body: { username: "fantasma-x", password: "errada-errada" } });
-  assert.equal((await req("/api/auth/login", { method: "POST", body: { username, password: PW } })).status, 200);
+  await req("/api/auth/login", {
+    method: "POST",
+    body: { username: "fantasma-x", password: "errada-errada" },
+  });
+  assert.equal(
+    (await req("/api/auth/login", { method: "POST", body: { username, password: PW } })).status,
+    200,
+  );
 });
 
 test("logout with CSRF revokes the session server-side", async () => {
@@ -202,7 +342,11 @@ test("logout with CSRF revokes the session server-side", async () => {
 
 test("HTTP login throttling returns 429 with Retry-After", async () => {
   let last;
-  for (let i = 0; i < 3; i++) last = await req("/api/auth/login", { method: "POST", body: { username: "segunda", password: "errada-errada" } });
+  for (let i = 0; i < 3; i++)
+    last = await req("/api/auth/login", {
+      method: "POST",
+      body: { username: "segunda", password: "errada-errada" },
+    });
   assert.equal(last.status, 429);
   assert.ok(Number(last.headers.get("retry-after")) >= 1);
 });

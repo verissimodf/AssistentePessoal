@@ -180,7 +180,7 @@ export function ChatPage() {
   const voice = async () => {
     setState("listening");
     try {
-      const said = await listenOnce(sl);
+      const said = await listenOnce(sl, settings?.voice?.stt || "browser");
       if (said) await send(said, true);
       else setState("idle");
     } catch (e) {

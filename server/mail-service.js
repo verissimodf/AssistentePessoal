@@ -9,6 +9,7 @@ import { createMailService, settingsAccountResolver } from "./mail.js";
 import { transportFromEnv } from "./mail-imap.js";
 import { getSettings } from "./settings.js";
 import { audit } from "./db.js";
+import { createOAuthMailTransport, oauthAccountResolver } from "./oauth.js";
 
 const iso = (daysAgo, hour) => new Date(Date.UTC(2026, 9, 15 - daysAgo, hour, 0, 0)).toISOString();
 
@@ -76,23 +77,51 @@ export function createMockTransport(seed = {}) {
   };
 }
 
-function build(transport, limits) {
+function build(transport, limits, resolveAccount = settingsAccountResolver(getSettings)) {
   return createMailService({
     transport,
-    resolveAccount: settingsAccountResolver(getSettings),
+    resolveAccount,
     audit,
     ...(limits ? { limits } : {}),
   });
 }
 
-/** The real transport only when explicitly opted in; otherwise the deterministic mock. */
-const defaultTransport = () => transportFromEnv(process.env) ?? createMockTransport();
+/** OAuth connections take precedence for the same admin/provider; IMAP/mock remain compatible. */
+const defaultTransport = () => {
+  const legacy = transportFromEnv(process.env) ?? createMockTransport();
+  const oauth = createOAuthMailTransport();
+  const dispatch =
+    (method) =>
+    (...args) =>
+      args[0]?.oauth ? oauth[method](...args) : legacy[method](...args);
+  const resolveLegacy = settingsAccountResolver(getSettings);
+  const resolveAccount = (adminId, accountId) => {
+    const provider =
+      accountId === "gmail" ? "google" : accountId === "outlook" ? "microsoft" : null;
+    const connected = provider && oauthAccountResolver(adminId, provider);
+    return connected ? { ...connected, type: accountId } : resolveLegacy(adminId, accountId);
+  };
+  return {
+    kind: legacy.kind,
+    list: dispatch("list"),
+    read: dispatch("read"),
+    search: dispatch("search"),
+    send: dispatch("send"),
+    resolveAccount,
+  };
+};
 
-let service = build(defaultTransport());
+const initialTransport = defaultTransport();
+let service = build(initialTransport, null, initialTransport.resolveAccount);
 
 /** Replace the transport (tests inject a mock; the real adapter plugs in via the env opt-in). */
 export function setMailTransport(transport, limits) {
-  service = build(transport ?? defaultTransport(), limits);
+  const selected = transport ?? defaultTransport();
+  service = build(
+    selected,
+    limits,
+    selected.resolveAccount || settingsAccountResolver(getSettings),
+  );
 }
 
 export const getMailService = () => service;

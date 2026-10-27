@@ -10,22 +10,130 @@ import {
 
 export { createClapDetector, matchesWakeWord, thresholdFromSensitivity };
 
-type Rec = any;
+type RecognitionEvent = { results: ArrayLike<ArrayLike<{ transcript: string }>> };
+type RecognitionErrorEvent = { error: string };
+type Rec = {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onresult: ((event: RecognitionEvent) => void) | null;
+  onerror: ((event: RecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
 const getRecognition = (): Rec | null => {
-  const w = window as any;
+  const w = window as Window & {
+    SpeechRecognition?: new () => Rec;
+    webkitSpeechRecognition?: new () => Rec;
+  };
   const C = w.SpeechRecognition || w.webkitSpeechRecognition;
   return C ? new C() : null;
 };
 
-export function listenOnce(lang: string): Promise<string> {
+async function listenLocalOnce(lang: string): Promise<string> {
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined")
+    throw new Error("local_stt_browser_unsupported");
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+  });
+  const mimeType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus"].find((x) =>
+    MediaRecorder.isTypeSupported(x),
+  );
+  const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  const chunks: BlobPart[] = [];
+  const context = new AudioContext();
+  const analyser = context.createAnalyser();
+  analyser.fftSize = 1024;
+  context.createMediaStreamSource(stream).connect(analyser);
+  const samples = new Uint8Array(analyser.fftSize);
+
+  return new Promise((resolve, reject) => {
+    let startedSpeech = false;
+    let lastSpeechAt = 0;
+    let settled = false;
+    let forcedError = false;
+    const start = Date.now();
+    const cleanup = () => {
+      clearInterval(levelTimer);
+      clearTimeout(maxTimer);
+      stream.getTracks().forEach((track) => track.stop());
+      void context.close().catch(() => undefined);
+    };
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      forcedError = !!error;
+      if (recorder.state !== "inactive") recorder.stop();
+      cleanup();
+      if (error) reject(error);
+    };
+    const levelTimer = setInterval(() => {
+      analyser.getByteTimeDomainData(samples);
+      let sum = 0;
+      for (const sample of samples) {
+        const v = (sample - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / samples.length);
+      if (rms > 0.025) {
+        startedSpeech = true;
+        lastSpeechAt = Date.now();
+      } else if (startedSpeech && Date.now() - lastSpeechAt > 1200) finish();
+    }, 100);
+    const maxTimer = setTimeout(
+      () => finish(startedSpeech ? undefined : new Error("stt_no_speech")),
+      20_000,
+    );
+    recorder.ondataavailable = (event) => {
+      if (event.data.size) chunks.push(event.data);
+    };
+    recorder.onerror = () => finish(new Error("stt_recording_failed"));
+    recorder.onstop = async () => {
+      cleanup();
+      if (forcedError) return;
+      if (!startedSpeech) {
+        if (!settled) reject(new Error("stt_no_speech"));
+        return;
+      }
+      const type = recorder.mimeType.split(";")[0] || "audio/webm";
+      const form = new FormData();
+      const ext = type.includes("ogg")
+        ? "ogg"
+        : type.includes("mp4")
+          ? "m4a"
+          : type.includes("wav")
+            ? "wav"
+            : "webm";
+      form.append("file", new Blob(chunks, { type }), `speech.${ext}`);
+      form.append("language", lang.split("-")[0] || "auto");
+      try {
+        const result = await api<{ text: string }>("/api/stt", { method: "POST", body: form });
+        resolve(result.text);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    try {
+      recorder.start(250);
+    } catch {
+      finish(new Error("stt_recording_failed"));
+    }
+    // Fail closed if microphone permission is granted but no recording data arrives.
+    if (Date.now() - start > 20_000) finish(new Error("stt_recording_timeout"));
+  });
+}
+
+export function listenOnce(lang: string, engine = "browser"): Promise<string> {
+  if (engine === "local") return listenLocalOnce(lang);
   return new Promise((resolve, reject) => {
     const rec = getRecognition();
     if (!rec) return reject(new Error("Speech recognition not supported in this browser"));
     rec.lang = lang;
     rec.interimResults = false;
     rec.maxAlternatives = 1;
-    rec.onresult = (e: any) => resolve(e.results[0][0].transcript);
-    rec.onerror = (e: any) => reject(new Error(e.error));
+    rec.onresult = (e) => resolve(e.results[0]?.[0]?.transcript ?? "");
+    rec.onerror = (e) => reject(new Error(e.error));
     rec.onend = () => resolve("");
     rec.start();
   });
@@ -44,18 +152,23 @@ export function stopSpeaking() {
   if (currentPlayback) {
     try {
       currentPlayback.stop();
-    } catch {}
+    } catch {
+      /* playback cleanup must continue */
+    }
     currentPlayback = null;
   }
   if (typeof window !== "undefined" && window.speechSynthesis) {
     try {
       window.speechSynthesis.cancel();
-    } catch {}
+    } catch {
+      /* speech synthesis is best-effort */
+    }
   }
 }
 
 /** P2-A: reconhece o estado de aquecimento do TTS local (cold-start do XTTS). */
-export const isVoiceWarmingUp = (message: string) => /voice_warming_up/i.test(String(message ?? ""));
+export const isVoiceWarmingUp = (message: string) =>
+  /voice_warming_up/i.test(String(message ?? ""));
 
 /** Espera antes de repetir uma síntese em aquecimento (usa o retryAfter anunciado, com teto). */
 export function warmingRetryDelay(message: string, fallbackMs = 5000): number {
@@ -74,12 +187,12 @@ export async function speak(
   lang: string,
   engine: string,
   onLevel?: (l: number) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
 ): Promise<void> {
   stopSpeaking();
   if (signal?.aborted) return;
 
-  const plain = text.replace(/[*_#`>\[\]()]/g, "");
+  const plain = text.replace(/[*_#`>\u005B\u005D()]/g, "");
 
   if (engine !== "browser" && (await ping())) {
     try {
@@ -92,7 +205,9 @@ export async function speak(
       } catch (e) {
         // Cold-start: o modelo local ainda está carregando — espera e tenta UMA vez.
         if (!isVoiceWarmingUp(String((e as Error)?.message ?? e))) throw e;
-        await new Promise((r) => setTimeout(r, warmingRetryDelay(String((e as Error)?.message ?? e))));
+        await new Promise((r) =>
+          setTimeout(r, warmingRetryDelay(String((e as Error)?.message ?? e))),
+        );
         if (signal?.aborted) return;
         blob = await api<Blob>("/api/tts", {
           method: "POST",
@@ -104,7 +219,8 @@ export async function speak(
       const audioUrl = URL.createObjectURL(blob);
       const audio = new Audio(audioUrl);
       const AudioContextClass =
-        window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const ctx = AudioContextClass ? new AudioContextClass() : null;
       let raf = 0;
 
@@ -166,7 +282,9 @@ export async function speak(
       onLevel?.(0);
       try {
         window.speechSynthesis.cancel();
-      } catch {}
+      } catch {
+        /* cancellation still resolves the playback promise */
+      }
       currentPlayback = null;
       resolve();
     };
@@ -180,8 +298,10 @@ export async function speak(
     }
 
     const UtteranceClass =
-      (window as unknown as { SpeechSynthesisUtterance?: typeof SpeechSynthesisUtterance }).SpeechSynthesisUtterance ||
-      (globalThis as unknown as { SpeechSynthesisUtterance?: typeof SpeechSynthesisUtterance }).SpeechSynthesisUtterance;
+      (window as unknown as { SpeechSynthesisUtterance?: typeof SpeechSynthesisUtterance })
+        .SpeechSynthesisUtterance ||
+      (globalThis as unknown as { SpeechSynthesisUtterance?: typeof SpeechSynthesisUtterance })
+        .SpeechSynthesisUtterance;
 
     if (!UtteranceClass) {
       cleanup();
@@ -281,6 +401,7 @@ export function useWake(opts: {
   return useHandsFree(opts);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function useCallbackRef<T extends (...a: any[]) => any>(fn: T) {
   const r = useRef(fn);
   r.current = fn;

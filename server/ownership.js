@@ -4,7 +4,7 @@
 import { db, now, audit, uid } from "./db.js";
 import { unlinkSync } from "node:fs";
 
-export const TYPES = { memory: "memories", agent: "agents", bot: "bots", run: "runs", approval: "approvals", document: "documents", agentmail_inbox: "agentmail_inboxes" };
+export const TYPES = { memory: "memories", agent: "agents", bot: "bots", run: "runs", approval: "approvals", document: "documents", agentmail_inbox: "agentmail_inboxes", job: "durable_jobs", integration_connection: "oauth_connections" };
 const DATE_COL = { memory: "created_at", run: "started_at", approval: "created_at", document: "created_at", agentmail_inbox: "created_at" };
 
 export const ownerOf = (type, id) =>

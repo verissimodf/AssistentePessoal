@@ -82,7 +82,11 @@ CREATE TABLE IF NOT EXISTS bootstrap (
     //  - bots: owner_admin_id already stored in the bot JSON (Phase 1) AND that admin exists;
     //  - runs: the run's bot has such a proven owner (owners never change after creation);
     //  - everything else (memories, agents, approvals, unproven bots/runs) stays without owner.
-    sql: (db) => V2_SCHEMA + V2_COPY.filter((c) => c.needs.every((t) => tableExists(db, t))).map((c) => c.sql).join("\n"),
+    sql: (db) =>
+      V2_SCHEMA +
+      V2_COPY.filter((c) => c.needs.every((t) => tableExists(db, t)))
+        .map((c) => c.sql)
+        .join("\n"),
   },
   {
     version: 3,
@@ -127,7 +131,10 @@ BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
     // (ownership is NOT in PRESERVED — the framework still proves preserved tables unchanged),
     // and adds an append-only `ownership_history` for transfers. No transfer runs here.
     sql: (db) => {
-      const hasCol = db.prepare("PRAGMA table_info(sessions)").all().some((c) => c.name === "reauth_at");
+      const hasCol = db
+        .prepare("PRAGMA table_info(sessions)")
+        .all()
+        .some((c) => c.name === "reauth_at");
       return `
 ${hasCol ? "" : "ALTER TABLE sessions ADD COLUMN reauth_at INTEGER;"}
 DROP TRIGGER IF EXISTS trg_ownership_immutable;
@@ -267,13 +274,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_convmsg_reply ON conversation_messages(rep
     // antes das migrações). Num banco sem `audit` (ex.: testes que migram do zero) não há trilha
     // a proteger — e criá-la aqui mudaria o snapshot de tabelas preservadas.
     sql: (db) => {
-      const hasAudit = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit'").get();
+      const hasAudit = !!db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit'")
+        .get();
       return `
 ALTER TABLE approval_actions ADD COLUMN correlation_id TEXT;
 UPDATE approval_actions SET correlation_id = json_extract(action, '$.correlation') WHERE json_extract(action, '$.correlation') IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_approval_actions_correlation ON approval_actions(correlation_id);
-${hasAudit ? `CREATE TRIGGER IF NOT EXISTS trg_audit_no_update BEFORE UPDATE ON audit BEGIN SELECT RAISE(ABORT, 'audit_immutable'); END;
-CREATE TRIGGER IF NOT EXISTS trg_audit_no_delete BEFORE DELETE ON audit BEGIN SELECT RAISE(ABORT, 'audit_immutable'); END;` : ""}
+${
+  hasAudit
+    ? `CREATE TRIGGER IF NOT EXISTS trg_audit_no_update BEFORE UPDATE ON audit BEGIN SELECT RAISE(ABORT, 'audit_immutable'); END;
+CREATE TRIGGER IF NOT EXISTS trg_audit_no_delete BEFORE DELETE ON audit BEGIN SELECT RAISE(ABORT, 'audit_immutable'); END;`
+    : ""
+}
 `;
     },
   },
@@ -337,14 +350,23 @@ CREATE TABLE IF NOT EXISTS session_focus (
     // Adiciona colunas aditivas em `documents` e cria a tabela `document_chunks` vinculada com
     // ON DELETE CASCADE ao documento pai. Isolamento multi-tenant garantido pela coluna `admin_id`.
     sql: (db) => {
-      const hasDocs = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='documents'").get();
-      const docCols = hasDocs ? db.prepare("PRAGMA table_info(documents)").all().map((c) => c.name) : [];
-      const addChunkCount = hasDocs && !docCols.includes("chunk_count")
-        ? "ALTER TABLE documents ADD COLUMN chunk_count INTEGER DEFAULT 0;"
-        : "";
-      const addRagStatus = hasDocs && !docCols.includes("rag_status")
-        ? "ALTER TABLE documents ADD COLUMN rag_status TEXT DEFAULT 'lexical';"
-        : "";
+      const hasDocs = !!db
+        .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='documents'")
+        .get();
+      const docCols = hasDocs
+        ? db
+            .prepare("PRAGMA table_info(documents)")
+            .all()
+            .map((c) => c.name)
+        : [];
+      const addChunkCount =
+        hasDocs && !docCols.includes("chunk_count")
+          ? "ALTER TABLE documents ADD COLUMN chunk_count INTEGER DEFAULT 0;"
+          : "";
+      const addRagStatus =
+        hasDocs && !docCols.includes("rag_status")
+          ? "ALTER TABLE documents ADD COLUMN rag_status TEXT DEFAULT 'lexical';"
+          : "";
       return `
 ${addChunkCount}
 ${addRagStatus}
@@ -459,8 +481,18 @@ CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
 BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
 `,
     expect: [
-      { table: "agentmail_inboxes", type: "table", columns: ["id", "created_at"], primaryKey: ["id"] },
-      { table: "ownership", type: "table", columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"], primaryKey: ["resource_type", "resource_id"] },
+      {
+        table: "agentmail_inboxes",
+        type: "table",
+        columns: ["id", "created_at"],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
     ],
   },
   {
@@ -482,12 +514,226 @@ CREATE TABLE IF NOT EXISTS bot_schedule_claims (
 CREATE INDEX IF NOT EXISTS idx_bot_schedule_claims_bot_time ON bot_schedule_claims(bot_id, claimed_at);
 `,
     expect: [
-      { table: "bot_schedule_claims", type: "table", columns: ["trigger_key", "bot_id", "trigger_type", "status", "run_id", "claimed_at", "updated_at"], primaryKey: ["trigger_key"] },
+      {
+        table: "bot_schedule_claims",
+        type: "table",
+        columns: [
+          "trigger_key",
+          "bot_id",
+          "trigger_type",
+          "status",
+          "run_id",
+          "claimed_at",
+          "updated_at",
+        ],
+        primaryKey: ["trigger_key"],
+      },
+    ],
+  },
+  {
+    version: 16,
+    name: "durable scheduler jobs with explicit ownership and leases",
+    // Additive job queue. Existing claim ledger remains the trigger de-duplication source;
+    // ownership is extended so queue rows obey the single ownership-table invariant.
+    sql: `
+CREATE TABLE IF NOT EXISTS durable_jobs (
+  id TEXT PRIMARY KEY,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  bot_id TEXT NOT NULL,
+  trigger_type TEXT NOT NULL CHECK (trigger_type IN ('daily','interval','file')),
+  occurrence_key TEXT NOT NULL,
+  encrypted_payload TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('queued','running','succeeded','awaiting_approval','failed','cancelled','needs_reconciliation')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  available_at TEXT NOT NULL,
+  lease_owner TEXT,
+  lease_until TEXT,
+  run_id TEXT,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_durable_jobs_claim ON durable_jobs(status, available_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_durable_jobs_bot ON durable_jobs(bot_id, created_at);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v15;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v15;
+DROP TABLE ownership_v15;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "durable_jobs",
+        type: "table",
+        columns: [
+          "id",
+          "idempotency_key",
+          "bot_id",
+          "trigger_type",
+          "occurrence_key",
+          "encrypted_payload",
+          "status",
+          "attempts",
+          "available_at",
+          "lease_owner",
+          "lease_until",
+          "run_id",
+          "last_error",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
+  {
+    version: 17,
+    name: "memory retention: per-admin opt-in and recoverable quarantine",
+    sql: `
+CREATE TABLE IF NOT EXISTS memory_retention_policies (
+  admin_id TEXT PRIMARY KEY REFERENCES admins(id),
+  enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
+  retention_days INTEGER NOT NULL CHECK (retention_days IN (30,90,180,365)),
+  grace_days INTEGER NOT NULL DEFAULT 30 CHECK (grace_days BETWEEN 7 AND 90),
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_retention_anchors (
+  memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+  anchor_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS memory_retention_items (
+  memory_id TEXT PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  quarantined_at TEXT NOT NULL,
+  purge_after TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_memory_retention_purge ON memory_retention_items(purge_after);
+`,
+    expect: [
+      {
+        table: "memory_retention_policies",
+        type: "table",
+        columns: ["admin_id", "enabled", "retention_days", "grace_days", "updated_at"],
+        primaryKey: ["admin_id"],
+      },
+      {
+        table: "memory_retention_anchors",
+        type: "table",
+        columns: ["memory_id", "anchor_at"],
+        primaryKey: ["memory_id"],
+      },
+      {
+        table: "memory_retention_items",
+        type: "table",
+        columns: ["memory_id", "owner_admin_id", "quarantined_at", "purge_after"],
+        primaryKey: ["memory_id"],
+      },
+    ],
+  },
+  {
+    version: 18,
+    name: "provider OAuth connections with owner-scoped token storage",
+    sql: `
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state_hash TEXT PRIMARY KEY,
+  admin_id TEXT NOT NULL REFERENCES admins(id),
+  provider TEXT NOT NULL CHECK (provider IN ('google','microsoft')),
+  encrypted_verifier TEXT NOT NULL,
+  include_send INTEGER NOT NULL DEFAULT 0 CHECK (include_send IN (0,1)),
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_states_expiry ON oauth_states(expires_at);
+CREATE TABLE IF NOT EXISTS oauth_connections (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL CHECK (provider IN ('google','microsoft')),
+  provider_user_id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  encrypted_refresh_token TEXT NOT NULL,
+  scopes TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('connected','reconnect')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v17;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v17;
+DROP TABLE ownership_v17;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "oauth_states",
+        type: "table",
+        columns: [
+          "state_hash",
+          "admin_id",
+          "provider",
+          "encrypted_verifier",
+          "include_send",
+          "expires_at",
+          "created_at",
+        ],
+        primaryKey: ["state_hash"],
+      },
+      {
+        table: "oauth_connections",
+        type: "table",
+        columns: [
+          "id",
+          "provider",
+          "provider_user_id",
+          "email",
+          "encrypted_refresh_token",
+          "scopes",
+          "status",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
     ],
   },
 ];
 
-const tableExists = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
+const tableExists = (db, t) =>
+  !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
 
 const V2_SCHEMA = `
 CREATE TABLE IF NOT EXISTS ownership (
@@ -527,7 +773,9 @@ CREATE TABLE IF NOT EXISTS legacy_claims (
 `;
 // Data copies run only when the source tables exist (fresh/partial databases skip them).
 const V2_COPY = [
-  { needs: ["kv"], sql: `
+  {
+    needs: ["kv"],
+    sql: `
 INSERT OR IGNORE INTO legacy_settings (id, data)
   SELECT 1, value FROM kv WHERE key = 'settings';
 INSERT OR IGNORE INTO global_settings (id, data)
@@ -535,15 +783,22 @@ INSERT OR IGNORE INTO global_settings (id, data)
     'host', json_extract(value, '$.host'),
     'integrations', json_extract(value, '$.integrations'),
     'localVoiceUrl', json_extract(value, '$.voice.localVoiceUrl'))
-  FROM kv WHERE key = 'settings';` },
-  { needs: ["bots"], sql: `
+  FROM kv WHERE key = 'settings';`,
+  },
+  {
+    needs: ["bots"],
+    sql: `
 INSERT OR IGNORE INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin)
   SELECT 'bot', b.id, json_extract(b.data, '$.owner_admin_id'), strftime('%Y-%m-%dT%H:%M:%fZ','now'), 'migrated'
-  FROM bots b JOIN admins a ON a.id = json_extract(b.data, '$.owner_admin_id');` },
-  { needs: ["bots", "runs"], sql: `
+  FROM bots b JOIN admins a ON a.id = json_extract(b.data, '$.owner_admin_id');`,
+  },
+  {
+    needs: ["bots", "runs"],
+    sql: `
 INSERT OR IGNORE INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin)
   SELECT 'run', r.id, o.owner_admin_id, strftime('%Y-%m-%dT%H:%M:%fZ','now'), 'migrated'
-  FROM runs r JOIN ownership o ON o.resource_type = 'bot' AND o.resource_id = r.bot_id;` },
+  FROM runs r JOIN ownership o ON o.resource_type = 'bot' AND o.resource_id = r.bot_id;`,
+  },
 ];
 
 const count = (db, t) => {
@@ -556,14 +811,19 @@ export function snapshotContent(db) {
   const out = {};
   for (const t of PRESERVED) {
     const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);
-    if (!exists) { out[t] = null; continue; }
+    if (!exists) {
+      out[t] = null;
+      continue;
+    }
     const h = createHash("sha256");
-    for (const row of db.prepare(`SELECT rowid AS __rowid, * FROM ${t} ORDER BY rowid`).iterate()) h.update(JSON.stringify(row) + "\n");
+    for (const row of db.prepare(`SELECT rowid AS __rowid, * FROM ${t} ORDER BY rowid`).iterate())
+      h.update(JSON.stringify(row) + "\n");
     out[t] = h.digest("hex");
   }
   return out;
 }
-const snapshot = (db) => JSON.stringify({ counts: snapshotCounts(db), content: snapshotContent(db) });
+const snapshot = (db) =>
+  JSON.stringify({ counts: snapshotCounts(db), content: snapshotContent(db) });
 export const currentVersion = (db) => db.prepare("PRAGMA user_version").get().user_version;
 export const targetVersion = () => MIGRATIONS.at(-1).version;
 
@@ -609,14 +869,18 @@ function assertObjects(db, expect) {
     const names = cols.map((c) => c.name);
     const missing = (e.columns || []).filter((c) => !names.includes(c));
     if (missing.length)
-      throw new Error(`asserção de esquema: ${e.table} sem colunas ${missing.join(", ")} (tem: ${names.join(", ")})`);
+      throw new Error(
+        `asserção de esquema: ${e.table} sem colunas ${missing.join(", ")} (tem: ${names.join(", ")})`,
+      );
     if (e.primaryKey) {
       const pk = cols
         .filter((c) => c.pk > 0)
         .sort((a, b) => a.pk - b.pk)
         .map((c) => c.name);
       if (JSON.stringify(pk) !== JSON.stringify(e.primaryKey))
-        throw new Error(`asserção de esquema: PK de ${e.table} é [${pk.join(", ")}], esperado [${e.primaryKey.join(", ")}]`);
+        throw new Error(
+          `asserção de esquema: PK de ${e.table} é [${pk.join(", ")}], esperado [${e.primaryKey.join(", ")}]`,
+        );
     }
   }
 }
@@ -641,7 +905,9 @@ export function migrate(db, dataDir, opts = {}) {
       db.exec("COMMIT");
     } catch (e) {
       db.exec("ROLLBACK");
-      throw new Error(`Migração ${m.version} (${m.name}) falhou e foi desfeita: ${e.message}. Backup verificado: ${backup}`);
+      throw new Error(
+        `Migração ${m.version} (${m.name}) falhou e foi desfeita: ${e.message}. Backup verificado: ${backup}`,
+      );
     }
   }
   return { from, to: currentVersion(db), backup };

@@ -79,6 +79,23 @@ import {
   deleteConversation,
 } from "./conversations.js";
 import { runBot, listRuns, startScheduler, triggerByText, auditLegacyBlocked } from "./bots.js";
+import { listScheduledJobs } from "./jobs.js";
+import {
+  memoryRetentionPolicy,
+  previewMemoryRetention,
+  setMemoryRetentionPolicy,
+  listQuarantinedMemories,
+  restoreQuarantinedMemory,
+  visibleMemorySql,
+} from "./memory-retention.js";
+import {
+  beginOAuth,
+  completeOAuth,
+  disconnectOAuth,
+  listOAuthConnections,
+  OAuthError,
+} from "./oauth.js";
+import { transcribeAudio } from "./stt.js";
 import { tts, cloneVoice, VoiceError } from "./voice.js";
 import { startTelegramPolling, sendMessage, describeSend, sendFingerprint } from "./comms.js";
 import { getMailService, setMailTransport } from "./mail-service.js";
@@ -277,6 +294,17 @@ route("POST", "/api/auth/login", "public", ({ body, req, res }) => {
   res.setCookie = cookieHeader(r.sid, 12 * 3600);
   return { admin: r.admin, csrf: r.csrf };
 });
+// OAuth callback is public only because providers redirect the browser here. Its high-entropy,
+// single-use state is bound to the initiating admin and expires after ten minutes.
+route("GET", "/api/oauth/callback", "public", async ({ query }) => {
+  try {
+    if (query.get("error")) throw new OAuthError(400, "oauth_denied");
+    await completeOAuth({ state: query.get("state"), code: query.get("code") });
+    return { __redirect: "/configuracoes?oauth=connected" };
+  } catch {
+    return { __redirect: "/configuracoes?oauth=failed" };
+  }
+});
 
 // Session (human admin)
 route("GET", "/api/auth/me", "session", ({ principal }) => ({
@@ -312,6 +340,19 @@ route("DELETE", "/api/auth/tokens/:id", "session", ({ principal, params }) =>
 route("POST", "/api/auth/password", "session", ({ body, principal }) =>
   auth.changePassword(principal, body),
 );
+route("GET", "/api/oauth/connections", "session", ({ principal }) =>
+  listOAuthConnections(principal.adminId),
+);
+route("POST", "/api/oauth/:provider/start", "session", ({ principal, params, body }) => {
+  if (!auth.hasRecentReauth(principal)) throw new AuthError(403, "reauth_required");
+  return beginOAuth(principal.adminId, params.provider, { includeSend: !!body.includeSend });
+});
+route("POST", "/api/oauth/:provider/disconnect", "session", ({ principal, params, body }) => {
+  if (!auth.hasRecentReauth(principal)) throw new AuthError(403, "reauth_required");
+  if (body.confirm !== "DESCONECTAR") throw new AuthError(400, "confirmation_required");
+  if (!disconnectOAuth(principal.adminId, params.provider)) notFound();
+  return { ok: true };
+});
 route("POST", "/api/approvals/:id", "session", ({ params, body, principal }) => {
   if (!owns(principal?.adminId, "approval", params.id)) throw new AuthError(404, "not_found"); // foreign/legacy/unknown look the same
   return resolveApproval(params.id, !!body.approve, principal);
@@ -454,7 +495,8 @@ route("DELETE", "/api/conversations/:id", "chat", ({ params, principal }) =>
 );
 
 const MEM_OWNED = `SELECT m.id, m.content, m.tags, m.created_at FROM memories m
-  JOIN ownership o ON o.resource_type = 'memory' AND o.resource_id = m.id AND o.owner_admin_id = ? ORDER BY m.created_at DESC`;
+  JOIN ownership o ON o.resource_type = 'memory' AND o.resource_id = m.id AND o.owner_admin_id = ?
+  WHERE 1=1 ${visibleMemorySql("m", "o")} ORDER BY m.created_at DESC`;
 route("GET", "/api/memories", "memories:read", async ({ query, principal }) =>
   query.get("q")
     ? (await recall(query.get("q"), 50, me(principal))).map(({ score: _s, ...m }) => m)
@@ -483,6 +525,29 @@ route("DELETE", "/api/memories/:id", "memories:write", ({ params, principal }) =
     dropOwnership("memory", params.id);
   });
   audit("memory.deleted", { admin: me(principal), id: params.id });
+  return { ok: true };
+});
+route("GET", "/api/memories/retention", "memories:read", ({ query, principal }) => {
+  const adminId = me(principal);
+  const days = Number(query.get("days") || memoryRetentionPolicy(adminId).retentionDays || 90);
+  return { policy: memoryRetentionPolicy(adminId), preview: previewMemoryRetention(adminId, days) };
+});
+route("GET", "/api/memories/retention/quarantine", "memories:read", ({ principal }) =>
+  listQuarantinedMemories(me(principal)),
+);
+route("PUT", "/api/memories/retention", "session", ({ body, principal }) => {
+  if (!auth.hasRecentReauth(principal)) throw new AuthError(403, "reauth_required");
+  if (body?.enabled && body.confirm !== "ATIVAR_RETENCAO")
+    throw new AuthError(400, "confirmation_required");
+  try {
+    return setMemoryRetentionPolicy(me(principal), body);
+  } catch (e) {
+    if (e.message === "invalid_retention_policy") throw new AuthError(400, e.message);
+    throw e;
+  }
+});
+route("POST", "/api/memories/:id/restore", "memories:write", ({ params, principal }) => {
+  if (!restoreQuarantinedMemory(me(principal), params.id)) notFound();
   return { ok: true };
 });
 
@@ -735,6 +800,7 @@ route("GET", "/api/bots/:id/runs", "bots:read", ({ params, principal }) => {
   if (!owns(me(principal), "bot", params.id)) notFound();
   return listRuns(params.id, me(principal));
 });
+route("GET", "/api/jobs", "bots:read", ({ principal }) => listScheduledJobs(me(principal)));
 // Cancelamento cooperativo de uma execução em andamento (checado entre passos do loop).
 route("POST", "/api/runs/:id/cancel", "bots:run", ({ params, principal }) => {
   if (!owns(me(principal), "run", params.id)) notFound();
@@ -761,6 +827,16 @@ route("POST", "/api/tts", "voice", async ({ body, principal }) => {
       throw err;
     }
     throw e;
+  }
+});
+route("POST", "/api/stt", "voice", async ({ form, principal }) => {
+  try {
+    return await transcribeAudio(principal.adminId, form?.get("file"), {
+      language: String(form?.get("language") || "pt").split("-")[0],
+    });
+  } catch (e) {
+    if (e?.status && e?.code) throw e;
+    throw new AuthError(503, "stt_unavailable");
   }
 });
 route("POST", "/api/voice/clone", "settings:write", async ({ form, principal }) => {
@@ -989,7 +1065,10 @@ route(
     const svixId = req.headers["svix-id"];
     const verified = verifySvixSignature(raw, req.headers, cfg.webhookSecret);
     if (!verified) {
-      audit("agentmail.webhook_rejected", { status: svixId ? "bad_signature" : "missing_headers", account: "agentmail" });
+      audit("agentmail.webhook_rejected", {
+        status: svixId ? "bad_signature" : "missing_headers",
+        account: "agentmail",
+      });
       throw new AuthError(400, "invalid_signature");
     }
     let evt = null;
@@ -1029,7 +1108,8 @@ route("GET", "/api/integrations/agentmail/status", "session", ({ principal }) =>
     enabled: cfg.enabled,
     hasApiKey: !!cfg.apiKey,
     hasWebhookSecret: !!cfg.webhookSecret,
-    inboxId: cfg.inboxId && owns(principal.adminId, "agentmail_inbox", cfg.inboxId) ? cfg.inboxId : null,
+    inboxId:
+      cfg.inboxId && owns(principal.adminId, "agentmail_inbox", cfg.inboxId) ? cfg.inboxId : null,
     inboxClaimed: !!cfg.inboxId && owns(principal.adminId, "agentmail_inbox", cfg.inboxId),
     webhookId: cfg.webhookId || null,
   };
@@ -1047,23 +1127,30 @@ route("POST", "/api/integrations/agentmail/inbox/claim", "session", ({ body, pri
 
 // Registro do webhook na AgentMail (sessão verificada): cria a assinatura nacional na org e
 // grava o segredo retornado direto no global_settings — o segredo nunca passa pela resposta.
-route("POST", "/api/integrations/agentmail/webhook-register", "session", async ({ body, principal }) => {
-  const publicUrl = String(body?.publicUrl || "").trim();
-  if (!/^https:\/\/[a-z0-9.-]+(:\d+)?\/api\/integrations\/agentmail\/webhook$/.test(publicUrl))
-    throw new AuthError(400, "invalid_public_url");
-  const cfg = agentMailConfig(process.env, getSettings(principal.adminId));
-  if (!cfg.enabled || !cfg.apiKey) throw new AuthError(400, "integration_missing_apikey");
-  if (!cfg.inboxId || !owns(principal.adminId, "agentmail_inbox", cfg.inboxId))
-    throw new AuthError(403, "inbox_not_owned");
-  const client = createAgentMailClient(cfg);
-  const webhook = await client.createWebhook(publicUrl, ["message.received"]);
-  const data = { enabled: true, webhookId: String(webhook?.webhook_id ?? webhook?.id ?? "") };
-  if (webhook?.secret) data.webhookSecret = String(webhook.secret);
-  // allowGlobal integral: o chokepoint desta rota já garante isVerifiedAdmin (acesso "session").
-  updateSettings({ integrations: { agentmail: data } });
-  audit("agentmail.webhook_registered", { status: data.webhookId ? "registered" : "registered_no_id" });
-  return { webhookId: data.webhookId, secretStored: !!data.webhookSecret, publicUrl };
-});
+route(
+  "POST",
+  "/api/integrations/agentmail/webhook-register",
+  "session",
+  async ({ body, principal }) => {
+    const publicUrl = String(body?.publicUrl || "").trim();
+    if (!/^https:\/\/[a-z0-9.-]+(:\d+)?\/api\/integrations\/agentmail\/webhook$/.test(publicUrl))
+      throw new AuthError(400, "invalid_public_url");
+    const cfg = agentMailConfig(process.env, getSettings(principal.adminId));
+    if (!cfg.enabled || !cfg.apiKey) throw new AuthError(400, "integration_missing_apikey");
+    if (!cfg.inboxId || !owns(principal.adminId, "agentmail_inbox", cfg.inboxId))
+      throw new AuthError(403, "inbox_not_owned");
+    const client = createAgentMailClient(cfg);
+    const webhook = await client.createWebhook(publicUrl, ["message.received"]);
+    const data = { enabled: true, webhookId: String(webhook?.webhook_id ?? webhook?.id ?? "") };
+    if (webhook?.secret) data.webhookSecret = String(webhook.secret);
+    // allowGlobal integral: o chokepoint desta rota já garante isVerifiedAdmin (acesso "session").
+    updateSettings({ integrations: { agentmail: data } });
+    audit("agentmail.webhook_registered", {
+      status: data.webhookId ? "registered" : "registered_no_id",
+    });
+    return { webhookId: data.webhookId, secretStored: !!data.webhookSecret, publicUrl };
+  },
+);
 
 // Histórico de eventos recebidos (metadados, ordem cronológica decrescente): leitura por escopo.
 route("GET", "/api/integrations/agentmail/events", "comms:read", ({ query, principal }) => {
@@ -1079,8 +1166,11 @@ route("GET", "/api/integrations/agentmail/messages", "comms:read", async ({ quer
   const inboxId = cfg.inboxId;
   if (!inboxId || !owns(principal.adminId, "agentmail_inbox", inboxId))
     throw new AuthError(403, "inbox_not_owned");
-  if (query.has("inbox") && query.get("inbox") !== inboxId) throw new AuthError(404, "inbox_not_found");
-  const page = await getAgentMailClient().listMessages(inboxId, { limit: Math.max(1, Math.min(Number(query.get("limit")) || 10, 50)) });
+  if (query.has("inbox") && query.get("inbox") !== inboxId)
+    throw new AuthError(404, "inbox_not_found");
+  const page = await getAgentMailClient().listMessages(inboxId, {
+    limit: Math.max(1, Math.min(Number(query.get("limit")) || 10, 50)),
+  });
   // Lista traz metadados apenas (como na referencia da API). Corpo só via get_message sob demanda.
   return { inboxId, messages: page?.messages ?? [], count: page?.count ?? 0 };
 });
@@ -1148,6 +1238,15 @@ export function createApp(opts = {}) {
         res,
       });
       const extra = res.setCookie ? { "set-cookie": res.setCookie } : undefined;
+      if (out?.__redirect) {
+        res.writeHead(303, {
+          location: out.__redirect,
+          "cache-control": "no-store",
+          "referrer-policy": "no-referrer",
+          "x-content-type-options": "nosniff",
+        });
+        return res.end();
+      }
       if (out?.__raw) return send(res, 200, out.__raw, origin, out.__type, extra);
       return send(res, 200, out ?? { ok: true }, origin, "application/json", extra);
     } catch (e) {

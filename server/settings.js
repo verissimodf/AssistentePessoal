@@ -48,6 +48,7 @@ export const PERSONAL_DEFAULTS = {
   comms: {},
   voice: {
     tts: "browser",
+    stt: "browser",
     wake: { clap: true, word: true, hotkey: true, ptt: true },
     sensitivity: 6,
     hotkey: "Ctrl+Shift+J",

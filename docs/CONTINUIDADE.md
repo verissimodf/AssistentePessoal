@@ -2,6 +2,11 @@
 
 Data: 2026-10-15 (UTC). Estado: Fase 2 integrada; Fase 3 (gestão documental) implementada com o primeiro formato **TXT** (ver progresso abaixo).
 
+> **Registro histórico:** este documento representa decisões e estado de 2026-10-15. A release
+> 1.9.0 implementou OAuth opcional, fila durável, retenção de memória e STT local. Use
+> [`VALIDACAO.md`](VALIDACAO.md), [`ARQUITETURA.md`](ARQUITETURA.md) e
+> [`OPERACAO-FILA-STT-OAUTH-RETENCAO.md`](OPERACAO-FILA-STT-OAUTH-RETENCAO.md) para o estado atual.
+
 Procedência: **[V]** verificado nesta sessão · **[R]** reportado pelo responsável · **[I]** inferência · **[D]** decisão pendente.
 
 ## 0. Progresso de execução (atualizado)

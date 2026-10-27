@@ -8,6 +8,12 @@
 > [`ARQUITETURA.md`](ARQUITETURA.md#fluxo-de-e-mail-agentmail) e
 > [`../HOMOLOGACAO_STATUS.md`](../HOMOLOGACAO_STATUS.md). Não use a seção histórica abaixo como status operacional.
 
+> **Atualização 1.9.0 (2026-10-27):** o OAuth Gmail/Microsoft Graph passou a existir como conector
+> opcional em `server/oauth.js`, com PKCE, token cifrado e envio manual D9. Consulte
+> [`OPERACAO-FILA-STT-OAUTH-RETENCAO.md`](OPERACAO-FILA-STT-OAUTH-RETENCAO.md). Requisitos de app
+> registrado e teste com provider real permanecem pendentes; as seções antigas que dizem “não
+> iniciado/fora do escopo” são históricas e estão supersedidas.
+
 **Status: F4.11 aprovada (2026-10-15, §12).** A especificação como documento, D7 e as autorizações
 operacionais (§13, §14) seguem pendentes. Deriva do Plano Mestre §6
 (Fase 4) e da matriz de rastreabilidade F4.1–F4.11 em `docs/CONTINUIDADE.md`. As partes **independentes**

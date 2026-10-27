@@ -30,7 +30,7 @@ services:
     # Tag dirigida pela release (P0.3.1): um deploy exporta `IMAGE_TAG` (ex.: 1.0.0) para a nova
     # imagem NÃO sobrescrever a tag da versão em produção — que fica disponível como rollback.
     # Por omissão mantém a tag atual para não partir fluxos que correm `compose up --build` sem env.
-    image: assistente-pessoal:${IMAGE_TAG:-1.8.1}
+    image: assistente-pessoal:${IMAGE_TAG:-1.9.0}
     container_name: assistente-pessoal
     restart: unless-stopped
     # Não-root vem da própria imagem (`USER 1000:1000`), não duplicado aqui.
@@ -44,6 +44,8 @@ services:
       JARVIS_DATA_DIR: "/app/data"
       JARVIS_PORT: "7777"
       PANEL_PORT: "8090"
+      # Serviço de transcrição local opcional; habilitado pelo profile `stt`.
+      JARVIS_STT_URL: "http://stt:8080"
       # Ponte de voz -> xtts-service pela rede Docker.
       XTTS_URL: "http://xtts-service:8000"
       # Origens autorizadas (header Origin), sem curingas. Inclui tailnet (relé no host)
@@ -55,12 +57,45 @@ services:
       AGENTMAIL_API_KEY: ${AGENTMAIL_API_KEY:-}
       AGENTMAIL_WEBHOOK_SECRET: ${AGENTMAIL_WEBHOOK_SECRET:-}
       AGENTMAIL_INBOX_ID: ${AGENTMAIL_INBOX_ID:-}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${GOOGLE_OAUTH_CLIENT_SECRET:-}
+      GOOGLE_OAUTH_REDIRECT_URI: ${GOOGLE_OAUTH_REDIRECT_URI:-}
+      MICROSOFT_OAUTH_CLIENT_ID: ${MICROSOFT_OAUTH_CLIENT_ID:-}
+      MICROSOFT_OAUTH_CLIENT_SECRET: ${MICROSOFT_OAUTH_CLIENT_SECRET:-}
+      MICROSOFT_OAUTH_REDIRECT_URI: ${MICROSOFT_OAUTH_REDIRECT_URI:-}
+      MICROSOFT_OAUTH_TENANT: ${MICROSOFT_OAUTH_TENANT:-common}
     volumes:
       # Banco SQLite (+ WAL/SHM), master.key, vozes e backups — mesmo volume persistente.
       - /opt/laytech-ai/AssistentePessoal/data:/app/data
     networks:
       CNC_APP_PROD_01:
         ipv4_address: 192.168.2.40
+
+  stt:
+    profiles: ["stt"]
+    build:
+      context: .
+      dockerfile: Dockerfile.stt
+    image: assistente-pessoal-stt:whisper-cpu
+    container_name: assistente-pessoal-stt
+    restart: unless-stopped
+    cpus: 4.0
+    mem_limit: 6g
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,noexec,nosuid,nodev
+    environment:
+      WHISPER_MODEL: /models/ggml-small.bin
+      WHISPER_THREADS: "4"
+    volumes:
+      - /opt/laytech-ai/AssistentePessoal/data/whisper-models:/models:ro
+    networks:
+      CNC_APP_PROD_01:
+        aliases: [stt]
 
 networks:
   CNC_APP_PROD_01:

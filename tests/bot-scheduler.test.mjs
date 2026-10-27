@@ -7,9 +7,10 @@ import { join } from "node:path";
 process.env.JARVIS_DATA_DIR = mkdtempSync(join(tmpdir(), "jarvis-bot-scheduler-"));
 process.env.JARVIS_NO_LISTEN = "1";
 
-const { auth, bots } = await import("../server/db.js");
+const { auth, bots, db } = await import("../server/db.js");
 const { assignNew } = await import("../server/ownership.js");
 const { runBot, runScheduledBot } = await import("../server/bots.js");
+const { listScheduledJobs, recoverScheduledJobs } = await import("../server/jobs.js");
 auth.setupFirstAdmin({
   token: auth.ensureBootstrap().token,
   username: "ana",
@@ -67,11 +68,67 @@ test("ledger mantém a idempotência de disparo após recarregar o módulo", asy
     return { reply: "ok", pending: [] };
   };
   assert.equal(
-    (await runScheduledBot(bot, "agenda 08:00", "daily", "2026-10-27", { agentRunner: runner })).status,
+    (await runScheduledBot(bot, "agenda 08:00", "daily", "2026-10-27", { agentRunner: runner }))
+      .status,
     "done",
   );
   const { runScheduledBot: afterRestart } = await import("../server/bots.js?simulated-restart");
-  const replay = await afterRestart(bot, "agenda 08:00", "daily", "2026-10-27", { agentRunner: runner });
+  const replay = await afterRestart(bot, "agenda 08:00", "daily", "2026-10-27", {
+    agentRunner: runner,
+  });
   assert.equal(replay.status, "skipped");
   assert.equal(calls, 1, "um gatilho persistido só inicia uma execução");
+  assert.equal(listScheduledJobs(adminId).length, 1);
+  assert.equal(listScheduledJobs("other-admin").length, 0);
+  const persisted = db
+    .prepare("SELECT encrypted_payload,status FROM durable_jobs WHERE bot_id=?")
+    .get(bot.id);
+  assert.equal(persisted.status, "succeeded");
+  assert.match(persisted.encrypted_payload, /^enc:/);
+});
+
+test("job agendado concorrente permanece na fila para tentativa posterior", async () => {
+  const bot = addBot("queued-on-contention");
+  let release;
+  const runner = () =>
+    new Promise((resolve) => {
+      release = () => resolve({ reply: "ok", pending: [] });
+    });
+  const manual = runBot(bot, "manual", "manual", { agentRunner: runner });
+  while (!release) await new Promise((resolve) => setImmediate(resolve));
+  const scheduled = await runScheduledBot(bot, "agenda", "daily", "2026-10-28", {
+    agentRunner: runner,
+  });
+  assert.equal(scheduled.status, "queued");
+  const saved = db
+    .prepare("SELECT status,available_at FROM durable_jobs WHERE bot_id=?")
+    .get(bot.id);
+  assert.equal(saved.status, "queued");
+  assert.ok(new Date(saved.available_at) > new Date());
+  release();
+  assert.equal((await manual).status, "done");
+});
+
+test("recuperação re-enfileira job sem run e isola execução iniciada para reconciliação", () => {
+  const bot = addBot("recovery-bot");
+  const at = new Date().toISOString();
+  const add = (id, runId) => {
+    db.prepare(
+      `INSERT INTO durable_jobs
+      (id,idempotency_key,bot_id,trigger_type,occurrence_key,encrypted_payload,status,attempts,available_at,lease_owner,lease_until,run_id,created_at,updated_at)
+      VALUES (?,?,?,'daily',?,'enc:test','running',1,?,'dead-worker',?, ?,?,?)`,
+    ).run(id, id, bot.id, id, at, at, runId, at, at);
+    assignNew("job", id, adminId);
+  };
+  add("never-started", null);
+  add("possibly-effected", "run-existing");
+  recoverScheduledJobs();
+  assert.equal(
+    db.prepare("SELECT status FROM durable_jobs WHERE id='never-started'").get().status,
+    "queued",
+  );
+  assert.equal(
+    db.prepare("SELECT status FROM durable_jobs WHERE id='possibly-effected'").get().status,
+    "needs_reconciliation",
+  );
 });

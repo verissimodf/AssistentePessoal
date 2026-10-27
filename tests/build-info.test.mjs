@@ -25,6 +25,7 @@ delete process.env.SCHEMA_VERSION;
 delete process.env.BUILD_COMMIT_STATUS;
 
 const { auth, db } = await import("../server/db.js");
+const { targetVersion } = await import("../server/migrations.js");
 const { createApp } = await import("../server/index.js");
 const { buildInfo, isKnownCommit, commitOrUnknown, GIT_COMMIT } =
   await import("../server/build-info.js");
@@ -89,7 +90,7 @@ test("health expõe os campos de build sem inventar valores", async () => {
   }
   assert.equal(h.commit, "unknown", "sem build injetado o commit é 'unknown'");
   assert.ok(!isKnownCommit(h.commit), "nunca reporta um SHA que o build não injetou");
-  assert.equal(h.schemaVersion, 15, "health expõe o user_version efetivo do SQLite");
+  assert.equal(h.schemaVersion, targetVersion(), "health expõe o user_version efetivo do SQLite");
   assert.equal(h.schemaVersionBuild, null, "schema de build ausente não é inventado");
   assert.equal(h.commitStatus, "unknown", "status não é inferido do branch");
 });

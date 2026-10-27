@@ -2,6 +2,18 @@
 
 Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O formato é baseado no [Keep a Changelog](https://keepachangelog.com) e este projeto adere ao [Semantic Versioning](https://semver.org).
 
+## [1.9.0] — 2026-10-27
+
+### Adicionado
+- Fila SQLite durável/idempotente para bots agendados, payload cifrado, ownership explícito e recuperação conservadora após restart; execuções que já iniciaram exigem reconciliação manual.
+- Política opt-in de retenção de memória com prévia, ocultação da recuperação, quarentena restaurável e purga em lotes.
+- Conexões Gmail/Microsoft Graph por OAuth 2.0 Authorization Code + PKCE, tokens cifrados e escopos de envio opcionais com confirmação manual mantida.
+- STT local opcional por whisper.cpp, upload validado e limitado, profile Docker isolado e seleção do motor no painel.
+
+### Migrações
+- v16 fila durável e ownership para jobs; v17 política e quarentena de retenção; v18 conexões OAuth e ownership. Todas com verificação de backup e preservação de linhas.
+- Testes automatizados específicos adicionados; OAuth com provedor real requer credenciais de aplicação e consentimento configurados pelo operador.
+
 ---
 
 ## [1.8.2] — 2026-10-27
