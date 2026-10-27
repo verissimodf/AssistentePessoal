@@ -17,8 +17,11 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 ### Migração e validação
 - Migração v14 cria o registro de inboxes e amplia o tipo de ownership preservando linhas já
   existentes; backup verificado continua sendo requisito de migração.
-- Validação completa e resultado de produção serão registrados após o build e smoke test desta
-  release. A inbox existente requer reivindicação explícita no painel por um administrador.
+- Backend **632/632**, frontend **109/109**, TypeScript limpo, build de produção concluído e
+  configuração Compose válida; `npm audit` produção sem vulnerabilidades.
+- Implantada em 2026-10-27 como `assistente-pessoal:1.8.1`, commit `138e36e`; `/api/health`
+  confirmou versão/commit/schema 14, painel HTTP 200, SQLite íntegro, zero violações FK e
+  container `healthy` sem reinícios. Inbox histórica ainda aguarda reivindicação explícita.
 
 ## [1.8.0] — 2026-10-27
 

@@ -12,10 +12,10 @@ memória, agentes e integrações com serviços da máquina. O desenho padrão �
 dados, banco, documentos, memórias e segredos ficam na máquina do operador; chamadas externas só
 acontecem quando o provedor/integração correspondente está configurado e habilitado.
 
-> **Código de entrega:** release **1.8.1**, esquema SQLite **14**. A migração v14 isola a
-> integração AgentMail por inbox reivindicada explicitamente pelo administrador. A implantação e
-> o smoke test desta release estão em andamento; o estado confirmado do container permanece em
-> [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md) até a validação pós-deploy.
+> **Estado atual:** release **1.8.1** implantada, esquema SQLite **14**, container `healthy` e
+> smoke test de API/painel aprovado em 2026-10-27. A inbox AgentMail existente requer reivindicação
+> explícita no painel antes de habilitar leitura e envio. Evidências em
+> [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md).
 > Ver [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md) e
 > [`reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md`](reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md).
 

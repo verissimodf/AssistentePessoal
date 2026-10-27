@@ -1,10 +1,31 @@
 # 📋 Relatório de Auditoria Técnica e Homologação (Production Readiness)
 **Projeto:** J.A.R.V.I.S. (Assistente Pessoal Local)
-**Versão Atual:** 1.7.9
-**Data do último release/deploy registrado:** 26 de Outubro de 2026
-**Status do Release:** ✅ **RELEASE 1.7.9 PUBLICADA; CI 3/3 PASS. O relatório pós-deploy registra container healthy, commit a978f596 e schema 12.**
-**Commit da release atual:** `a978f5960ec2a60a45b7fee8f38d0f4f8d50b17e` (branch `main`)
+**Versão Atual:** 1.8.1
+**Data do último release/deploy registrado:** 27 de Outubro de 2026
+**Status do Release:** ✅ **1.8.1 implantada localmente; container healthy, schema 14, smoke de API/painel aprovado. Commit ainda não publicado no remoto.**
+**Commit da imagem atual:** `138e36e56dcb7f38d867e810946527a8cd340d4b` (branch `main`)
 **Repositório Oficial:** `https://github.com/verissimodf/AssistentePessoal`
+
+---
+
+## Estado atual — release 1.8.1 — 27/10/2026
+
+| Item | Evidência local pós-deploy |
+| --- | --- |
+| Versão / esquema | `1.8.1` / SQLite `14` |
+| Commit construído | `138e36e56dcb7f38d867e810946527a8cd340d4b` (`main`, commit local; ainda não publicado no remoto) |
+| Imagem | `assistente-pessoal:1.8.1`, manifest `sha256:2e54a3644fc37f2408951c7a7611fb79a564e058fa5c72a93cb56e1618b4a117` |
+| Container | `running`, `healthy`, `restarts=0`; volume de dados e rede Docker mantidos |
+| Smoke | `/api/health` reporta versão/commit/schema esperados; painel HTTP `200` |
+| Banco | `integrity_check=ok`, `foreign_key_check=0`; migração v13→v14 com backup verificado automático |
+| Backup pré-release | `/app/data/backups/pre-1.8.1-20261027T202000Z.db` + `master.key`, integridade verificada |
+| Testes locais | Backend **632/632**, frontend **109/109**, `tsc --noEmit` sem erros, build Vite/Nitro OK |
+| AgentMail | Inbox existente preservada, sem owner automático; 1 evento histórico não exposto até reivindicação explícita no painel |
+| Lint | Ainda falha por divergência de formatação Prettier no repositório e regras antigas; 363 ocorrências Prettier nos arquivos examinados |
+
+O comando inicial de `compose up` manteve o serviço antigo por uma variável `IMAGE_TAG` já definida
+no ambiente; o deploy foi concluído com `IMAGE_TAG=1.8.1` explícito e recriação forçada apenas do
+serviço `assistente`.
 
 ---
 
