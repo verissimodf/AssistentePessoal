@@ -49,6 +49,12 @@ services:
       # Origens autorizadas (header Origin), sem curingas. Inclui tailnet (relé no host)
       # e o hostname HTTPS (ativado na Fase 7).
       JARVIS_ALLOWED_ORIGINS: "http://100.87.104.126:8090,http://app.tail43f1fb.ts.net:8090,https://jarvis.laytech.com.br,http://192.168.2.40:8090"
+      # AgentMail (server/agentmail.js): fallback operacional — a config canônica é o painel
+      # (global_settings.integrations.agentmail, apiKey/secret criptografados). Interpolação do
+      # .env local (nunca commitado); vazio = desativado no fallback, a integração segue fail-closed.
+      AGENTMAIL_API_KEY: ${AGENTMAIL_API_KEY:-}
+      AGENTMAIL_WEBHOOK_SECRET: ${AGENTMAIL_WEBHOOK_SECRET:-}
+      AGENTMAIL_INBOX_ID: ${AGENTMAIL_INBOX_ID:-}
     volumes:
       # Banco SQLite (+ WAL/SHM), master.key, vozes e backups — mesmo volume persistente.
       - /opt/laytech-ai/AssistentePessoal/data:/app/data
