@@ -1,5 +1,13 @@
 # Fase 4 — E-mail (especificação proposta)
 
+> **Nota de atualização (2026-10-27):** este arquivo é uma especificação histórica do conector IMAP/SMTP;
+> suas tabelas de bloqueadores/autorização e datas descrevem o projeto em 2026-10-15 e não o estado
+> completo atual. O transporte genérico IMAP/SMTP permanece configurável separadamente; AgentMail
+> server-side foi implementado na 1.8.0 e endurecido na 1.8.1. A integração, ownership/claim,
+> limitações do MCP remoto e estado implantado estão em [`CONFIGURACAO.md`](CONFIGURACAO.md#agentmail-integração-server-side),
+> [`ARQUITETURA.md`](ARQUITETURA.md#fluxo-de-e-mail-agentmail) e
+> [`../HOMOLOGACAO_STATUS.md`](../HOMOLOGACAO_STATUS.md). Não use a seção histórica abaixo como status operacional.
+
 **Status: F4.11 aprovada (2026-10-15, §12).** A especificação como documento, D7 e as autorizações
 operacionais (§13, §14) seguem pendentes. Deriva do Plano Mestre §6
 (Fase 4) e da matriz de rastreabilidade F4.1–F4.11 em `docs/CONTINUIDADE.md`. As partes **independentes**

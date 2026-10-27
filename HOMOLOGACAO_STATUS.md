@@ -23,6 +23,11 @@
 | AgentMail | Inbox existente preservada, sem owner automático; 1 evento histórico não exposto até reivindicação explícita no painel |
 | Lint | Ainda falha por divergência de formatação Prettier no repositório e regras antigas; 363 ocorrências Prettier nos arquivos examinados |
 
+**Divergência de metadados:** o endpoint reporta `commitStatus=Registrado`, valor injetado durante o
+build. A branch local contém commits ainda não enviados ao remoto; portanto, esse valor não comprova
+publicação. O próximo build deve usar `BUILD_COMMIT_STATUS="Não registrado (local)"` enquanto a
+árvore estiver local-only, ou publicar a release pelo fluxo normal antes de marcar `Registrado`.
+
 O comando inicial de `compose up` manteve o serviço antigo por uma variável `IMAGE_TAG` já definida
 no ambiente; o deploy foi concluído com `IMAGE_TAG=1.8.1` explícito e recriação forçada apenas do
 serviço `assistente`.

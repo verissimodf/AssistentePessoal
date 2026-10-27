@@ -1,11 +1,11 @@
 # Runbook de release — P0.3 (2026-10-18)
 
-## Release atual — 1.7.8 (2026-10-26)
+## Release implantada — 1.8.1 (2026-10-27)
 
 | Item | Valor |
 | --- | --- |
-| Versão | `1.7.8` (`package.json`) |
-| Esquema | `12` (`PRAGMA user_version`, migração `document_chunks`) |
+| Versão | `1.8.1` (`package.json`) |
+| Esquema | `14` (`PRAGMA user_version`, ownership explícito da inbox AgentMail) |
 | Compose ativo | `docker-compose.yml` (serviço `assistente`) |
 | Build args | `BUILD_VERSION`, `BUILD_COMMIT`, `BUILD_COMMIT_STATUS`, `SCHEMA_VERSION`, `BUILD_TIME`, `RELEASE_BUILD=1` |
 | Health | `/api/health` expõe `version`, `commit`, `commitStatus`, `schemaVersion`, `schemaVersionBuild`, `buildTime` |
@@ -15,9 +15,9 @@ cd /opt/laytech-ai/AssistentePessoal
 COMMIT_SHA=$(git rev-parse HEAD)
 SHORT_SHA=$(git rev-parse --short HEAD)
 VERSION=$(node -p 'require("./package.json").version')
-STATUS="Registrado"   # use "Não registrado (local)" se a árvore não estiver na main remota
+STATUS="Não registrado (local)" # mude para Registrado somente após merge/tag no remoto
 export BUILD_VERSION="$VERSION" BUILD_COMMIT="$COMMIT_SHA" \
-       BUILD_COMMIT_STATUS="$STATUS" SCHEMA_VERSION=12 \
+       BUILD_COMMIT_STATUS="$STATUS" SCHEMA_VERSION=14 \
        BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) RELEASE_BUILD=1
 export IMAGE_TAG="$SHORT_SHA"
 docker compose -f docker-compose.yml build
@@ -26,9 +26,9 @@ docker compose -f docker-compose.yml up -d --no-build
 curl -s http://192.168.2.40:7777/api/health
 ```
 
-O health esperado contém `"version":"1.7.8"`, `"commit":"<SHA>"`, `"commitStatus":"Registrado"`,
-`"schemaVersion":12` e `"schemaVersionBuild":12`. As seções históricas abaixo (P0.3, 2026-10-18)
-permanecem como registro.
+O health esperado contém `"version":"1.8.1"`, `"commit":"<SHA>"`, o `commitStatus` escolhido
+explicitamente no build, `"schemaVersion":14` e `"schemaVersionBuild":14`. As seções históricas
+abaixo (P0.3, 2026-10-18) permanecem como registro e não devem ser usadas como status da release atual.
 
 > **Pós-release 1.7.8 (auditoria 2026-10-26):** a correção `nodemailer@10.1.4` e as atualizações
 > documentais estão no working tree da branch `chore/jarvis-release-closure-178`, **sem commit ou

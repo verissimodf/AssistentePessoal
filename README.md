@@ -120,7 +120,8 @@ cd /opt/laytech-ai/AssistentePessoal
 # build com metadados de release (ver docs/RUNBOOK-RELEASE-2026-10-18.md)
 export BUILD_VERSION="$(node -p 'require("./package.json").version')"
 export BUILD_COMMIT="$(git rev-parse HEAD)"
-export BUILD_COMMIT_STATUS="Registrado"
+# Em build local ainda não publicado; use Registrado somente após merge/tag no remoto.
+export BUILD_COMMIT_STATUS="Não registrado (local)"
 export SCHEMA_VERSION=14
 export BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 export RELEASE_BUILD=1
@@ -187,7 +188,7 @@ de exploração.
 
 ## 💾 Banco, backup e recuperação
 
-- SQLite nativo em WAL, esquema **12** (`PRAGMA user_version`), migrações versionadas com backup
+- SQLite nativo em WAL, esquema **14** (`PRAGMA user_version`), migrações versionadas com backup
   verificado antes de alterar o schema.
 - Backup consistente: `VACUUM INTO` (ou `.backup`) do banco **e** cópia de `master.key`; sem a
   chave o serviço não inicia. Ver [`docs/BACKUP-E-RESTAURACAO.md`](docs/BACKUP-E-RESTAURACAO.md) e
@@ -249,6 +250,10 @@ Estado verificado em 2026-10-26 (sem alterar configuração):
 - **E-mail:** `JARVIS_MAIL_TRANSPORT` ausente mantém o transporte **mock**. A conta Gmail está
   configurada, mas o login IMAP real falhou na auditoria (`authenticationFailed`); envio real não
   foi testado. Ver estado e pendências em [`docs/CONFIGURACAO.md`](docs/CONFIGURACAO.md).
+- **AgentMail:** integração server-side com webhook Svix, leitura sob demanda e envio de agente
+  mediante aprovação D9. A inbox precisa de reivindicação explícita por administrador após a
+  migração v14; o corpo do e-mail não é persistido. O MCP AgentMail remoto configurado diretamente
+  não passa pelos controles do Jarvis; use as ferramentas integradas para acesso protegido.
 - **Telegram:** conta habilitada com token/chat configurados, mas `getMe` retornou HTTP 404 na
   auditoria (token inválido ou revogado). Nenhuma mensagem foi enviada. Reconfigure o token no
   painel antes de usar.
@@ -288,7 +293,10 @@ npm run build
 (cd skills/vendor/addyosmani-agent-skills && sha256sum -c SHA256SUMS)
 ```
 
-Resultado da linha de base 1.7.9 (2026-10-26): backend **616/616** (incl. guardrail de backup), frontend **109/109**, build OK.
+Última validação local registrada em 2026-10-27: backend **632/632**, frontend **109/109**,
+TypeScript sem erros e build Vite/Nitro de produção OK. O lint continua com dívida de formatação e
+algumas regras em arquivos existentes; evidência e status do container em
+[`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md).
 O CI do GitHub Actions executa Ubuntu, Windows e build/inicialização do container; o job Windows
 depende de `.gitattributes` para preservar LF nas skills.
 
@@ -301,12 +309,12 @@ depende de `.gitattributes` para preservar LF nas skills.
 ```json
 {
   "ok": true,
-  "version": "1.7.8",
-  "commit": "4ad3ba20a5a6dbccdabe5a8390e45484e1584ce9",
-  "buildTime": "2026-10-26T00:14:17Z",
+  "version": "1.8.1",
+  "commit": "138e36e56dcb7f38d867e810946527a8cd340d4b",
+  "buildTime": "2026-10-27T20:18:44Z",
   "mode": "production",
-  "schemaVersion": 12,
-  "schemaVersionBuild": 12,
+  "schemaVersion": 14,
+  "schemaVersionBuild": 14,
   "commitStatus": "Registrado",
   "setupRequired": false
 }
@@ -314,8 +322,10 @@ depende de `.gitattributes` para preservar LF nas skills.
 
 - `schemaVersion` é o `PRAGMA user_version` efetivo do banco; `schemaVersionBuild` é o valor
   declarado no build.
-- `commitStatus` é `Registrado` quando o commit está na `main` remota/tag, ou
-  `Não registrado (local)` em build dirty/local.
+- `commitStatus` é metadado **injetado no build**, não uma checagem de Git em runtime. Use
+  `Registrado` após merge/tag remota e `Não registrado (local)` em build local. A imagem atual
+  reporta `Registrado`, embora seus commits ainda não estejam no remoto; esta divergência ficou
+  registrada em `HOMOLOGACAO_STATUS.md` e deve ser corrigida no próximo build/publicação.
 - Diagnóstico operacional autenticado: `GET /api/diagnostics` (sessão de administrador).
 - Telemetria do roteador: `GET /api/router/telemetry` (escopo `skills:read`).
 - Runbook de release e verificação de imagem:

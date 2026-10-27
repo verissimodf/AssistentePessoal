@@ -1,6 +1,6 @@
 # 🏛️ Arquitetura do Sistema e Fluxo de Dados
 
-Documento atualizado para a release **1.7.8** (esquema SQLite **12**). Descreve a topologia real,
+Documento atualizado para a release **1.8.1** (esquema SQLite **14**). Descreve a topologia real,
 os componentes e os limites de confiança. Para configuração, ver `docs/CONFIGURACAO.md`.
 
 ---
@@ -53,6 +53,7 @@ de voz e painel no mesmo container e encerra o conjunto se um componente morrer.
 | Skills | `server/skills.js`, `scripts/setup-global-skills.mjs` | catálogo, carregamento sob demanda, checksums, confinamento |
 | Integrações HTTP | `server/http-integration.js` | allowlist de integração, timeout, limite de prompt/resposta |
 | Comunicações | `server/comms.js`, `server/mail-service.js` | Telegram/WhatsApp/Signal, IMAP/SMTP, calendário |
+| AgentMail | `server/agentmail.js` | webhook Svix, leitura sob demanda, envio D9 e ownership explícito da inbox |
 | RAG | `server/documents.js` | ingestão, chunks, embeddings, busca híbrida |
 | Voz | `scripts/voice-adapter.mjs`, `server/voice.js` | TTS local/remoto e ponte de voz |
 | Painel | `src/` (React/TanStack/Vite/Nitro) | UI, bridge HTTP, estados de saúde/diagnóstico |
@@ -69,6 +70,21 @@ de voz e painel no mesmo container e encerra o conjunto se um componente morrer.
    ações de host entram na fila de aprovação quando a autonomia exige.
 5. A resposta é persistida na conversa; a auditoria registra metadados (nunca prompt/conteúdo).
 6. TTS (quando habilitado) recebe o texto e devolve áudio; o painel reproduz.
+
+### Fluxo de e-mail AgentMail
+
+1. O webhook público valida a assinatura Svix sobre o corpo bruto, deduplica pelo id do provider e
+   persiste apenas metadados do evento; o corpo do e-mail não é armazenado localmente.
+2. O acesso a mensagens consulta a inbox configurada no provider sob o escopo `comms:read`.
+3. Antes de expor eventos/mensagens ou permitir envio, Jarvis exige ownership da inbox na tabela
+   `ownership`, reivindicado explicitamente por uma sessão administrativa. Inboxes legadas nunca
+   recebem owner durante boot/migração.
+4. Envio iniciado por agente passa por aprovação D9 e revalida configuração, owner e impressão
+   digital do conteúdo no momento da execução.
+
+O MCP hospedado de AgentMail é externo a esse fluxo: ele não passa pelo `callTool`, ownership,
+aprovação D9 ou auditoria do Jarvis. Para manter as garantias deste sistema, use as ferramentas
+AgentMail server-side do Jarvis; trate clientes MCP diretos como integrações independentes.
 
 Falhas de provider são tipadas e não vazam payload/chave nos logs. O fallback local (Ollama) é o
 caminho seguro quando um gateway externo está indisponível.
@@ -102,15 +118,17 @@ caminho seguro quando um gateway externo está indisponível.
 | API → integrações | URL da configuração (admin), Bearer do settings, timeout/limite |
 | Segredos | AES-256-GCM em repouso; `master.key` 600; nunca em logs/relatórios |
 
-Rotas públicas são apenas `GET /api/health`, `POST /api/auth/setup` e `POST /api/auth/login`.
-Tudo o mais exige sessão/token e escopo. O CSRF é obrigatório em toda mutação com cookie.
+Rotas públicas são `GET /api/health`, `POST /api/auth/setup`, `POST /api/auth/login` e o webhook
+`POST /api/integrations/agentmail/webhook`, que exige assinatura Svix válida e falha fechado sem
+segredo. Tudo o mais exige sessão/token e escopo. O CSRF é obrigatório em toda mutação com cookie.
 
 ---
 
 ## 6. Dados e migrações
 
 - SQLite nativo (`node:sqlite`) em WAL, `busy_timeout=5000`, transações `BEGIN IMMEDIATE`.
-- `PRAGMA user_version` é a versão do schema; a release 1.7.8 usa **12** (`document_chunks`).
+- `PRAGMA user_version` é a versão do schema; a release 1.8.1 usa **14** (`agentmail_inboxes` e
+  ownership explícito da inbox; eventos AgentMail foram introduzidos na v13).
 - Cada migração roda em transação, compara contagens/hashes das tabelas preservadas e exige backup
   verificado antes de alterar. Falha → rollback e erro explícito.
 - `master.key` é obrigatória para decifrar settings; o backup precisa incluir banco **e** chave.

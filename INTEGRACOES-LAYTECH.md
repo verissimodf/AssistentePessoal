@@ -1,6 +1,8 @@
 # Integrações LayTech — estado operacional
 
-Atualizado em **2026-10-26** para a release **1.7.9**, com base no relatório de deploy pós-release. O estado das integrações protegidas permanece conforme a documentação anterior: elas não foram alteradas nem retestadas neste fluxo.
+Atualizado em **2026-10-27** após deploy local da release **1.8.1**. A topologia do container foi
+verificada agora; os resultados dos demais provedores abaixo continuam sendo a fotografia de
+**2026-10-26** e não foram retestados neste fluxo.
 
 ## 1. Topologia atual
 
@@ -8,8 +10,8 @@ Atualizado em **2026-10-26** para a release **1.7.9**, com base no relatório de
 | --- | --- | --- |
 | API | `http://<ip-interno>:7777` (rede Docker) | sem porta publicada no host |
 | Painel | `http://<ip-interno>:8090` (rede Docker) | público via `https://jarvis.laytech.com.br` |
-| Container | `assistente-pessoal` | último deploy registrado: `assistente-pessoal:a978f59`, `healthy`, `restarts=0`, versão 1.7.9, schema 12 |
-| Digest da imagem | SHA-256 | `sha256:baf162e5f576720d07b14c65e4963aa11ccade8eb13f997e5500ffcc88e9c246` (registro do deploy 1.7.9) |
+| Container | `assistente-pessoal` | `assistente-pessoal:1.8.1`, `healthy`, `restarts=0`, versão 1.8.1, schema 14; `commitStatus` ainda requer correção de metadado local |
+| Digest da imagem | SHA-256 | `sha256:2e54a3644fc37f2408951c7a7611fb79a564e058fa5c72a93cb56e1618b4a117` (deploy local 1.8.1) |
 | Nginx | `nginx-app:80` | recebe do túnel Cloudflare |
 | Cloudflare | `jarvis.laytech.com.br` | TLS/HSTS no edge |
 | Dados | `/opt/laytech-ai/AssistentePessoal/data` | SQLite WAL + `master.key` 600 |
@@ -35,7 +37,7 @@ Cloudflare. Se o Tailscale for reativado, valide novamente as origens permitidas
 | Odysseus | `http://odysseus:8000/v1` | HTTP | não exposto como ferramenta de agente |
 | REA | `rea-agents` na imagem | CLI/argv fixo | `rea_analyze` com aprovação |
 | Gigabrain | MCP stdio | `data/gigabrain/` | `gigabrain_recall`/`remember` |
-| AgentMail | `https://api.agentmail.to` (REST v0, Bearer) + webhook `POST /api/integrations/agentmail/webhook` (Svix) | Server-side: `server/agentmail.js` + migração v13 + tools `agentmail_read_email`/`agentmail_send_email` (D9); config via painel (`global_settings.integrations.agentmail`) ou env `AGENTMAIL_API_KEY`/`AGENTMAIL_WEBHOOK_SECRET`; MCP hospedado + skills em `.agents/skills/agentmail*` | **OPERATIONAL** — release **1.8.0** em produção (imagem `assistente-pessoal:837e2f0`, schema 13, health ok). Webhook registrado no provider em **2026-10-27**, `webhook_id: ep_3LI5BKyF1itW99uDsILhV3w5OjQ` (segredo `whsec_` NUNCA versionado; vive no `.env` local/panel). E2E real validado: entrega Svix aceita (`agentmail.webhook_received`), dedupe, envio D9 com evidência `verified/provider_message_id`. Rollback: tag `a978f59` (1.7.9, schema 12) |
+| AgentMail | `https://api.agentmail.to` (REST v0, Bearer) + webhook `POST /api/integrations/agentmail/webhook` (Svix) | Server-side: `server/agentmail.js`, migrações v13/v14 e tools `agentmail_read_email`/`agentmail_send_email` (D9); config via painel (`global_settings.integrations.agentmail`) ou env fallback; inbox claim explícito | **DEPLOYED, ACESSO PENDENTE DE CLAIM** — 1 inbox configurada, sem owner automático; 1 evento histórico fica invisível até um admin reivindicar a inbox em Configurações. API/painel smoke OK, banco schema 14 íntegro. Evento/webhook e envio real foram validados na release 1.8.0 anterior; não foram repetidos após a mudança de ownership. O MCP hospedado listado em `.mcp.json`/`opencode.json` é um caminho externo sem os controles Jarvis D9/ownership/auditoria; prefira ferramentas server-side. |
 
 ### 2.1 OpenClaw
 

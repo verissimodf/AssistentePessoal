@@ -1,27 +1,48 @@
-# Validação
+# Validação — release 1.8.1
 
-| Item | Como verificar | Estado |
-|---|---|---|
-| Testes de palmas e palavra de ativação | `npx vitest run` | 7/7 OK (2 arquivos) |
-| Política de comandos do host | `node --test tests/hostpolicy.test.mjs` | 6/6 OK |
-| Serviço sobe e responde | `curl http://127.0.0.1:7777/api/health` | OK |
-| Chaves cifradas e mascaradas | PUT `/api/settings` devolve `hasKey: true` e chave vazia | OK |
-| Memória grava e busca | POST/GET `/api/memories` | OK |
-| Origem desconhecida bloqueada | `curl -H "origin: https://evil.com" …` → 403 | OK |
-| Painel responde | `curl -o /dev/null -w "%{http_code}" http://localhost:8080` | 200 |
-| Conversa com Ollama/Anthropic/OpenAI | depende das suas chaves/modelos | validar localmente |
-| Voz clonada XTTS | depende do serviço Python (Python 3.10–3.12) | validar localmente |
-| Ações no host | Configurações → Geral → Ações no host; `run_command` pede aprovação no painel | OK |
-| `context7_docs` (Context7 MCP) | `POST /api/chat` pedindo docs de uma lib | OK |
-| `crawl_page` (crawl4ai) | `POST /api/chat` pedindo para ler uma URL | OK |
-| `openhands_task` (OpenHands) | `POST /api/chat` delegando uma tarefa | OK (1ª chamada monta a imagem de runtime) |
-| Acesso Tailscale | `curl http://<IP-tailscale>:7777/api/health` | OK |
+Atualizado em 2026-10-27. Registra os comandos executados nesta entrega e separa validações locais,
+smoke do container e integrações externas que não foram repetidas.
 
-Validado em Windows 11 com **Node 24.20.0** e npm 11.19.0 (o mínimo continua sendo o 22.13).
-O `npm install` reporta 1 vulnerabilidade de severidade alta em dependência transitiva do painel;
-`npm audit` mostra o detalhe.
+## Verificações executadas
 
-Em modo `dev` o Vite anuncia o painel também em endereços de rede (LAN, Tailscale, WSL) — o
-serviço em 7777 segue só em `127.0.0.1` e recusa essas origens com 403, então o painel remoto não
-conversa com ele. Para não expor nem o painel, rode em produção: `npm run build` e
-`npm run preview -- --port 8080`.
+| Área | Verificação | Resultado |
+| --- | --- | --- |
+| Backend | `node --no-warnings --test tests/*.test.mjs` | **632/632 PASS** |
+| Migração v14 | Upgrade v13→v14, preservação de ownership e rejeição de tipo desconhecido | **PASS** |
+| Frontend | `npm test` | **109/109 PASS** (21 arquivos) |
+| Tipos | `npx tsc --noEmit` | **sem erros** |
+| Build frontend/SSR | `npm run build` e build Docker com `NITRO_PRESET=node-server` | **PASS** |
+| Dependências de produção | `npm audit --omit=dev` na raiz e no servidor | **0 vulnerabilidades reportadas** |
+| Compose | `docker compose config --quiet` | **PASS** |
+| API implantada | `GET /api/health` no IP interno | versão 1.8.1, schema 14, SHA reportado; `commitStatus=Registrado` é divergente porque o commit ainda está local |
+| Painel implantado | HTTP na porta 8090 | **200** |
+| Container | `docker compose ps` / healthcheck | **healthy**, 0 reinícios observados |
+| Banco implantado | `PRAGMA integrity_check` / `foreign_key_check` | `ok` / 0 violações |
+| Backup pré-deploy | cópia SQLite + `master.key` | integrity check `ok`; backup automático v13 também verificado pela migração |
+
+## Resultado não verde conhecido
+
+O ESLint dos arquivos tocados nesta entrega ainda falha: **368 ocorrências**, sendo 363 de
+`prettier/prettier` e 5 de outras regras em trechos dos arquivos analisados. As ocorrências de
+formatação são dívida distribuída por arquivos antigos; não foi feita formatação em massa para
+evitar diffs funcionais extensos. Os demais avisos devem ser tratados incrementalmente e validados
+contra o diff antes de declarar lint limpo.
+
+O build local avisa sobre chunks JavaScript acima de 500 kB e depreciação de algumas dependências de
+desenvolvimento. Não impediram build, testes ou execução; otimização de chunks deve ser orientada por
+medição de carregamento antes de alterar a divisão de bundles.
+
+## Escopo externo e limitações
+
+- A integração AgentMail foi testada por mocks na suíte. O webhook assinado e envio D9 foram
+  validados na release 1.8.0, mas **não foram repetidos** após o isolamento/claim da v1.8.1.
+- No deploy atual há um evento histórico de inbox ainda sem owner. Até o admin reivindicar a inbox,
+  o sistema oculta os eventos e bloqueia leitura/envio. Não foi feita atribuição automática.
+- OmniRoute, Headroom, Ollama, OpenClaw, Telegram, Gmail, serviços de voz e demais provedores não
+  foram retestados nesta entrega; seus estados em `INTEGRACOES-LAYTECH.md` são fotografias com a data
+  declarada naquele documento.
+- Não foi enviado e-mail real nem chamado modelo pago durante a validação 1.8.1.
+
+Para regressões funcionais, execute a suíte indicada em `package.json` e confira o estado atualizado
+em [`HOMOLOGACAO_STATUS.md`](../HOMOLOGACAO_STATUS.md). Um resultado passado não substitui a
+verificação pós-deploy da instalação específica.

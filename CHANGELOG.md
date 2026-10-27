@@ -13,6 +13,8 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   automaticamente. Aprovações de envio são invalidadas se a inbox mudar antes da confirmação.
 - Corrigida a leitura do histórico de eventos (`SELECT` usa `.all()`, não metadados de `.run()`).
 - Corrigidos erros de tipos, hooks e testes de componentes que impediam `tsc`/lint direcionado.
+- Documentação operacional atualizada para a 1.8.1: arquitetura, configuração, backup, validação,
+  integrações e roadmap; a especificação antiga de e-mail foi marcada como histórica.
 
 ### Migração e validação
 - Migração v14 cria o registro de inboxes e amplia o tipo de ownership preservando linhas já

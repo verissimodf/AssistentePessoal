@@ -1,6 +1,6 @@
 # Configuração
 
-Atualizado para **1.7.8** (esquema 12). A configuração de aplicação é feita no painel e persistida
+Atualizado para **1.8.1** (esquema 14). A configuração de aplicação é feita no painel e persistida
 cifrada em `data/jarvis.db`; variáveis de ambiente cobrem infraestrutura e segurança.
 
 ## Proveniência dos valores
@@ -105,10 +105,33 @@ não basta. O fallback local (Ollama) continua sendo o caminho seguro quando um 
 
 - `JARVIS_MAIL_TRANSPORT` ausente mantém o envio de e-mail em **mock**; nenhuma mensagem real foi
   enviada nesta auditoria.
-- Para e-mail real: corrigir a senha de app/permissão IMAP, definir `JARVIS_MAIL_TRANSPORT=imap`,
-  testar leitura e só depois habilitar envio (com aprovação humana).
+- Para e-mail real via IMAP: corrigir a senha de app/permissão, definir
+  `JARVIS_MAIL_TRANSPORT=imap`, testar leitura e só depois habilitar envio com aprovação humana.
 - Para Telegram: gerar novo token no @BotFather, atualizar no painel e validar `getMe`; não envie
   mensagens a terceiros sem autorização.
+
+## AgentMail (integração server-side)
+
+AgentMail usa REST v0 e webhook Svix no backend (`server/agentmail.js`). Configure a integração
+`agentmail` em **Configurações → Integrações**, incluindo API key e inbox. Segredos ficam na
+configuração global cifrada; as variáveis `AGENTMAIL_API_KEY`, `AGENTMAIL_WEBHOOK_SECRET` e
+`AGENTMAIL_INBOX_ID` são fallback operacional no container e não devem ser versionadas.
+
+- A inbox configurada deve ser reivindicada uma única vez por um administrador em
+  **Configurações → Integrações → Reivindicar inbox AgentMail**. A ação exige confirmação e cria
+  ownership imutável para o admin autenticado. A migração v14 não reivindica recursos legados.
+- Sem ownership, status não revela o identificador da inbox; eventos ficam ocultos e leitura, registro
+  de webhook e ferramentas de agente falham fechados. Depois de reivindicar, eventos/metadados e
+  leitura sob demanda ficam limitados ao proprietário.
+- Webhook registra somente metadados de envelope e usa assinatura Svix; o corpo não é persistido.
+  Envio de agentes requer aprovação humana D9 e é cancelado se inbox ou conteúdo mudarem antes da
+  aprovação.
+- O MCP remoto `https://mcp.agentmail.to/mcp`, se configurado diretamente em `.mcp.json` ou
+  `opencode.json`, é independente e não herda ownership, aprovação D9 nem auditoria do Jarvis.
+  Prefira as ferramentas integradas do Jarvis para preservar esses controles.
+
+O estado implantado e a pendência de reivindicação desta instalação estão em
+[`HOMOLOGACAO_STATUS.md`](../HOMOLOGACAO_STATUS.md) e [`INTEGRACOES-LAYTECH.md`](../INTEGRACOES-LAYTECH.md).
 
 ## Voz
 
