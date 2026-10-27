@@ -27,7 +27,7 @@ export function auditLegacyBlocked(botId, triggerType) {
 }
 
 /** reason is only shown to the model; triggerType (enum) is what gets audited. */
-export async function runBot(bot, reason = "manual", triggerType = "manual") {
+export async function runBot(bot, reason = "manual", triggerType = "manual", { agentRunner = runAgent } = {}) {
   const trig = TRIGGERS.has(triggerType) ? triggerType : "manual";
   if (!bot) return { status: "error", output: "bot inexistente" };
   const fresh = bots.get(bot.id) || bot; // re-read: config may have changed since scheduling
@@ -38,15 +38,25 @@ export async function runBot(bot, reason = "manual", triggerType = "manual") {
     audit("authz.bot_denied", { bot: fresh.id, reason: reasonCode, trigger_type: trig });
     return { status: "denied", output: reasonCode === "legacy_blocked" ? "Bot sem proprietário: execução bloqueada até um administrador assumi-lo." : "Proprietário do bot inativo." };
   }
+  if (activeBotRuns.has(fresh.id)) {
+    audit("bot_run.skipped", { bot: fresh.id, trigger_type: trig, owner: principal.adminId, reason: "already_running" });
+    return { status: "skipped", output: "Bot já possui uma execução em andamento." };
+  }
+  const concurrent = [...activeBotRuns.values()].filter((run) => run.adminId === principal.adminId).length;
+  if (concurrent >= MAX_CONCURRENT_RUNS_PER_ADMIN) {
+    audit("bot_run.skipped", { bot: fresh.id, trigger_type: trig, owner: principal.adminId, reason: "admin_concurrency_limit" });
+    return { status: "skipped", output: "Limite de execuções simultâneas do administrador atingido." };
+  }
+  activeBotRuns.set(fresh.id, { adminId: principal.adminId, startedAt: Date.now() });
   bot = fresh;
   const id = uid();
-  tx(() => {
-    db.prepare("INSERT INTO runs (id, bot_id, started_at, status, output) VALUES (?, ?, ?, 'running', '')").run(id, bot.id, now());
-    assignNew("run", id, principal.adminId);
-  });
-  audit("bot_run", { bot: bot.id, trigger_type: trig, owner: principal.adminId, scopes: principal.scopes, correlation: id });
   try {
-    const r = await runAgent({
+    tx(() => {
+      db.prepare("INSERT INTO runs (id, bot_id, started_at, status, output) VALUES (?, ?, ?, 'running', '')").run(id, bot.id, now());
+      assignNew("run", id, principal.adminId);
+    });
+    audit("bot_run", { bot: bot.id, trigger_type: trig, owner: principal.adminId, scopes: principal.scopes, correlation: id });
+    const r = await agentRunner({
       agentId: bot.agent_id,
       autonomy: bot.autonomy || "confirm",
       principal,
@@ -61,8 +71,13 @@ export async function runBot(bot, reason = "manual", triggerType = "manual") {
     bots.save({ ...bot, last_run: now() });
     return { id, status, output: r.reply };
   } catch (e) {
-    db.prepare("UPDATE runs SET status='error', output=? WHERE id=?").run(e.message, id);
-    return { id, status: "error", output: e.message };
+    if (db.prepare("SELECT 1 FROM runs WHERE id=?").get(id)) {
+      db.prepare("UPDATE runs SET status='error', output=? WHERE id=?").run(e.message, id);
+      return { id, status: "error", output: e.message };
+    }
+    throw e;
+  } finally {
+    activeBotRuns.delete(fresh.id);
   }
 }
 
@@ -75,6 +90,43 @@ const watchers = new Map();
 const lastDaily = new Map();
 const lastInterval = new Map();
 let lastAutoHeal = 0;
+const activeBotRuns = new Map();
+const MAX_CONCURRENT_RUNS_PER_ADMIN = 2;
+let reconciledScheduledClaims = false;
+
+/** Persist a unique key before a scheduled action so repeated ticks cannot replay it after restart. */
+export async function runScheduledBot(bot, reason, triggerType, occurrenceKey, { agentRunner = runAgent } = {}) {
+  const principal = botPrincipal(bot);
+  if (!principal) return runBot(bot, reason, triggerType);
+  const triggerKey = `${bot.id}:${triggerType}:${occurrenceKey}`;
+  const at = now();
+  const alreadyClaimed = () => !!db.prepare("SELECT 1 FROM bot_schedule_claims WHERE trigger_key=?").get(triggerKey);
+  if (alreadyClaimed()) {
+    audit("bot_schedule.skipped", { bot: bot.id, trigger_type: triggerType, reason: "duplicate_trigger" });
+    return { status: "skipped", output: "Disparo agendado já registrado." };
+  }
+  try {
+    db.prepare("INSERT INTO bot_schedule_claims (trigger_key, bot_id, trigger_type, status, claimed_at, updated_at) VALUES (?, ?, ?, 'claimed', ?, ?)")
+      .run(triggerKey, bot.id, triggerType, at, at);
+  } catch (e) {
+    if (alreadyClaimed()) {
+      audit("bot_schedule.skipped", { bot: bot.id, trigger_type: triggerType, reason: "duplicate_trigger" });
+      return { status: "skipped", output: "Disparo agendado já registrado." };
+    }
+    throw e;
+  }
+  db.prepare("UPDATE bot_schedule_claims SET status='running', updated_at=? WHERE trigger_key=?").run(now(), triggerKey);
+  const result = await runBot(bot, reason, triggerType, { agentRunner });
+  if (result.status === "skipped") {
+    db.prepare("UPDATE bot_schedule_claims SET status='skipped', updated_at=? WHERE trigger_key=?").run(now(), triggerKey);
+    return result;
+  }
+  const allowed = new Set(["done", "awaiting_approval", "error", "denied", "cancelled"]);
+  const status = allowed.has(result.status) ? result.status : "error";
+  db.prepare("UPDATE bot_schedule_claims SET status=?, run_id=?, updated_at=? WHERE trigger_key=?")
+    .run(status, result.id || null, now(), triggerKey);
+  return result;
+}
 
 function syncWatchers() {
   const fileBots = bots.list().filter((b) => b.enabled && b.trigger_type === "file" && b.trigger_value && botPrincipal(b));
@@ -83,13 +135,17 @@ function syncWatchers() {
     if (watchers.has(b.id)) continue;
     try {
       let t;
-      const w = watch(b.trigger_value, { recursive: true }, (_e, f) => { clearTimeout(t); t = setTimeout(() => runBot(b, `arquivo alterado: ${f}`, "file"), 2000); });
+      const w = watch(b.trigger_value, { recursive: true }, (_e, f) => { clearTimeout(t); t = setTimeout(() => runScheduledBot(b, `arquivo alterado: ${f}`, "file", Math.floor(Date.now() / 2000)), 2000); });
       watchers.set(b.id, w);
     } catch (e) { console.warn(`[bots] não foi possível observar ${b.trigger_value}: ${e.message}`); }
   }
 }
 
 export function startScheduler() {
+  if (!reconciledScheduledClaims) {
+    db.prepare("UPDATE bot_schedule_claims SET status='interrupted', updated_at=? WHERE status IN ('claimed','running')").run(now());
+    reconciledScheduledClaims = true;
+  }
   setInterval(() => {
     try {
       const d = new Date();
@@ -98,13 +154,13 @@ export function startScheduler() {
       for (const b of bots.list().filter((x) => x.enabled)) {
         if (b.trigger_type === "daily" && b.trigger_value === hhmm && lastDaily.get(b.id) !== today) {
           lastDaily.set(b.id, today);
-          runBot(b, `agenda ${hhmm}`, "daily"); // legacy bots: audited once, at the real firing time
+          runScheduledBot(b, `agenda ${hhmm}`, "daily", today);
         }
         if (b.trigger_type === "interval") {
           const mins = Math.max(1, Number(b.trigger_value) || 60);
           const last = lastInterval.get(b.id) || Date.now();
           if (!lastInterval.has(b.id)) lastInterval.set(b.id, last);
-          else if (Date.now() - last >= mins * 60000) { lastInterval.set(b.id, Date.now()); runBot(b, `intervalo ${mins} min`, "interval"); }
+          else if (Date.now() - last >= mins * 60000) { lastInterval.set(b.id, Date.now()); runScheduledBot(b, `intervalo ${mins} min`, "interval", Math.floor(Date.now() / (mins * 60000))); }
         }
       }
       syncWatchers();

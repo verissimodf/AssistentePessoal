@@ -73,10 +73,19 @@ test("memories: each admin reads/writes only their own; foreign ids look nonexis
   const listB = (await json(await req("/api/memories", { s: B }))).body.map((x) => x.id);
   assert.ok(listA.includes(m.body.id));
   assert.equal(listB.includes(m.body.id), false);
+  const exportedA = await json(await req("/api/memories/export", { s: A }));
+  const exportedB = await json(await req("/api/memories/export", { s: B }));
+  assert.equal(exportedA.status, 200);
+  assert.ok(exportedA.body.memories.some((x) => x.id === m.body.id));
+  assert.equal(exportedB.body.memories.some((x) => x.id === m.body.id), false);
+  assert.equal(exportedA.body.count, exportedA.body.memories.length);
+  assert.equal(JSON.stringify(db.prepare("SELECT detail FROM audit WHERE kind='memory.exported'").all()).includes("segredo da ana"), false);
+  assert.equal((await req(`/api/memories/${m.body.id}`, { method: "PUT", body: { content: "memória corrigida da ana", tags: "a,corrigida" }, s: A })).status, 200);
+  assert.deepEqual({ ...db.prepare("SELECT content, tags FROM memories WHERE id=?").get(m.body.id) }, { content: "memória corrigida da ana", tags: "a,corrigida" });
   assert.equal((await json(await req("/api/memories?q=segredo", { s: B }))).body.length, 0);
   assert.equal((await req(`/api/memories/${m.body.id}`, { method: "PUT", body: { content: "hack" }, s: B })).status, 404);
   assert.equal((await req(`/api/memories/${m.body.id}`, { method: "DELETE", s: B })).status, 404);
-  assert.equal(db.prepare("SELECT content FROM memories WHERE id=?").get(m.body.id).content, "segredo da ana");
+  assert.equal(db.prepare("SELECT content FROM memories WHERE id=?").get(m.body.id).content, "memória corrigida da ana");
 });
 
 test("memories: unowned legacy rows are invisible to both admins (list, search, edit, delete)", async () => {

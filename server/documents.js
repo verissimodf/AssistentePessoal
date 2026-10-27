@@ -453,11 +453,14 @@ export async function searchDocuments(ownerId, query, limit = 10, { embedFn = em
   const words = qClean.toLowerCase().split(/\W+/).filter((w) => w.length > 2);
 
   let queryEmbedding = null;
+  let embeddingFailure = null;
   try {
     const qRes = await embedFn(qClean, ownerId);
     if (Array.isArray(qRes) && qRes.length > 0) queryEmbedding = qRes;
+    else embeddingFailure = "embedding_unavailable";
   } catch {
     queryEmbedding = null;
+    embeddingFailure = "embedding_error";
   }
 
   // Retrieve chunks scoped strictly to the owner admin
@@ -489,6 +492,7 @@ export async function searchDocuments(ownerId, query, limit = 10, { embedFn = em
           chunk_index: 0,
           score,
           search_mode: "lexical",
+          fallback_reason: "legacy_document_text",
           snippet: r.content_text.slice(0, 300),
           content: r.content_text,
         };
@@ -541,6 +545,7 @@ export async function searchDocuments(ownerId, query, limit = 10, { embedFn = em
         chunk_index: c.chunk_index,
         score: Number(finalScore.toFixed(4)),
         search_mode: mode,
+        ...(mode === "lexical" ? { fallback_reason: embeddingFailure || (c.embedding_json ? "invalid_embedding" : "document_without_embedding") } : {}),
         snippet: c.content.slice(0, 300),
         content: c.content,
       });

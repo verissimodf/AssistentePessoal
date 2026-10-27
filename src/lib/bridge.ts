@@ -130,6 +130,7 @@ export type Doc = {
   created_at: string;
   chunk_count?: number;
   rag_status?: "hybrid" | "lexical_only" | "lexical" | string;
+  search_result?: { snippet: string; chunk_index: number; search_mode: string; fallback_reason?: string; score: number };
 };
 
 export type DocChunk = {

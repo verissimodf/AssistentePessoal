@@ -89,7 +89,7 @@ test("health expõe os campos de build sem inventar valores", async () => {
   }
   assert.equal(h.commit, "unknown", "sem build injetado o commit é 'unknown'");
   assert.ok(!isKnownCommit(h.commit), "nunca reporta um SHA que o build não injetou");
-  assert.equal(h.schemaVersion, 14, "health expõe o user_version efetivo do SQLite");
+  assert.equal(h.schemaVersion, 15, "health expõe o user_version efetivo do SQLite");
   assert.equal(h.schemaVersionBuild, null, "schema de build ausente não é inventado");
   assert.equal(h.commitStatus, "unknown", "status não é inferido do branch");
 });
@@ -291,7 +291,7 @@ test("RELEASE_BUILD=1 com SHA completo, versão e RFC3339 aprova e grava o JSON"
         GIT_SHA: sha,
         BUILD_TIME: when,
         APP_VERSION: "1.0.0",
-        SCHEMA_VERSION: "14",
+        SCHEMA_VERSION: "15",
         BUILD_COMMIT_STATUS: "Registrado",
       },
       encoding: "utf8",
@@ -302,7 +302,7 @@ test("RELEASE_BUILD=1 com SHA completo, versão e RFC3339 aprova e grava o JSON"
   assert.equal(raw.commit, sha);
   assert.equal(raw.appVersion, "1.0.0");
   assert.equal(raw.buildTime, when);
-  assert.equal(raw.schemaVersion, 14);
+  assert.equal(raw.schemaVersion, 15);
   assert.equal(raw.commitStatus, "Registrado");
   rmSync(dataDir, { recursive: true, force: true });
 });

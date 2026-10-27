@@ -1,6 +1,6 @@
 {
   "name": "jarvis-local-server",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "private": true,
   "type": "module",
   "description": "Serviço local do Jarvis: API, memória, agentes, bots, voz e ações no host.",

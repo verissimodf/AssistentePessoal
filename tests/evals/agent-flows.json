@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "scenarios": [
+    { "id": "chat-approval-and-denial", "suites": ["tests/agent-loop-e2e.test.mjs"] },
+    { "id": "rag-and-document-injection", "suites": ["tests/documents-rag.test.mjs"] },
+    { "id": "email-untrusted-content-and-approval", "suites": ["tests/mail.test.mjs", "tests/agentmail.test.mjs"] },
+    { "id": "provider-fallback-and-telemetry", "suites": ["tests/skills-hub.test.mjs"] },
+    { "id": "memory-ownership-and-export", "suites": ["tests/isolation.test.mjs"] },
+    { "id": "scheduler-concurrency", "suites": ["tests/bot-scheduler.test.mjs"] }
+  ]
+}

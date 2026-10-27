@@ -314,6 +314,9 @@ test("fallback gracioso: quando gerador de embeddings está offline, opera via b
   assert.ok(res.length > 0);
   assert.equal(res[0].filename, "servidores.txt");
   assert.equal(res[0].search_mode, "lexical");
+  assert.equal(res[0].fallback_reason, "embedding_unavailable");
+  assert.equal(typeof res[0].snippet, "string");
+  assert.equal(res[0].chunk_index, 0);
 });
 
 // ----------------------------------------------------------------------------

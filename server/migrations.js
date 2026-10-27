@@ -463,6 +463,28 @@ BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
       { table: "ownership", type: "table", columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"], primaryKey: ["resource_type", "resource_id"] },
     ],
   },
+  {
+    version: 15,
+    name: "scheduler: idempotency ledger for scheduled bot triggers",
+    // Aditiva: registra apenas chaves de disparo e estado técnico, nunca tarefa, prompt ou resultado.
+    // A PK impede replay de um mesmo disparo diário/intervalo/arquivo após restart. Claims em voo
+    // não são repetidos automaticamente: a ocorrência fica `interrupted` para evitar efeitos duplos.
+    sql: `
+CREATE TABLE IF NOT EXISTS bot_schedule_claims (
+  trigger_key TEXT PRIMARY KEY,
+  bot_id TEXT NOT NULL,
+  trigger_type TEXT NOT NULL CHECK (trigger_type IN ('daily','interval','file')),
+  status TEXT NOT NULL CHECK (status IN ('claimed','running','done','awaiting_approval','error','skipped','denied','cancelled','interrupted')),
+  run_id TEXT,
+  claimed_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_bot_schedule_claims_bot_time ON bot_schedule_claims(bot_id, claimed_at);
+`,
+    expect: [
+      { table: "bot_schedule_claims", type: "table", columns: ["trigger_key", "bot_id", "trigger_type", "status", "run_id", "claimed_at", "updated_at"], primaryKey: ["trigger_key"] },
+    ],
+  },
 ];
 
 const tableExists = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);

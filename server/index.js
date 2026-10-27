@@ -60,7 +60,7 @@ import {
 import { getCatalog, listSkills, matchSkillsForPrompt, loadSkill } from "./skills.js";
 import { collectDiagnostics } from "./diagnostics.js";
 import { callTool, reaSlashCommand } from "./tools.js";
-import { remember, recall, resolveApproval } from "./tools.js";
+import { remember, recall, updateMemory, resolveApproval } from "./tools.js";
 import {
   listDocuments,
   getDocument,
@@ -460,16 +460,20 @@ route("GET", "/api/memories", "memories:read", async ({ query, principal }) =>
     ? (await recall(query.get("q"), 50, me(principal))).map(({ score: _s, ...m }) => m)
     : db.prepare(MEM_OWNED).all(me(principal)),
 );
+route("GET", "/api/memories/export", "memories:read", ({ principal }) => {
+  const rows = db.prepare(MEM_OWNED).all(me(principal));
+  audit("memory.exported", { admin: me(principal), count: rows.length });
+  return { exportedAt: new Date().toISOString(), count: rows.length, memories: rows };
+});
 route("POST", "/api/memories", "memories:write", ({ body, principal }) =>
   remember(String(body.content || ""), body.tags, me(principal)),
 );
-route("PUT", "/api/memories/:id", "memories:write", ({ params, body, principal }) => {
+route("PUT", "/api/memories/:id", "memories:write", async ({ params, body, principal }) => {
   if (!owns(me(principal), "memory", params.id)) notFound();
-  db.prepare("UPDATE memories SET content=?, tags=? WHERE id=?").run(
-    String(body.content || ""),
-    body.tags || "",
-    params.id,
-  );
+  const content = String(body.content || "").trim();
+  if (!content) throw new AuthError(400, "memory_content_required");
+  if (!(await updateMemory(params.id, content, body.tags, me(principal)))) notFound();
+  audit("memory.updated", { admin: me(principal), id: params.id });
   return { ok: true };
 });
 route("DELETE", "/api/memories/:id", "memories:write", ({ params, principal }) => {
@@ -478,6 +482,7 @@ route("DELETE", "/api/memories/:id", "memories:write", ({ params, principal }) =
     db.prepare("DELETE FROM memories WHERE id=?").run(params.id);
     dropOwnership("memory", params.id);
   });
+  audit("memory.deleted", { admin: me(principal), id: params.id });
   return { ok: true };
 });
 

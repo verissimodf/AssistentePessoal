@@ -285,7 +285,7 @@ export function DocumentsPage() {
     if (!q.trim()) return refresh();
     try {
       const r = await api<
-        { id: string; name: string; snippet: string; chunk_count?: number; rag_status?: string }[]
+        { id: string; name: string; snippet: string; chunk_index: number; search_mode: string; fallback_reason?: string; score: number; chunk_count?: number; rag_status?: string }[]
       >(`/api/documents/search?q=${encodeURIComponent(q)}`);
       setItems(
         r.map((x) => ({
@@ -296,6 +296,13 @@ export function DocumentsPage() {
           created_at: "",
           ...(x.chunk_count !== undefined ? { chunk_count: x.chunk_count } : {}),
           ...(x.rag_status !== undefined ? { rag_status: x.rag_status } : {}),
+          search_result: {
+            snippet: x.snippet,
+            chunk_index: x.chunk_index,
+            search_mode: x.search_mode,
+            ...(x.fallback_reason ? { fallback_reason: x.fallback_reason } : {}),
+            score: x.score,
+          },
         })),
       );
     } catch (e) {
@@ -500,6 +507,15 @@ export function DocumentsPage() {
                     <span>• {new Date(d.created_at).toLocaleDateString()}</span>
                   )}
                 </div>
+                {d.search_result && (
+                  <div className="mt-2 max-w-2xl rounded border border-border/50 bg-muted/20 p-2 text-xs" data-testid={`rag-citation-${d.id}`}>
+                    <p className="line-clamp-3 text-muted-foreground">“{d.search_result.snippet}”</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground/80">
+                      Fonte: {d.name}, bloco {d.search_result.chunk_index + 1} · {d.search_result.search_mode} · relevância {(d.search_result.score * 100).toFixed(0)}%
+                      {d.search_result.fallback_reason ? ` · fallback: ${d.search_result.fallback_reason}` : ""}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 

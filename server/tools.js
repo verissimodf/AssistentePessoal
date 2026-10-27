@@ -832,6 +832,19 @@ export async function remember(content, tags = "", ownerId) {
   return { id, content, tags: tags || "", created_at: at };
 }
 
+/** Correct a memory without retaining an embedding for its previous content. */
+export async function updateMemory(id, content, tags = "", ownerId) {
+  if (!ownerId || !owns(ownerId, "memory", id)) return false;
+  const nextContent = String(content || "").trim();
+  if (!nextContent) throw new Error("memory_content_required");
+  const vec = await embed(nextContent, ownerId).catch(() => null);
+  tx(() => {
+    db.prepare("UPDATE memories SET content=?, tags=?, embedding=? WHERE id=?")
+      .run(nextContent, String(tags || ""), vec ? JSON.stringify(vec) : null, id);
+  });
+  return true;
+}
+
 /** Only the owner's memories are ever scanned; unowned (legacy) rows are never read. */
 export async function recall(query, limit = 6, ownerId) {
   if (!ownerId) return [];

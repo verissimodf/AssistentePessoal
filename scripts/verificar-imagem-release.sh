@@ -10,6 +10,7 @@ IMG="${1:?uso: $0 <imagem:tag> [sha-esperado] [versão-esperada]}"
 REPO=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 SHA="${2:-$(git -C "$REPO" rev-parse HEAD)}"
 VER="${3:-$(node -p "require('$REPO/package.json').version")}"
+mkdir -p /tmp/opencode
 DATA=$(mktemp -d /tmp/opencode/verif-img-XXXXXX)
 NAME="jarvis-verif-img-$$"
 FAIL=0

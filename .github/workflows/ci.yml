@@ -25,6 +25,8 @@ jobs:
         working-directory: server
       - name: Testes do painel
         run: npx vitest run
+      - name: Avaliação offline dos fluxos agênticos
+        run: npm run eval:agents
       - name: Testes do serviço local
         run: node --no-warnings --test tests/*.test.mjs
       - name: Serviço sobe e responde
@@ -39,7 +41,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build da imagem de produção
-        run: docker build --tag assistente-pessoal:ci .
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          app_version=$(node -p "require('./package.json').version")
+          schema_version=$(node --input-type=module -e 'import { targetVersion } from "./server/migrations.js"; console.log(targetVersion())')
+          build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          docker build --tag assistente-pessoal:ci \
+            --build-arg BUILD_VERSION="$app_version" \
+            --build-arg BUILD_COMMIT="$GITHUB_SHA" \
+            --build-arg BUILD_COMMIT_STATUS="Não registrado (local)" \
+            --build-arg SCHEMA_VERSION="$schema_version" \
+            --build-arg BUILD_TIME="$build_time" \
+            --build-arg RELEASE_BUILD=1 .
+          scripts/verificar-imagem-release.sh assistente-pessoal:ci "$GITHUB_SHA" "$app_version"
       - name: Validar inicialização da API e do painel
         shell: bash
         run: |

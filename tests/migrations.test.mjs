@@ -63,7 +63,7 @@ test("v14 preserva ownership existente ao ampliar o tipo permitido", () => {
   const row = ["agent", "agent-existente", "admin-v14", "2026-10-27T00:00:00Z", "claimed"];
   db.prepare("INSERT INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin) VALUES (?, ?, ?, ?, ?)").run(...row);
 
-  const result = migrate(db, dir, { migrations: MIGRATIONS.slice(13) });
+  const result = migrate(db, dir, { migrations: MIGRATIONS.slice(13, 14) });
   assert.equal(result.from, 13);
   assert.equal(result.to, 14);
   assert.deepEqual(
@@ -72,6 +72,27 @@ test("v14 preserva ownership existente ao ampliar o tipo permitido", () => {
   );
   assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
   assert.throws(() => db.prepare("INSERT INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin) VALUES ('inbox', 'x', 'admin-v14', 'now', 'claimed')").run(), /CHECK constraint failed/);
+});
+
+test("v15 cria ledger idempotente sem alterar linhas preservadas", () => {
+  const { db, dir } = legacyDb();
+  migrate(db, dir, { migrations: MIGRATIONS.slice(0, 14) });
+  const before = snapshotCounts(db);
+  const result = migrate(db, dir, { migrations: MIGRATIONS.slice(14) });
+  assert.equal(result.from, 14);
+  assert.equal(result.to, 15);
+  assert.deepEqual(snapshotCounts(db), before);
+  assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
+  assert.deepEqual(
+    db.prepare('PRAGMA table_info("bot_schedule_claims")').all().map((c) => c.name),
+    ["trigger_key", "bot_id", "trigger_type", "status", "run_id", "claimed_at", "updated_at"],
+  );
+  const claim = ["bot:daily:2026-10-27", "bot", "daily", "claimed", "2026-10-27", "2026-10-27"];
+  db.prepare("INSERT INTO bot_schedule_claims (trigger_key, bot_id, trigger_type, status, claimed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(...claim);
+  assert.throws(
+    () => db.prepare("INSERT INTO bot_schedule_claims (trigger_key, bot_id, trigger_type, status, claimed_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").run(...claim),
+    /UNIQUE constraint failed/,
+  );
 });
 
 test("failure mid-migration rolls back completely (no partial schema)", () => {

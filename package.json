@@ -1,6 +1,6 @@
 {
   "name": "assistente-pessoal-jarvis-frontend",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
+    "eval:agents": "node scripts/evaluate-agent-flows.mjs",
     "test:watch": "vitest"
   },
   "overrides": {
