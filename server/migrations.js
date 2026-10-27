@@ -383,6 +383,53 @@ CREATE INDEX IF NOT EXISTS idx_doc_chunks_admin_id ON document_chunks(admin_id);
       },
     ],
   },
+  {
+    version: 13,
+    name: "agentmail_events: metadados de webhook AgentMail (message.received, Svix)",
+    // Integração AgentMail (v0 API): eventos recebidos por webhook assinado (Svix), dedupe pela
+    // PK svix_id — o provider repete o MESMO id em retries, e a entrega é rejeitada como
+    // duplicata sem reprocesso. Guarda SOMENTE metadados do envelope (ids, de, assunto):
+    // nunca o corpo do e-mail (conteúdo lido sob demanda via API, com escopo comms:read).
+    // Tabela NOVA, não pertence a PRESERVED e nunca é atribuída a registro legado.
+    // Níveis globais da organização (inbox id da org), unicidade global; leitura filtrada
+    // por rota com escopo próprio (nunca por owner de registro legado).
+    sql: `
+CREATE TABLE IF NOT EXISTS agentmail_events (
+  svix_id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  event_id TEXT,
+  inbox_id TEXT,
+  thread_id TEXT,
+  message_id TEXT,
+  from_addr TEXT,
+  subject TEXT,
+  to_addr TEXT,
+  received_at TEXT,
+  processed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_agentmail_events_processed ON agentmail_events(processed_at);
+`,
+    expect: [
+      {
+        table: "agentmail_events",
+        type: "table",
+        columns: [
+          "svix_id",
+          "event_type",
+          "event_id",
+          "inbox_id",
+          "thread_id",
+          "message_id",
+          "from_addr",
+          "subject",
+          "to_addr",
+          "received_at",
+          "processed_at",
+        ],
+        primaryKey: ["svix_id"],
+      },
+    ],
+  },
 ];
 
 const tableExists = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);

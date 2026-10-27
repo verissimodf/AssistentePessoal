@@ -76,7 +76,7 @@ const clonaItem = (id) => JSON.parse(JSON.stringify(porId(buildInventory(mkCtx()
 
 test("registro de diagnóstico cobre exatamente as ferramentas reais de server/tools.js", () => {
   assert.deepEqual(Object.keys(TOOL_META).sort(), Object.keys(TOOL_DEFS).sort());
-  assert.equal(Object.keys(TOOL_DEFS).length, 19); // + browser_action (navegador)
+  assert.equal(Object.keys(TOOL_DEFS).length, 21); // + browser_action, agentmail_read_email, agentmail_send_email
 });
 
 test("permissões: TOOL_SCOPES coerente com TOOL_DEFS e nunca admin-only", () => {

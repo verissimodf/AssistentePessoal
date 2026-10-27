@@ -28,6 +28,11 @@ export const AGENT_INTEGRATIONS = [
   { id: "openhands", name: "OpenHands", kind: "http", command: "http://127.0.0.1:8085" },
   { id: "headroom", name: "Headroom (proxy)", kind: "http", command: "http://127.0.0.1:8787/v1" },
   { id: "crawl4ai", name: "crawl4ai", kind: "http", command: "http://192.168.2.29:11235" },
+  // AgentMail (server/agentmail.js): e-mail API-first para agentes — webhook message.received
+  // verificado (Svix) em /api/integrations/agentmail/webhook e ferramentas agentmail_read_email
+  // (comms:read) / agentmail_send_email (comms:send, D9 — envio só após aprovação humana).
+  // A API key (am_...) é campo de segredo do painel (criptografada) ou env AGENTMAIL_API_KEY.
+  { id: "agentmail", name: "AgentMail (e-mail p/ agentes)", kind: "http", command: "https://api.agentmail.to/v0" },
   { id: "claude_desktop", name: "Claude Desktop (MCP)", kind: "mcp", command: "node server/mcp.js" },
   // REA: análise estática de artefatos (mandar {path} não é editável do lado do agente —
   // o executor usa argv fixo; o campo comando é apenas documental e divergência é recusada).
@@ -51,7 +56,7 @@ export const COMMS = [
   { id: "calendar", name: "Agenda (ICS / CalDAV)", fields: ["icsUrl"] },
 ] as const;
 
-export const TOOLS = ["web_search", "fetch_url", "remember", "recall", "run_command", "cli_agent", "send_message", "send_email", "read_calendar", "context7_docs", "crawl_page", "openhands_task", "rea_analyze", "gigabrain_recall", "gigabrain_remember"] as const;
+export const TOOLS = ["web_search", "fetch_url", "remember", "recall", "run_command", "cli_agent", "send_message", "send_email", "read_calendar", "context7_docs", "crawl_page", "openhands_task", "rea_analyze", "gigabrain_recall", "gigabrain_remember", "agentmail_read_email", "agentmail_send_email"] as const;
 
 export const TEMPLATES = [
   { name: "J.A.R.V.I.S. clássico", text: "Você é J.A.R.V.I.S., assistente pessoal leal, preciso e levemente espirituoso. Trate o usuário por 'senhor' ou 'senhora'. Seja breve ao falar." },

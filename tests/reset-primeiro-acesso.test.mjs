@@ -84,7 +84,7 @@ test("reset apaga contas e dados dispensáveis, preserva auditoria e integridade
   assert.equal(evento.kind, "system.reset");
   assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
   assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
-  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 12, "schema preservado");
+  assert.equal(db.prepare("PRAGMA user_version").get().user_version, 13, "schema preservado");
 });
 
 test("segunda execução é no-op (idempotente)", () => {

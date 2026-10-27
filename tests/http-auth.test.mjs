@@ -62,7 +62,10 @@ test("health is public and minimal", async () => {
 
 test("every non-public route rejects anonymous callers with 401", async () => {
   const publicOnes = routeTable().filter((r) => r.access === "public").map((r) => `${r.method} ${r.pattern}`);
-  assert.deepEqual(publicOnes.sort(), ["GET /api/health", "POST /api/auth/login", "POST /api/auth/setup"]);
+  // O webhook AgentMail é público por natureza (o provider que entrega), MAS não confia em
+  // chamador anônimo: a rota verifica a assinatura Svix com segredo administrativo e é
+  // fail-closed (503) sem integração ativa — coberta por tests/agentmail.test.mjs.
+  assert.deepEqual(publicOnes.sort(), ["GET /api/health", "POST /api/auth/login", "POST /api/auth/setup", "POST /api/integrations/agentmail/webhook"]);
   for (const r of routeTable().filter((x) => x.access !== "public")) {
     const path = r.pattern.replace(/:(\w+)/g, "x");
     const res = await req(path, { method: r.method, body: r.method === "GET" || r.method === "DELETE" ? undefined : {} });

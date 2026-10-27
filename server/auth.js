@@ -39,6 +39,9 @@ export const TOOL_SCOPES = {
   // Navegador: ação de rede externa — mesmo escopo de leitura de rede dos demais fetchers.
   // O portão efetivo é a APROVAÇÃO HUMANA (ver tools.js) + integração opt-in.
   browser_action: "web",
+  // AgentMail: mesmo enquadramento de leitura/envio de e-mail do IMAP nativo. Envio segue o
+  // D9: a ferramenta só enfileira aprovação humana (nunca dispara a API de envio diretamente).
+  agentmail_read_email: "comms:read", agentmail_send_email: "comms:send",
 };
 
 /** Loopback sources (all local processes look identical here). */

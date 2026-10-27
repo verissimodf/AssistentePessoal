@@ -85,6 +85,14 @@ import { getMailService, setMailTransport } from "./mail-service.js";
 import { redactAccount, ACCOUNT_TYPES, validateOutgoing, MailError } from "./mail.js";
 import { getDraftStore, setDraftStore } from "./mail-drafts.js";
 import {
+  agentMailConfig,
+  verifySvixSignature,
+  insertAgentMailEvent,
+  listAgentMailEvents,
+  createAgentMailClient,
+  getAgentMailClient,
+} from "./agentmail.js";
+import {
   APP_VERSION,
   GIT_COMMIT,
   BUILD_TIME,
@@ -199,14 +207,32 @@ async function readJson(req) {
   }
 }
 
+/** Corpo BRUTO (Buffer) para rotas com verificação de assinatura (webhook Svix): re-serializar
+ *  o JSON mudaria os bytes e quebraria o HMAC — o envelope é assinado sobre os bytes originais. */
+async function readRawLimited(req, max) {
+  const chunks = [];
+  let n = 0;
+  for await (const c of req) {
+    n += c.length;
+    if (n > max) {
+      if (chunks.length) chunks.length = 0;
+      throw new AuthError(413, "payload_too_large");
+    }
+    chunks.push(c);
+  }
+  return Buffer.concat(chunks);
+}
+
 // ---------- routing ----------
 // access: "public" | "session" (human admin only) | <scope string>
+// opts.raw: a rota recebe o corpo bruto em `rawBody` (assinatura Svix) em vez do JSON parseado.
 const routes = [];
-const route = (method, pattern, access, fn) =>
+const route = (method, pattern, access, fn, opts = {}) =>
   routes.push({
     method,
     pattern,
     access,
+    raw: !!opts.raw,
     re: new RegExp(`^${pattern.replace(/:(\w+)/g, "(?<$1>[^/]+)")}$`),
     fn,
   });
@@ -936,6 +962,112 @@ route("POST", "/api/mail/drafts/:id/send", "session", async ({ params, body, pri
   }
 });
 
+// ---------- AgentMail (integração server-side; ver server/agentmail.js) ----------
+// Webhook `message.received` (Svix): rota PÚBLICA por natureza — AgentMail que entrega — mas
+// autenticada pela assinatura HMAC do envelope e dedupe por svix-id. O choke point continua sendo
+// a única porta de auth: qualquer desvio de assinatura/segredo é 400/503 fail-closed.
+route(
+  "POST",
+  "/api/integrations/agentmail/webhook",
+  "public",
+  ({ rawBody: raw, req }) => {
+    const cfg = agentMailConfig();
+    if (!cfg.enabled) {
+      audit("agentmail.webhook_rejected", { status: "integration_disabled", account: "agentmail" });
+      throw new AuthError(503, "integration_disabled");
+    }
+    if (!cfg.webhookSecret) {
+      audit("agentmail.webhook_rejected", { status: "secret_missing", account: "agentmail" });
+      throw new AuthError(503, "integration_unconfigured");
+    }
+    const svixId = req.headers["svix-id"];
+    const verified = verifySvixSignature(raw, req.headers, cfg.webhookSecret);
+    if (!verified) {
+      audit("agentmail.webhook_rejected", { status: svixId ? "bad_signature" : "missing_headers", account: "agentmail" });
+      throw new AuthError(400, "invalid_signature");
+    }
+    let evt = null;
+    try {
+      evt = JSON.parse(raw.toString("utf8"));
+    } catch {
+      audit("agentmail.webhook_rejected", { status: "bad_json", account: "agentmail" });
+      throw new AuthError(400, "invalid_json");
+    }
+    const m = evt?.message ?? {};
+    const dup = insertAgentMailEvent({
+      svixId,
+      eventType: evt?.event_type,
+      eventId: evt?.event_id,
+      inboxId: m.inbox_id,
+      threadId: m.thread_id,
+      messageId: m.message_id,
+      from: m.from,
+      subject: m.subject,
+      to: m.to,
+      receivedAt: m.created_at ?? m.timestamp,
+    });
+    audit(dup ? "agentmail.webhook_received" : "agentmail.webhook_duplicate", {
+      status: "accepted",
+      account: "agentmail",
+      type: String(evt?.event_type ?? "").slice(0, 64),
+    });
+    return { ok: true, duplicated: !dup };
+  },
+  { raw: true },
+);
+
+// Diagnóstico da integração (somente sessão verificada): SEM extrair segredos — só presença.
+route("GET", "/api/integrations/agentmail/status", "session", ({ principal }) => {
+  const cfg = agentMailConfig(process.env, getSettings(principal.adminId));
+  return {
+    enabled: cfg.enabled,
+    hasApiKey: !!cfg.apiKey,
+    hasWebhookSecret: !!cfg.webhookSecret,
+    inboxId: cfg.inboxId || null,
+    webhookId: cfg.webhookId || null,
+  };
+});
+
+// Registro do webhook na AgentMail (sessão verificada): cria a assinatura nacional na org e
+// grava o segredo retornado direto no global_settings — o segredo nunca passa pela resposta.
+route("POST", "/api/integrations/agentmail/webhook-register", "session", async ({ body, principal }) => {
+  const publicUrl = String(body?.publicUrl || "").trim();
+  if (!/^https:\/\/[a-z0-9.-]+(:\d+)?\/api\/integrations\/agentmail\/webhook$/.test(publicUrl))
+    throw new AuthError(400, "invalid_public_url");
+  const cfg = agentMailConfig(process.env, getSettings(principal.adminId));
+  if (!cfg.enabled || !cfg.apiKey) throw new AuthError(400, "integration_missing_apikey");
+  const client = createAgentMailClient(cfg);
+  const webhook = await client.createWebhook(publicUrl, ["message.received"]);
+  const data = { enabled: true, webhookId: String(webhook?.webhook_id ?? webhook?.id ?? "") };
+  if (webhook?.secret) data.webhookSecret = String(webhook.secret);
+  // allowGlobal integral: o chokepoint desta rota já garante isVerifiedAdmin (acesso "session").
+  updateSettings({ integrations: { agentmail: data } });
+  audit("agentmail.webhook_registered", { status: data.webhookId ? "registered" : "registered_no_id" });
+  return { webhookId: data.webhookId, secretStored: !!data.webhookSecret, publicUrl };
+});
+
+// Histórico de eventos recebidos (metadados, ordem cronológica decrescente): leitura por escopo.
+route("GET", "/api/integrations/agentmail/events", "comms:read", ({ query }) => {
+  const limit = Number(query.get("limit"));
+  return { events: listAgentMailEvents({ limit }) };
+});
+
+// Caixa AgentMail pela mesma conta de ferramentas (leitura on-demand; conteúdo sanitizado a jusante
+// quando usado como ferramenta — aqui é rota bruta da API): escopo comms:read, session/token.
+route("GET", "/api/integrations/agentmail/messages", "comms:read", async ({ query, principal }) => {
+  const cfg = agentMailConfig(process.env, getSettings(principal.adminId));
+  if (!cfg.enabled || !cfg.apiKey) throw new AuthError(400, "integration_missing_apikey");
+  let inboxId = String(query.get("inbox") || cfg.inboxId || "");
+  if (!inboxId) {
+    const inboxes = await getAgentMailClient().listInboxes();
+    inboxId = inboxes?.inboxes?.[0]?.inbox_id ?? "";
+    if (!inboxId) return { messages: [], inboxId: null };
+  }
+  const page = await getAgentMailClient().listMessages(inboxId, { limit: Math.min(Number(query.get("limit")) || 10, 50) });
+  // Lista traz metadados apenas (como na referencia da API). Corpo só via get_message sob demanda.
+  return { inboxId, messages: page?.messages ?? [], count: page?.count ?? 0 };
+});
+
 // ---------- authentication + authorization (single choke point) ----------
 function authenticate(req) {
   const bearer = /^Bearer (.+)$/.exec(req.headers.authorization || "")?.[1];
@@ -976,11 +1108,16 @@ export function createApp(opts = {}) {
       }
       const ct = req.headers["content-type"] || "";
       let body = {},
-        form = null;
+        form = null,
+        rawBody = null;
       if (ct.includes("multipart/form-data")) {
         if (Number(req.headers["content-length"] || 0) > MAX_UPLOAD)
           throw new AuthError(413, "payload_too_large");
         form = await readLimitedForm(req, url, MAX_UPLOAD);
+      } else if (r.raw && req.method !== "GET" && req.method !== "DELETE") {
+        if (Number(req.headers["content-length"] || 0) > MAX_BODY)
+          throw new AuthError(413, "payload_too_large");
+        rawBody = await readRawLimited(req, MAX_BODY);
       } else if (req.method !== "GET" && req.method !== "DELETE") body = await readJson(req);
       const m = url.pathname.match(r.re);
       const out = await r.fn({
@@ -988,6 +1125,7 @@ export function createApp(opts = {}) {
         query: url.searchParams,
         body,
         form,
+        rawBody,
         principal,
         req,
         res,

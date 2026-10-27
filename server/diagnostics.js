@@ -117,6 +117,26 @@ export const TOOL_META = {
     limites: ["Sem consumidor: não exposta em nenhum agente no momento."],
     testes: ["tests/mail-routes.test.mjs"],
   },
+  agentmail_read_email: {
+    nome: "Ler caixa AgentMail",
+    portao: "Escopo comms:read; integração opt-in (global_settings.integrations.agentmail).",
+    deps: "API key da organização (settings ou AGENTMAIL_API_KEY) e caixa existente.",
+    limites: [
+      "Somente metadados na saída; corpo é lido sob demanda via API e tratado como DADO NÃO CONFIÁVEL.",
+      "Fail-closed: sem integração habilitada a ferramenta recusa (jamais \"funciona\" sem configuração).",
+    ],
+    testes: ["tests/agentmail.test.mjs"],
+  },
+  agentmail_send_email: {
+    nome: "Enviar e-mail AgentMail",
+    portao: "Escopo comms:send + APROVAÇÃO HUMANA SEMPRE (D9, como send_email IMAP). A ferramenta só enfileira; o envio real é resolveApproval com revalidação de gate e impressão digital.",
+    deps: "API key da organização e integração habilitada no painel.",
+    limites: [
+      "Nenhum envio direto por agente/bot, qualquer autonomia.",
+      "Configuração alterada entre aprovação e execução nega o envio (fingerprint).",
+    ],
+    testes: ["tests/agentmail.test.mjs"],
+  },
   read_calendar: {
     nome: "Ler agenda",
     portao: "Escopo comms:read.",
@@ -202,6 +222,7 @@ const PROVIDERS_COM_CHAVE = new Set([
 
 const INTEGRACOES_META = [
   { chave: "context7", nome: "Context7 (documentação)", consumidor: "Ferramenta context7_docs.", testes: [], needsKey: false },
+  { chave: "agentmail", nome: "AgentMail (e-mail API-first; webhook message.received)", consumidor: "Ferramentas agentmail_read_email/agentmail_send_email + webhook /api/integrations/agentmail/webhook (Svix).", testes: ["tests/agentmail.test.mjs"], needsKey: true },
   { chave: "crawl", nome: "Crawler de páginas", consumidor: "Ferramenta crawl_page.", testes: [], needsKey: true },
   { chave: "openhands", nome: "OpenHands (delegação)", consumidor: "Ferramenta openhands_task.", testes: ["tests/approvals-actions.test.mjs"], needsKey: false },
   { chave: "claude", nome: "CLI Claude Code", consumidor: "Ferramenta cli_agent.", testes: ["tests/agent-audit.test.mjs"], needsKey: false },
