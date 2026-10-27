@@ -49,9 +49,10 @@ function stubHealth(health: Record<string, unknown>) {
 }
 
 async function renderOverview() {
+  const OverviewComponent = OverviewRoute.options.component!;
   render(
     <I18nProvider>
-      <OverviewRoute.options.component />
+      <OverviewComponent />
     </I18nProvider>,
   );
   // Os dados chegam via `load()` (Promise.all); espera a seção de identidade de build existir.

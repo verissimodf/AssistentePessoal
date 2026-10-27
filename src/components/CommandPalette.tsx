@@ -36,15 +36,7 @@ export function CommandPalette() {
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Safe navigation helper: in SSR/test environment without TanStack context, fallback to window.location
-  let navigate: (opts: { to: string }) => void;
-  try {
-    navigate = useNavigate();
-  } catch {
-    navigate = ({ to }: { to: string }) => {
-      if (typeof window !== "undefined") window.location.href = to;
-    };
-  }
+  const navigate = useNavigate();
 
   // Atalho global Ctrl+K / Cmd+K e listener de evento customizado
   useEffect(() => {
@@ -96,6 +88,7 @@ export function CommandPalette() {
       };
     } else {
       setSkills([]);
+      return undefined;
     }
   }, [search]);
 

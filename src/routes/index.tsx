@@ -15,7 +15,7 @@ import {
   type ConversationSummary, type PendingAction, type Settings, type ToolCall,
 } from "@/lib/bridge";
 import { formatConversationDate, getStoredActive, newClientMsgId, pickActiveConversation, storeActive } from "@/lib/conversations";
-import { speechLang, useI18n } from "@/lib/i18n";
+import { speechLang, useI18n, type TKey } from "@/lib/i18n";
 import { listenOnce, speak, stopSpeaking, useWake } from "@/lib/voice";
 
 export const Route = createFileRoute("/")({
@@ -316,7 +316,7 @@ export function ChatPage() {
                 <div key={p.id} className="flex flex-wrap items-center gap-2 text-xs">
                   <span className="hud-label">{t("pending_action")}</span>
                   <code className="font-mono text-muted-foreground">{p.command}</code>
-                  <span className={p.status === "done" ? "text-muted-foreground" : "text-destructive"}>{t(`approval_${p.status}`)}</span>
+                  <span className={p.status === "done" ? "text-muted-foreground" : "text-destructive"}>{t(`approval_${p.status}` as TKey)}</span>
                 </div>
               ))}
             </div>

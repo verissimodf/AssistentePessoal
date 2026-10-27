@@ -57,6 +57,18 @@ function SettingsPage() {
     try { const r = await api<{ ok: boolean; detail: string }>(`/api/providers/${id}/test`, { method: "POST" }); r.ok ? toast.success(r.detail) : toast.error(r.detail); }
     catch (e) { toast.error(String((e as Error).message)); }
   };
+  const claimAgentMailInbox = async () => {
+    if (!window.confirm("Reivindicar a inbox AgentMail configurada para este administrador? Eventos e mensagens dessa inbox ficarão visíveis apenas para sua conta.")) return;
+    try {
+      await api<{ ok: boolean }>("/api/integrations/agentmail/inbox/claim", {
+        method: "POST",
+        body: JSON.stringify({ confirm: "ASSUMIR" }),
+      });
+      toast.success("Inbox AgentMail reivindicada para este administrador.");
+    } catch (e) {
+      toast.error(String((e as Error).message));
+    }
+  };
   const uploadVoice = async (f: File) => {
     if (!(await ping())) { toast.info(t("demo_hint")); return; }
     const fd = new FormData();
@@ -136,6 +148,12 @@ function SettingsPage() {
                   <Input className="font-mono" value={v.command ?? a.command} onChange={(e) => setNested("integrations", a.id, "command", e.target.value)} />
                 </Field>
                 {a.kind === "http" && <Field label={t("api_key")}><Input type="password" value={v.apiKey || ""} onChange={(e) => setNested("integrations", a.id, "apiKey", e.target.value)} /></Field>}
+                {a.id === "agentmail" && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">A inbox precisa ser reivindicada explicitamente. Isso atribui o acesso aos eventos e mensagens a este administrador.</p>
+                    <Button size="sm" variant="outline" onClick={claimAgentMailInbox}>Reivindicar inbox AgentMail</Button>
+                  </div>
+                )}
               </div>
             );
           })}

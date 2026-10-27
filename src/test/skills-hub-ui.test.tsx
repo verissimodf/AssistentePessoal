@@ -112,7 +112,7 @@ describe("AgentsPage — MCP Connection Assistant", () => {
     fireEvent.click(copyBtn);
 
     expect(mockWriteText).toHaveBeenCalledTimes(1);
-    const copiedText = mockWriteText.mock.calls[0][0];
+    const copiedText = mockWriteText.mock.calls[0]?.[0] ?? "";
     expect(copiedText).toContain("mcpServers");
     expect(copiedText).toContain("jarvis");
     expect(copiedText).toContain("JARVIS_SERVICE_TOKEN");

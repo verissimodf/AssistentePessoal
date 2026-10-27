@@ -4,8 +4,8 @@
 import { db, now, audit, uid } from "./db.js";
 import { unlinkSync } from "node:fs";
 
-export const TYPES = { memory: "memories", agent: "agents", bot: "bots", run: "runs", approval: "approvals", document: "documents" };
-const DATE_COL = { memory: "created_at", run: "started_at", approval: "created_at", document: "created_at" };
+export const TYPES = { memory: "memories", agent: "agents", bot: "bots", run: "runs", approval: "approvals", document: "documents", agentmail_inbox: "agentmail_inboxes" };
+const DATE_COL = { memory: "created_at", run: "started_at", approval: "created_at", document: "created_at", agentmail_inbox: "created_at" };
 
 export const ownerOf = (type, id) =>
   db.prepare("SELECT owner_admin_id FROM ownership WHERE resource_type = ? AND resource_id = ?").get(type, String(id))?.owner_admin_id || null;

@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { migrate, currentVersion, snapshotCounts, targetVersion } from "../server/migrations.js";
+import { migrate, currentVersion, snapshotCounts, targetVersion, MIGRATIONS } from "../server/migrations.js";
 
 // Builds a database exactly as v1.0.0 (pre-auth) left it, with real rows in every table.
 function legacyDb() {
@@ -53,6 +53,25 @@ test("migration is idempotent: second run does nothing and makes no new backup",
   const again = migrate(db, dir);
   assert.equal(again.backup, null);
   assert.equal(readdirSync(join(dir, "backups")).length, 1);
+});
+
+test("v14 preserva ownership existente ao ampliar o tipo permitido", () => {
+  const { db, dir } = legacyDb();
+  migrate(db, dir, { migrations: MIGRATIONS.slice(0, 13) });
+  db.prepare("INSERT INTO admins (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)")
+    .run("admin-v14", "admin-v14", "hash", "2026-10-27T00:00:00Z");
+  const row = ["agent", "agent-existente", "admin-v14", "2026-10-27T00:00:00Z", "claimed"];
+  db.prepare("INSERT INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin) VALUES (?, ?, ?, ?, ?)").run(...row);
+
+  const result = migrate(db, dir, { migrations: MIGRATIONS.slice(13) });
+  assert.equal(result.from, 13);
+  assert.equal(result.to, 14);
+  assert.deepEqual(
+    Object.values(db.prepare("SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership").get()),
+    row,
+  );
+  assert.equal(db.prepare("PRAGMA foreign_key_check").all().length, 0);
+  assert.throws(() => db.prepare("INSERT INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin) VALUES ('inbox', 'x', 'admin-v14', 'now', 'claimed')").run(), /CHECK constraint failed/);
 });
 
 test("failure mid-migration rolls back completely (no partial schema)", () => {

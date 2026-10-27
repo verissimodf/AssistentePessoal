@@ -69,9 +69,10 @@ function stubFetch(opts: { focusStatus?: number } = {}) {
 }
 
 async function renderOverview() {
+  const OverviewComponent = OverviewRoute.options.component!;
   render(
     <I18nProvider>
-      <OverviewRoute.options.component />
+      <OverviewComponent />
     </I18nProvider>,
   );
   await waitFor(() => expect(screen.queryByText(/Release/i)).toBeTruthy());
@@ -115,12 +116,11 @@ describe("Visão geral — foco da sessão", () => {
     fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
 
     await waitFor(() => expect(putBodies.length).toBe(1));
-    expect(putBodies[0]!.objective).toBe("Novo objetivo editado");
-    expect(Array.isArray(putBodies[0]!.decisions)).toBe(true);
+    expect(putBodies[0]!["objective"]).toBe("Novo objetivo editado");
+    expect(Array.isArray(putBodies[0]!["decisions"])).toBe(true);
     await waitFor(() => expect(screen.getByText(/Guardado/)).toBeTruthy());
     expect((screen.getByLabelText("Objetivo") as HTMLTextAreaElement).value).toBe(
       "Novo objetivo editado",
-      "a resposta do servidor volta a alimentar o rascunho",
     );
   });
 

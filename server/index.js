@@ -91,6 +91,7 @@ import {
   listAgentMailEvents,
   createAgentMailClient,
   getAgentMailClient,
+  claimAgentMailInbox,
 } from "./agentmail.js";
 import {
   APP_VERSION,
@@ -1023,9 +1024,20 @@ route("GET", "/api/integrations/agentmail/status", "session", ({ principal }) =>
     enabled: cfg.enabled,
     hasApiKey: !!cfg.apiKey,
     hasWebhookSecret: !!cfg.webhookSecret,
-    inboxId: cfg.inboxId || null,
+    inboxId: cfg.inboxId && owns(principal.adminId, "agentmail_inbox", cfg.inboxId) ? cfg.inboxId : null,
+    inboxClaimed: !!cfg.inboxId && owns(principal.adminId, "agentmail_inbox", cfg.inboxId),
     webhookId: cfg.webhookId || null,
   };
+});
+
+// Inbox ownership is an explicit claim, never inferred from the shared organization API key.
+route("POST", "/api/integrations/agentmail/inbox/claim", "session", ({ body, principal }) => {
+  try {
+    return claimAgentMailInbox(principal.adminId, body);
+  } catch (e) {
+    if (e instanceof ClaimError) throw new AuthError(e.status, e.code);
+    throw e;
+  }
 });
 
 // Registro do webhook na AgentMail (sessão verificada): cria a assinatura nacional na org e
@@ -1036,6 +1048,8 @@ route("POST", "/api/integrations/agentmail/webhook-register", "session", async (
     throw new AuthError(400, "invalid_public_url");
   const cfg = agentMailConfig(process.env, getSettings(principal.adminId));
   if (!cfg.enabled || !cfg.apiKey) throw new AuthError(400, "integration_missing_apikey");
+  if (!cfg.inboxId || !owns(principal.adminId, "agentmail_inbox", cfg.inboxId))
+    throw new AuthError(403, "inbox_not_owned");
   const client = createAgentMailClient(cfg);
   const webhook = await client.createWebhook(publicUrl, ["message.received"]);
   const data = { enabled: true, webhookId: String(webhook?.webhook_id ?? webhook?.id ?? "") };
@@ -1047,9 +1061,9 @@ route("POST", "/api/integrations/agentmail/webhook-register", "session", async (
 });
 
 // Histórico de eventos recebidos (metadados, ordem cronológica decrescente): leitura por escopo.
-route("GET", "/api/integrations/agentmail/events", "comms:read", ({ query }) => {
+route("GET", "/api/integrations/agentmail/events", "comms:read", ({ query, principal }) => {
   const limit = Number(query.get("limit"));
-  return { events: listAgentMailEvents({ limit }) };
+  return { events: listAgentMailEvents({ adminId: principal.adminId, limit }) };
 });
 
 // Caixa AgentMail pela mesma conta de ferramentas (leitura on-demand; conteúdo sanitizado a jusante
@@ -1057,13 +1071,11 @@ route("GET", "/api/integrations/agentmail/events", "comms:read", ({ query }) => 
 route("GET", "/api/integrations/agentmail/messages", "comms:read", async ({ query, principal }) => {
   const cfg = agentMailConfig(process.env, getSettings(principal.adminId));
   if (!cfg.enabled || !cfg.apiKey) throw new AuthError(400, "integration_missing_apikey");
-  let inboxId = String(query.get("inbox") || cfg.inboxId || "");
-  if (!inboxId) {
-    const inboxes = await getAgentMailClient().listInboxes();
-    inboxId = inboxes?.inboxes?.[0]?.inbox_id ?? "";
-    if (!inboxId) return { messages: [], inboxId: null };
-  }
-  const page = await getAgentMailClient().listMessages(inboxId, { limit: Math.min(Number(query.get("limit")) || 10, 50) });
+  const inboxId = cfg.inboxId;
+  if (!inboxId || !owns(principal.adminId, "agentmail_inbox", inboxId))
+    throw new AuthError(403, "inbox_not_owned");
+  if (query.has("inbox") && query.get("inbox") !== inboxId) throw new AuthError(404, "inbox_not_found");
+  const page = await getAgentMailClient().listMessages(inboxId, { limit: Math.max(1, Math.min(Number(query.get("limit")) || 10, 50)) });
   // Lista traz metadados apenas (como na referencia da API). Corpo só via get_message sob demanda.
   return { inboxId, messages: page?.messages ?? [], count: page?.count ?? 0 };
 });

@@ -88,7 +88,7 @@ function toBase64(file: File): Promise<string> {
     const reader = new FileReader();
     reader.onload = () => {
       const res = reader.result as string;
-      const b64 = res.includes(",") ? res.split(",")[1] : res;
+      const b64 = res.includes(",") ? (res.split(",")[1] ?? "") : res;
       resolve(b64);
     };
     reader.onerror = reject;
@@ -294,8 +294,8 @@ export function DocumentsPage() {
           mime: "text/plain",
           size: 0,
           created_at: "",
-          chunk_count: x.chunk_count,
-          rag_status: x.rag_status,
+          ...(x.chunk_count !== undefined ? { chunk_count: x.chunk_count } : {}),
+          ...(x.rag_status !== undefined ? { rag_status: x.rag_status } : {}),
         })),
       );
     } catch (e) {
@@ -486,7 +486,7 @@ export function DocumentsPage() {
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-foreground text-sm">{d.name}</span>
-                  <RagBadge status={d.rag_status} />
+                  <RagBadge {...(d.rag_status !== undefined ? { status: d.rag_status } : {})} />
                   <span
                     className="text-xs text-muted-foreground"
                     data-testid={`chunk-count-${d.id}`}

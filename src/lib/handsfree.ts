@@ -60,10 +60,10 @@ export function createVAD(opts: Partial<VADOptions> = {}) {
       // 1. Cálculo de RMS (Energia)
       let sumSq = 0;
       let zeroCrossings = 0;
-      let prevSign = buffer[0] >= 0;
+      let prevSign = (buffer[0] ?? 0) >= 0;
 
       for (let i = 0; i < buffer.length; i++) {
-        const val = buffer[i];
+        const val = buffer[i] ?? 0;
         sumSq += val * val;
 
         const currentSign = val >= 0;
@@ -158,10 +158,10 @@ export function createOfflineWakeWordDetector(opts: Partial<OfflineWakeWordOptio
 
       let sumSq = 0;
       let zeroCrossings = 0;
-      let prevSign = buffer[0] >= 0;
+      let prevSign = (buffer[0] ?? 0) >= 0;
 
       for (let i = 0; i < buffer.length; i++) {
-        const val = buffer[i];
+        const val = buffer[i] ?? 0;
         sumSq += val * val;
         const currentSign = val >= 0;
         if (currentSign !== prevSign) {
@@ -180,8 +180,8 @@ export function createOfflineWakeWordDetector(opts: Partial<OfflineWakeWordOptio
         const half = Math.floor(frequencyData.length / 2);
         let midSum = 0;
         let highSum = 0;
-        for (let i = 0; i < half; i++) midSum += frequencyData[i];
-        for (let i = half; i < frequencyData.length; i++) highSum += frequencyData[i];
+        for (let i = 0; i < half; i++) midSum += frequencyData[i] ?? 0;
+        for (let i = half; i < frequencyData.length; i++) highSum += frequencyData[i] ?? 0;
         midFreqEnergy = midSum / (half * 255);
         highFreqEnergy = highSum / ((frequencyData.length - half) * 255);
       }
@@ -367,7 +367,7 @@ export function startHandsFreeSession(config: HandsFreeConfig) {
         // Nível de amplitude instantâneo
         let peak = 0;
         for (let i = 0; i < timeBuf.length; i++) {
-          const abs = Math.abs(timeBuf[i]);
+          const abs = Math.abs(timeBuf[i] ?? 0);
           if (abs > peak) peak = abs;
         }
 
@@ -407,7 +407,7 @@ export function startHandsFreeSession(config: HandsFreeConfig) {
   if (config.word) {
     const w = typeof window !== "undefined" ? (window as unknown as Record<string, unknown>) : {};
     const Rec =
-      (w.SpeechRecognition as unknown as { new (): {
+      (w["SpeechRecognition"] as unknown as { new (): {
         lang: string;
         continuous: boolean;
         interimResults: boolean;
@@ -416,7 +416,7 @@ export function startHandsFreeSession(config: HandsFreeConfig) {
         start: () => void;
         abort: () => void;
       } }) ||
-      (w.webkitSpeechRecognition as unknown as { new (): {
+      (w["webkitSpeechRecognition"] as unknown as { new (): {
         lang: string;
         continuous: boolean;
         interimResults: boolean;
@@ -435,7 +435,7 @@ export function startHandsFreeSession(config: HandsFreeConfig) {
         rec.onresult = (e: { results: ArrayLike<{ [index: number]: { transcript: string } }> }) => {
           if (!active) return;
           const txt = Array.from(e.results)
-            .map((r) => r[0].transcript)
+            .map((r) => r[0]?.transcript ?? "")
             .join(" ");
           if (matchesWakeWord(txt, config.agentName)) {
             rec.abort();

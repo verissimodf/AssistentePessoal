@@ -23,8 +23,10 @@ const {
   describeAgentMailSend,
   agentMailSendFingerprint,
   setAgentMailClientFactory,
+  listAgentMailEvents,
 } = await import("../server/agentmail.js");
 const { TOOL_SCOPES } = await import("../server/auth.js");
+const { ownerOf } = await import("../server/ownership.js");
 const { callTool, resolveApproval } = await import("../server/tools.js");
 
 const PW = "senha-muito-forte-1";
@@ -94,6 +96,7 @@ const setAgentMail = (cfg = {}) =>
 
 test("migração v13: tabela agentmail_events existe e o hook de rota raw é registrado", () => {
   assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agentmail_events'").get());
+  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agentmail_inboxes'").get());
   const table = routeTable();
   assert.ok(table.some((r) => r.pattern === "/api/integrations/agentmail/webhook" && r.access === "public"));
   assert.ok(table.some((r) => r.pattern === "/api/integrations/agentmail/status" && r.access === "session"));
@@ -177,6 +180,26 @@ test("webhook: dedupe pelo svix-id (retry do provider não reprocessa)", async (
   assert.equal(n, 1);
 });
 
+test("inbox: reivindicação exige confirmação; eventos são visíveis só pelo proprietário", async () => {
+  setAgentMail();
+  const path = "/api/integrations/agentmail/inbox/claim";
+  let r = await req(path, { method: "POST", body: {}, cookie: S.cookie, csrf: S.csrf });
+  assert.equal(r.status, 400);
+  assert.equal((await r.json()).error, "confirmation_required");
+  r = await req(path, { method: "POST", body: { confirm: "ASSUMIR" }, cookie: S.cookie, csrf: S.csrf });
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).alreadyOwned, false);
+  assert.equal(ownerOf("agentmail_inbox", "kayra@agentmail.to"), principal.adminId);
+  assert.equal(listAgentMailEvents({ adminId: principal.adminId }).length, 1);
+  assert.equal(listAgentMailEvents({ adminId: "outro-admin" }).length, 0);
+
+  r = await req("/api/integrations/agentmail/events", { cookie: S.cookie });
+  assert.equal(r.status, 200);
+  const events = await r.json();
+  assert.equal(events.events.length, 1);
+  assert.equal(events.events[0].svix_id, "msg_100");
+});
+
 test("ferramentas: escopos declarados; leitura exige integração habilitada", async () => {
   assert.equal(TOOL_SCOPES.agentmail_read_email, "comms:read");
   assert.equal(TOOL_SCOPES.agentmail_send_email, "comms:send");
@@ -250,6 +273,15 @@ test("envio por agente: D9 — enfileira aprovação; resolveApproval envia com 
   const res2 = await resolveApproval(pending.id, true, principal);
   assert.equal(res2.status, "denied");
   assert.equal(sent.length, 1);
+
+  setAgentMail();
+  const outInbox = await callTool("agentmail_send_email", { to: "x@y.test", subject: "Inbox", body: "b" }, ctx());
+  assert.match(outInbox, /Nada foi enviado/);
+  const pendingInbox = db.prepare("SELECT id FROM approvals WHERE status='pending' AND command LIKE '%x@y.test%'").get();
+  updateSettings({ integrations: { agentmail: { inboxId: "outra@agentmail.to" } } }, { adminId: principal.adminId, allowGlobal: true });
+  const resInbox = await resolveApproval(pendingInbox.id, true, principal);
+  assert.equal(resInbox.status, "denied");
+  assert.equal(sent.length, 1, "troca da inbox invalida aprovação antiga");
 });
 
 test("describeAgentMailSend/agentMailConfig: precedência settings > env; sem key desabilita", () => {

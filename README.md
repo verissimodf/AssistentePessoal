@@ -1,9 +1,9 @@
-# 🤖 AssistentePessoal (J.A.R.V.I.S.) — v1.7.9
+# 🤖 AssistentePessoal (J.A.R.V.I.S.) — v1.8.1
 
-[![Version](https://img.shields.io/badge/version-1.7.9-blue.svg?style=flat-square)](package.json)
+[![Version](https://img.shields.io/badge/version-1.8.1-blue.svg?style=flat-square)](package.json)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg?style=flat-square&logo=node.js)](https://nodejs.org/)
-[![Test Suite](https://img.shields.io/badge/tests-616%20backend%20%2B%20109%20frontend-success.svg?style=flat-square)](tests/)
-[![Schema](https://img.shields.io/badge/schema-12-informational.svg?style=flat-square)](server/migrations.js)
+[![Test Suite](https://img.shields.io/badge/tests-632%20backend%20%2B%20109%20frontend-success.svg?style=flat-square)](tests/)
+[![Schema](https://img.shields.io/badge/schema-14-informational.svg?style=flat-square)](server/migrations.js)
 [![Privacy](https://img.shields.io/badge/privacy-local--first-blueviolet.svg?style=flat-square)](#-segurança-e-privacidade)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
 
@@ -12,9 +12,10 @@ memória, agentes e integrações com serviços da máquina. O desenho padrão �
 dados, banco, documentos, memórias e segredos ficam na máquina do operador; chamadas externas só
 acontecem quando o provedor/integração correspondente está configurado e habilitado.
 
-> **Estado atual:** release **1.7.9** (hardening da 1.7.8), esquema SQLite **12**, 11 skills no hub
-> (4 embutidas + 7 vendorizadas). Produção validada em 2026-10-26 com backend 616/616,
-> frontend 109/109, CI remoto 3/3 e teste HTTP externo 12 PASS / 0 FAIL / 0 WARN.
+> **Código de entrega:** release **1.8.1**, esquema SQLite **14**. A migração v14 isola a
+> integração AgentMail por inbox reivindicada explicitamente pelo administrador. A implantação e
+> o smoke test desta release estão em andamento; o estado confirmado do container permanece em
+> [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md) até a validação pós-deploy.
 > Ver [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md) e
 > [`reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md`](reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md).
 
@@ -120,7 +121,7 @@ cd /opt/laytech-ai/AssistentePessoal
 export BUILD_VERSION="$(node -p 'require("./package.json").version')"
 export BUILD_COMMIT="$(git rev-parse HEAD)"
 export BUILD_COMMIT_STATUS="Registrado"
-export SCHEMA_VERSION=12
+export SCHEMA_VERSION=14
 export BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 export RELEASE_BUILD=1
 export IMAGE_TAG="$(git rev-parse --short HEAD)"

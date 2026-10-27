@@ -1157,13 +1157,10 @@ export async function callTool(name, input, ctx) {
       // gate único: habilitada + chave. Sem segredo na saída; só metadados (nunca corpo).
       const cfg = agentMailConfig();
       if (!cfg.enabled || !cfg.apiKey) return 'Integração "agentmail" não está habilitada em Configurações.';
+      if (!cfg.inboxId || !owns(adminId, "agentmail_inbox", cfg.inboxId))
+        return "Caixa AgentMail não reivindicada por este administrador.";
       try {
-        let inboxId = cfg.inboxId;
-        if (!inboxId) {
-          const inboxes = await getAgentMailClient().listInboxes();
-          inboxId = inboxes?.inboxes?.[0]?.inbox_id ?? "";
-          if (!inboxId) return "Nenhuma caixa AgentMail nesta organização.";
-        }
+        const inboxId = cfg.inboxId;
         const page = await getAgentMailClient().listMessages(inboxId, { limit: Math.max(1, Math.min(Number(input.limit) || 10, 20)) });
         const ms = page?.messages ?? [];
         audit("agentmail.tool_read", { account: "agentmail", type: "list" });

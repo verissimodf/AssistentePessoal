@@ -4,6 +4,22 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 
 ---
 
+## [1.8.1] — 2026-10-27
+
+### Segurança e corrigido
+- AgentMail passa a respeitar isolamento por administrador: inbox com ownership explícito,
+  histórico filtrado pelo proprietário e rotas/ferramentas restritas à inbox configurada.
+- Novo endpoint de reivindicação explícita; registros históricos não recebem proprietário
+  automaticamente. Aprovações de envio são invalidadas se a inbox mudar antes da confirmação.
+- Corrigida a leitura do histórico de eventos (`SELECT` usa `.all()`, não metadados de `.run()`).
+- Corrigidos erros de tipos, hooks e testes de componentes que impediam `tsc`/lint direcionado.
+
+### Migração e validação
+- Migração v14 cria o registro de inboxes e amplia o tipo de ownership preservando linhas já
+  existentes; backup verificado continua sendo requisito de migração.
+- Validação completa e resultado de produção serão registrados após o build e smoke test desta
+  release. A inbox existente requer reivindicação explícita no painel por um administrador.
+
 ## [1.8.0] — 2026-10-27
 
 ### Adicionado

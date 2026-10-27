@@ -430,6 +430,39 @@ CREATE INDEX IF NOT EXISTS idx_agentmail_events_processed ON agentmail_events(pr
       },
     ],
   },
+  {
+    version: 14,
+    name: "AgentMail inbox ownership registry",
+    // AgentMail inboxes are shared provider resources, but Jarvis content access remains
+    // per-admin. Existing events/inboxes are not assigned here; an admin must explicitly claim
+    // the configured inbox. The registry is new and ownership is recorded in the canonical table.
+    sql: `
+CREATE TABLE IF NOT EXISTS agentmail_inboxes (
+  id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL
+);
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v13;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v13;
+DROP TABLE ownership_v13;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      { table: "agentmail_inboxes", type: "table", columns: ["id", "created_at"], primaryKey: ["id"] },
+      { table: "ownership", type: "table", columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"], primaryKey: ["resource_type", "resource_id"] },
+    ],
+  },
 ];
 
 const tableExists = (db, t) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(t);

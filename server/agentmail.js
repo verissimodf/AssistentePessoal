@@ -17,6 +17,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { db, now, audit } from "./db.js";
 import { getSettings } from "./settings.js";
+import { ClaimError, ownerOf, owns, tx } from "./ownership.js";
 
 /** Endpoint REST oficial (v0). Fixo: nunca configurável — evita exfiltração da API key para host arbitrário. */
 export const AGENTMAIL_BASE_URL = "https://api.agentmail.to/v0";
@@ -135,14 +136,41 @@ export function insertAgentMailEvent(evt) {
 }
 
 /** Histórico de eventos (somente leitura, metadados). Para o painel/agente triagarem chegada. */
-export function listAgentMailEvents({ limit = 50 } = {}) {
+export function listAgentMailEvents({ adminId = "", limit = 50 } = {}) {
   const rows = db
     .prepare(
       `SELECT svix_id, event_type, inbox_id, thread_id, message_id, subject, received_at, processed_at
-       FROM agentmail_events ORDER BY processed_at DESC LIMIT ?`,
+       FROM agentmail_events e
+       JOIN ownership o ON o.resource_type = 'agentmail_inbox'
+         AND o.resource_id = e.inbox_id AND o.owner_admin_id = ?
+       ORDER BY processed_at DESC LIMIT ?`,
     )
-    .run(Math.max(1, Math.min(Number(limit) || 50, 200)));
+    .all(String(adminId), Math.max(1, Math.min(Number(limit) || 50, 200)));
   return rows;
+}
+
+/** Explicitly claim the configured organization inbox; historical resources are never assigned on boot. */
+export function claimAgentMailInbox(adminId, { confirm } = {}) {
+  if (!adminId) throw new ClaimError(403, "admin_session_required");
+  if (confirm !== "ASSUMIR") throw new ClaimError(400, "confirmation_required");
+  const cfg = agentMailConfig(process.env, getSettings(adminId));
+  const inboxId = cfg.inboxId.trim();
+  if (!cfg.enabled || !cfg.apiKey || !inboxId) throw new ClaimError(400, "integration_missing_inbox");
+  const owner = ownerOf("agentmail_inbox", inboxId);
+  if (owner && owner !== adminId) throw new ClaimError(409, "already_owned");
+  if (owner === adminId) return { ok: true, inboxId, alreadyOwned: true };
+  return tx(() => {
+    // Recheck inside the write transaction to prevent concurrent claims.
+    const currentOwner = ownerOf("agentmail_inbox", inboxId);
+    if (currentOwner) throw new ClaimError(409, "already_owned");
+    db.prepare("INSERT INTO agentmail_inboxes (id, created_at) VALUES (?, ?)").run(inboxId, now());
+    db.prepare("INSERT INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin) VALUES ('agentmail_inbox', ?, ?, ?, 'claimed')")
+      .run(inboxId, adminId, now());
+    db.prepare("INSERT INTO legacy_claims (resource_type, resource_id, admin_id, at) VALUES ('agentmail_inbox', ?, ?, ?)")
+      .run(inboxId, adminId, now());
+    audit("agentmail_inbox.claimed", { admin: adminId, type: "agentmail_inbox", count: 1 });
+    return { ok: true, inboxId, alreadyOwned: false };
+  });
 }
 
 // ---------- cliente REST (fixo em api.agentmail.to; Bearer; timeout; sem vazar segredo) ----------
@@ -226,6 +254,8 @@ export function describeAgentMailSend(adminId, { to, subject, text } = {}, setti
   const cfg = agentMailConfig(process.env, settings ?? getSettings(adminId));
   if (!cfg.enabled || !cfg.apiKey)
     return { ok: false, reason: 'Integração "agentmail" não está habilitada em Configurações.' };
+  if (!cfg.inboxId || !owns(adminId, "agentmail_inbox", cfg.inboxId))
+    return { ok: false, reason: "Caixa AgentMail não reivindicada por este administrador." };
   const dest = String(to ?? "").trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dest)) return { ok: false, reason: "Destinatário inválido." };
   const subjectStr = String(subject ?? "").trim();
@@ -241,13 +271,13 @@ export function describeAgentMailSend(adminId, { to, subject, text } = {}, setti
 export async function sendAgentMailApproved(adminId, action, expect, { clientFactory } = {}) {
   const d = describeAgentMailSend(adminId, { to: action?.to, subject: action?.subject, text: action?.text });
   if (!d.ok) return { output: d.reason };
-  const inboxId = action?.inboxId || d.inboxId;
-  if (!inboxId) return { output: "Envio cancelado: caixa AgentMail não está configurada." };
-  if (expect && agentMailSendFingerprint({ inboxId, to: d.to, subject: d.subject, text: d.text }) !== expect)
+  if (!action?.inboxId || action.inboxId !== agentMailConfig(process.env, getSettings(adminId)).inboxId)
+    return { output: "Envio cancelado: a caixa mudou desde a aprovação." };
+  if (expect && agentMailSendFingerprint({ inboxId: action.inboxId, to: d.to, subject: d.subject, text: d.text }) !== expect)
     return { output: "Envio cancelado: o destinatário/assunto/corpo mudou desde a aprovação." };
   audit("send_email(agentmail)", { account: "agentmail", status: "started" });
   const client = (clientFactory ?? defaultClientFactory)();
-  const res = await client.sendMessage(inboxId, { to: d.to, subject: d.subject, text: d.text });
+  const res = await client.sendMessage(d.inboxId, { to: d.to, subject: d.subject, text: d.text });
   const id = res?.message_id ?? res?.messageId;
   return {
     output: id ? "Enviado via AgentMail." : "AgentMail não retornou identificador de mensagem.",
