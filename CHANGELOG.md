@@ -4,6 +4,40 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 
 ---
 
+## [1.8.0] — 2026-10-27
+
+### Adicionado
+- **Integração server-side AgentMail** (`server/agentmail.js`): cliente REST `https://api.agentmail.to/v0`
+  (`Authorization: Bearer`, timeout 10 s, erros instantâneos e sem vazar credencial), verificação de
+  webhook **Svix** com `node:crypto` (HMAC-SHA256, janela de 5 min, comparação em tempo constante —
+  sem dependência nova) e config por `global_settings.integrations.agentmail` com fallback de
+  ambiente (`AGENTMAIL_API_KEY` / `AGENTMAIL_WEBHOOK_SECRET` / `AGENTMAIL_INBOX_ID`).
+- **Rota pública `POST /api/integrations/agentmail/webhook`** para o evento `message.received`:
+  assinatura verificada sobre o corpo BRUTO (novo suporte `route(..., { raw: true })` no dispatcher),
+  dedupe por `svix-id` e persistência de **somente metadados** do envelope — o corpo do e-mail
+  jamais vai ao banco; conteúdo é lido sob demanda, com escopo `comms:read`.
+- **Rotas de administração (session)**: `GET /api/integrations/agentmail/status` (presença de segredo,
+  nunca o valor), `POST /api/integrations/agentmail/webhook-register` (cria a assinatura na
+  AgentMail e grava o segredo direto no `global_settings`, sem expô-lo na resposta) e
+  `GET /api/integrations/agentmail/events|messages` (`comms:read`).
+- **Ferramentas do agente**: `agentmail_read_email` (`comms:read`; metadados marcados como DADO NÃO
+  CONFIÁVEL) e `agentmail_send_email` (`comms:send`; **D9** — nunca envia direto: enfileira
+  aprovação humana; `resolveApproval` revalida gate + impressão digital no momento da aprovação e
+  registra evidência `verified/provider_message_id`).
+- **Migração v13**: tabela `agentmail_events` (PK `svix_id`; apenas metadados). Deploys passam a
+  declarar `SCHEMA_VERSION=13`.
+
+### Segurança
+- A lista pública de rotas passa a incluir apenas o webhook (recebido do provider, que não
+  efetua login); a rota exige assinatura Svix válida e é fail-closed com 503 quando
+  desabilitada/sem segredo — `tests/http-auth.test.mjs` e `tests/agentmail.test.mjs` (8/8)
+  guardam os invariantes.
+- Validado de ponta a ponta com a chave real: leitura, fila D9, envio real e evidência
+  `verified(provider_message_id)`; suíte completa 625/630 (as 5 falhas são pré-existentes,
+  relacionadas ao script de build, e também falham no HEAD limpo).
+
+---
+
 ## [1.7.9] — 2026-10-26
 
 ### Segurança

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "agentmail": {
+      "type": "remote",
+      "url": "https://mcp.agentmail.to/mcp",
+      "headers": {
+        "x-api-key": "{env:AGENTMAIL_API_KEY}"
+      },
+      "enabled": true
+    }
+  }
+}

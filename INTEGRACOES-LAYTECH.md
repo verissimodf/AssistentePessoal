@@ -35,6 +35,7 @@ Cloudflare. Se o Tailscale for reativado, valide novamente as origens permitidas
 | Odysseus | `http://odysseus:8000/v1` | HTTP | não exposto como ferramenta de agente |
 | REA | `rea-agents` na imagem | CLI/argv fixo | `rea_analyze` com aprovação |
 | Gigabrain | MCP stdio | `data/gigabrain/` | `gigabrain_recall`/`remember` |
+| AgentMail | `https://api.agentmail.to` (REST v0, Bearer) + webhook `POST /api/integrations/agentmail/webhook` (Svix) | Server-side: `server/agentmail.js` + migração v13 + tools `agentmail_read_email`/`agentmail_send_email` (D9); config via painel (`global_settings.integrations.agentmail`) ou env `AGENTMAIL_API_KEY`/`AGENTMAIL_WEBHOOK_SECRET`; MCP hospedado + skills em `.agents/skills/agentmail*` | **OPERATIONAL (dev)** — E2E live 2026-10-27: leitura, fila D9 e envio real com evidência `verified/provider_message_id`; MCP por API key 200/47 tools. **Pendência de deploy:** rebuild da imagem (schema 13) + registrar webhook no provider (console ou rota `webhook-register` com `https://jarvis.laytech.com.br/api/integrations/agentmail/webhook`) |
 
 ### 2.1 OpenClaw
 
