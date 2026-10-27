@@ -171,12 +171,17 @@ test("env de build vence o ficheiro e o script rejeita SHA malformado", async ()
   rmSync(dataDir, { recursive: true, force: true });
 });
 
+// Caminhos ancorados no arquivo de teste (o script vive na raiz do repo, junto do package.json).
+// `process.cwd()` dependia de onde a suíte é disparada (`server/` × raiz) — as 5 falhas históricas.
+const REPO_ROOT = join(import.meta.dirname, "..");
+const BUILD_SCRIPT = join(REPO_ROOT, "scripts", "write-build-info.mjs");
+
 test("o script de build grava o JSON no diretório de dados do serviço", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "jarvis-buildinfo-writer-"));
   const { execFileSync } = await import("node:child_process");
   const out = execFileSync(
     process.execPath,
-    [join(process.cwd(), "scripts", "write-build-info.mjs")],
+    [BUILD_SCRIPT],
     {
       env: {
         ...process.env,
@@ -201,7 +206,7 @@ test("sem args o script cai no manifesto do repositório, nunca num branch", asy
   const dataDir = mkdtempSync(join(tmpdir(), "jarvis-buildinfo-writer2-"));
   const { execFileSync } = await import("node:child_process");
   // Sem `.app-version` no cwd → sem versão conhecida: tudo "unknown" (nada é presumido).
-  execFileSync(process.execPath, [join(process.cwd(), "scripts", "write-build-info.mjs")], {
+  execFileSync(process.execPath, [BUILD_SCRIPT], {
     env: { JARVIS_DATA_DIR: dataDir },
     encoding: "utf8",
   });
@@ -219,12 +224,12 @@ test("sem APP_VERSION o script cai no `.app-version` (manifesto do repositório)
   // Reproduz o Dockerfile: cwd tem `.app-version` e o ARG vem vazio ("sem-build" ou ausente).
   // `.app-version` entra no `.gitignore` como artefato de build; a fonte versionada é o package.json,
   // extraído no build — o teste lê a MESMA fonte para nunca divergir do manifesto real.
-  const manifest = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")).version;
+  const manifest = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")).version;
   // O script resolve o manifesto em `JARVIS_DATA_DIR` → cwd; o teste passa os dois alinhados.
   const dataDir = mkdtempSync(join(tmpdir(), "jarvis-buildinfo-writer3-"));
   writeFileSync(join(dataDir, ".app-version"), `${manifest}\n`);
   for (const vazio of [undefined, "sem-build"]) {
-    execFileSync(process.execPath, [join(process.cwd(), "scripts", "write-build-info.mjs")], {
+    execFileSync(process.execPath, [BUILD_SCRIPT], {
       env: { ...process.env, JARVIS_DATA_DIR: dataDir, APP_VERSION: vazio },
       encoding: "utf8",
     });
@@ -249,7 +254,7 @@ test("RELEASE_BUILD=1 recusa metadados incompletos (falha de build, nunca 'unkno
   let stderr = "";
   assert.throws(() => {
     try {
-      execFileSync(process.execPath, [join(process.cwd(), "scripts", "write-build-info.mjs")], {
+      execFileSync(process.execPath, [BUILD_SCRIPT], {
         env: {
           ...process.env,
           JARVIS_DATA_DIR: dataDir,
@@ -277,7 +282,7 @@ test("RELEASE_BUILD=1 com SHA completo, versão e RFC3339 aprova e grava o JSON"
   const when = "2026-10-18T17:40:00Z";
   const out = execFileSync(
     process.execPath,
-    [join(process.cwd(), "scripts", "write-build-info.mjs")],
+    [BUILD_SCRIPT],
     {
       env: {
         ...process.env,

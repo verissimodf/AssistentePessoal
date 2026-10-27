@@ -26,7 +26,14 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   registra evidência `verified/provider_message_id`).
 - **Migração v13**: tabela `agentmail_events` (PK `svix_id`; apenas metadados). Deploys passam a
   declarar `SCHEMA_VERSION=13`.
-
+- **Release 1.8.0 em produção** (2026-10-27): imagem `assistente-pessoal:837e2f0`, migração
+  v12→v13 com backup verificado, health `ok/healthy`. Webhook registrado no provider em
+  2026-10-27 (`webhook_id: ep_3LI5BKyF1itW99uDsILhV3w5OjQ`); E2E real de ponta a ponta:
+  entrega `message.received` assinada aceita, dedupe e envio D9 com evidência
+  `verified(provider_message_id)`. Rollback: tag `a978f59`.
+- Correção histórica: os 5 testes do script de build (`tests/build-info.test.mjs`) resolviam o
+  caminho do script com `process.cwd()` e falhavam quando a suíte rodava de `server/` — os
+  caminhos agora ficam ancorados no arquivo de teste (`import.meta.dirname`). 11/11 verdes.
 ### Segurança
 - A lista pública de rotas passa a incluir apenas o webhook (recebido do provider, que não
   efetua login); a rota exige assinatura Svix válida e é fail-closed com 503 quando
