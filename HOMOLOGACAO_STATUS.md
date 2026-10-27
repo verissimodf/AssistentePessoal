@@ -1,33 +1,45 @@
 # 📋 Relatório de Auditoria Técnica e Homologação (Production Readiness)
 **Projeto:** J.A.R.V.I.S. (Assistente Pessoal Local)
-**Versão Atual:** 1.8.1
+**Versão Atual:** 1.8.2
 **Data do último release/deploy registrado:** 27 de Outubro de 2026
-**Status do Release:** ✅ **1.8.1 publicada em `origin/main` e implantada; container healthy, schema 14, smoke de API/painel aprovado.**
-**Commit da imagem atual:** `4556df8db445d5c54f1f49998015eba83e1f5486` (branch `main`)
+**Status do Release:** ✅ **1.8.2 publicada em `origin/main` e implantada; container healthy, schema 15, smoke de API/painel aprovado.**
+**Commit da imagem atual:** `88a3ce55fbeb24dff4fcc8ea86142e3e9dbb8c6d` (branch `main`)
 **Repositório Oficial:** `https://github.com/verissimodf/AssistentePessoal`
 
 ---
 
-## Estado atual — release 1.8.1 — 27/10/2026
+## Estado atual — release 1.8.2 — 27/10/2026
 
 | Item | Evidência local pós-deploy |
 | --- | --- |
-| Versão / esquema | `1.8.1` / SQLite `14` |
-| Commit construído | `4556df8db445d5c54f1f49998015eba83e1f5486` (`main`, publicado em `origin/main`) |
-| Imagem | `assistente-pessoal:1.8.1`, manifest `sha256:45ba84fe689815984168bd9fb8cc36041de489822c02ddede9abfd956bcec15b` |
-| Build | `2026-10-27T20:41:49Z`, `commitStatus=Registrado`, schema de build 14 |
+| Versão / esquema | `1.8.2` / SQLite `15` |
+| Commit construído | `88a3ce55fbeb24dff4fcc8ea86142e3e9dbb8c6d` (`main`, publicado em `origin/main`) |
+| Imagem | `assistente-pessoal:1.8.2`, manifest `sha256:98ee1d6b5758dd6a61368729717390dc6969bd2437e82fadb3f8331eaafce700` |
+| Build | `2026-10-27T21:10:00Z`, `commitStatus=Registrado`, schema de build 15 |
 | Container | `running`, `healthy`, `restarts=0`; volume de dados e rede Docker mantidos |
 | Smoke | `/api/health` reporta versão/commit/schema esperados; painel HTTP `200` |
-| Banco | `integrity_check=ok`, `foreign_key_check=0`; migração v13→v14 com backup verificado automático |
+| Banco | `integrity_check=ok`, `foreign_key_check=0`; migração v14→v15 com backup verificado automático em `/app/data/backups/jarvis-2026-10-27T21-14-13-224Z-v14.db` |
 | Backup pré-release | `/app/data/backups/pre-1.8.1-20261027T202000Z.db` + `master.key`, integridade verificada |
-| Testes locais | Backend **632/632**, frontend **109/109**, `tsc --noEmit` sem erros, build Vite/Nitro OK |
+| Testes locais | Backend **636/636**, frontend **109/109**, avaliação offline **86/86**, `tsc --noEmit` sem erros, build Vite/Nitro OK |
+| Imagem isolada | `scripts/verificar-imagem-release.sh`: labels OCI, `build-info`, health API, `setupRequired` e painel **PASS** |
+| Novos fluxos | export/correção de memória com isolamento; citações RAG; scheduler com limite concorrente e ledger idempotente |
 | AgentMail | 1 inbox com ownership `claimed`; zero eventos sem owner. Não foi lido conteúdo nem enviado e-mail nesta validação |
-| Lint | Ainda falha por divergência de formatação Prettier no repositório e regras antigas; 363 ocorrências Prettier nos arquivos examinados |
+| Lint | ESLint nos 14 arquivos tocados: **415 erros** (407 Prettier, 8 `no-explicit-any`) e 1 aviso `react-refresh`; dívida existente permanece |
 
-Os três commits pendentes foram enviados em fast-forward para `origin/main` (`01f910d..4556df8`). A
-imagem foi reconstruída a partir do commit publicado; o primeiro `compose up` manteve o container
-antigo devido a um `IMAGE_TAG` definido no ambiente, então o deploy foi repetido com `IMAGE_TAG=1.8.1`
-explícito e recriação somente do serviço `assistente`.
+O commit `88a3ce5` foi enviado em fast-forward para `origin/main` e a imagem foi construída com o SHA
+completo publicado. O serviço `assistente` foi recriado explicitamente com `IMAGE_TAG=1.8.2`.
+Nenhum conteúdo de e-mail foi consultado, nenhum e-mail foi enviado e nenhum modelo pago foi chamado.
+
+### Estado das propostas avaliadas
+
+- **Concluídos nesta release:** avaliação offline automatizada, portão local de verificação de imagem,
+  citações/motivo do fallback RAG, correção/exportação de memórias e limites/ledger idempotente do scheduler.
+- **Parcial:** router telemetry continua acumulada apenas em memória; falta retenção configurável.
+- **Parcial:** ciclo de memória tem edição, exclusão e exportação, mas expiração automática permanece
+  desativada até existir política aprovada e opt-in do administrador.
+- **Pendentes por validação de necessidade/configuração:** resumir e-mails/documentos para revisão,
+  OAuth Google/Microsoft, CRUD de tarefas/calendário, fila local durável e STT local. Calendário ICS
+  somente leitura e conectores IMAP/SMTP/AgentMail existentes continuam disponíveis.
 
 ---
 

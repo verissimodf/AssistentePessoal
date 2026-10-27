@@ -1,6 +1,6 @@
 # Integrações LayTech — estado operacional
 
-Atualizado em **2026-10-27** após publicação e rebuild da release **1.8.1**. A topologia do container foi
+Atualizado em **2026-10-27** após publicação e rebuild da release **1.8.2**. A topologia do container foi
 verificada agora; os resultados dos demais provedores abaixo continuam sendo a fotografia de
 **2026-10-26** e não foram retestados neste fluxo.
 
@@ -10,8 +10,8 @@ verificada agora; os resultados dos demais provedores abaixo continuam sendo a f
 | --- | --- | --- |
 | API | `http://<ip-interno>:7777` (rede Docker) | sem porta publicada no host |
 | Painel | `http://<ip-interno>:8090` (rede Docker) | público via `https://jarvis.laytech.com.br` |
-| Container | `assistente-pessoal` | `assistente-pessoal:1.8.1`, `healthy`, `restarts=0`, versão 1.8.1, schema 14, commit publicado `4556df8` |
-| Digest da imagem | SHA-256 | `sha256:45ba84fe689815984168bd9fb8cc36041de489822c02ddede9abfd956bcec15b` (rebuild 1.8.1) |
+| Container | `assistente-pessoal` | `assistente-pessoal:1.8.2`, `healthy`, `restarts=0`, versão 1.8.2, schema 15, commit publicado `88a3ce5` |
+| Digest da imagem | SHA-256 | `sha256:98ee1d6b5758dd6a61368729717390dc6969bd2437e82fadb3f8331eaafce700` (rebuild 1.8.2) |
 | Nginx | `nginx-app:80` | recebe do túnel Cloudflare |
 | Cloudflare | `jarvis.laytech.com.br` | TLS/HSTS no edge |
 | Dados | `/opt/laytech-ai/AssistentePessoal/data` | SQLite WAL + `master.key` 600 |
@@ -37,7 +37,7 @@ Cloudflare. Se o Tailscale for reativado, valide novamente as origens permitidas
 | Odysseus | `http://odysseus:8000/v1` | HTTP | não exposto como ferramenta de agente |
 | REA | `rea-agents` na imagem | CLI/argv fixo | `rea_analyze` com aprovação |
 | Gigabrain | MCP stdio | `data/gigabrain/` | `gigabrain_recall`/`remember` |
-| AgentMail | `https://api.agentmail.to` (REST v0, Bearer) + webhook `POST /api/integrations/agentmail/webhook` (Svix) | Server-side: `server/agentmail.js`, migrações v13/v14 e tools `agentmail_read_email`/`agentmail_send_email` (D9); config via painel ou env fallback; inbox claim explícito | **DEPLOYED, INBOX REIVINDICADA** — ownership `claimed` confirmado e zero eventos sem owner. Não houve leitura de conteúdo nem envio real após o deploy v1.8.1; os E2E anteriores pertencem à 1.8.0. O MCP hospedado listado em `.mcp.json`/`opencode.json` é um caminho externo sem os controles Jarvis D9/ownership/auditoria; prefira ferramentas server-side. |
+| AgentMail | `https://api.agentmail.to` (REST v0, Bearer) + webhook `POST /api/integrations/agentmail/webhook` (Svix) | Server-side: `server/agentmail.js`, migrações v13/v14 e tools `agentmail_read_email`/`agentmail_send_email` (D9); config via painel ou env fallback; inbox claim explícito | **DEPLOYED, INBOX REIVINDICADA** — ownership `claimed` confirmado e zero eventos sem owner. Não houve leitura de conteúdo nem envio real após o deploy v1.8.2; os E2E anteriores pertencem à 1.8.0. O MCP hospedado listado em `.mcp.json`/`opencode.json` é um caminho externo sem os controles Jarvis D9/ownership/auditoria; prefira ferramentas server-side. |
 
 ### 2.1 OpenClaw
 

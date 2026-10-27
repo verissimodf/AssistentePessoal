@@ -1,6 +1,6 @@
 # 🏛️ Arquitetura do Sistema e Fluxo de Dados
 
-Documento atualizado para a release **1.8.1** (esquema SQLite **14**). Descreve a topologia real,
+Documento atualizado para a release **1.8.2** (esquema SQLite **15**). Descreve a topologia real,
 os componentes e os limites de confiança. Para configuração, ver `docs/CONFIGURACAO.md`.
 
 ---
@@ -127,8 +127,8 @@ segredo. Tudo o mais exige sessão/token e escopo. O CSRF é obrigatório em tod
 ## 6. Dados e migrações
 
 - SQLite nativo (`node:sqlite`) em WAL, `busy_timeout=5000`, transações `BEGIN IMMEDIATE`.
-- `PRAGMA user_version` é a versão do schema; a release 1.8.1 usa **14** (`agentmail_inboxes` e
-  ownership explícito da inbox; eventos AgentMail foram introduzidos na v13).
+- `PRAGMA user_version` é a versão do schema; a release 1.8.2 usa **15**. A v15 cria o ledger
+  idempotente `bot_schedule_claims`; v14 adicionou `agentmail_inboxes` e ownership explícito.
 - Cada migração roda em transação, compara contagens/hashes das tabelas preservadas e exige backup
   verificado antes de alterar. Falha → rollback e erro explícito.
 - `master.key` é obrigatória para decifrar settings; o backup precisa incluir banco **e** chave.
@@ -141,6 +141,13 @@ segredo. Tudo o mais exige sessão/token e escopo. O CSRF é obrigatório em tod
   `setupRequired`.
 - `/api/diagnostics` (sessão) inventaria providers, integrações, skills, contagens e integridade.
 - `/api/router/telemetry` (escopo `skills:read`) expõe chamadas, falhas, latência e fallbacks.
+- A telemetria é agregada em memória do processo e reinicia com o serviço; retenção durável/configurável
+  ainda não existe. O endpoint não guarda prompt nem chave.
+- O scheduler limita a duas execuções simultâneas por admin, bloqueia concorrência duplicada por bot e
+  persiste chaves diárias/intervalo/arquivo. Uma ocorrência interrompida no restart vira `interrupted`
+  e não é repetida automaticamente, pois o efeito externo pode já ter ocorrido.
+- `npm run eval:agents` roda seis grupos de cenários locais versionados sem rede/chaves; o CI executa
+  a avaliação e valida identidade da imagem e smoke API/painel em container descartável.
 - Docker healthcheck, logs do container, auditoria e `PRAGMA integrity_check` são as fontes
   disponíveis. Não há Prometheus/Grafana instalados; SLOs e alertas propostos estão em
   `docs/OPERACAO-SLO-E-INCIDENTES.md`.

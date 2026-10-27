@@ -1,8 +1,8 @@
 # Backup e recuperação de desastres
 
-Atualizado em 2026-10-27 para a release **1.8.1** (esquema SQLite **14**). A validação de 26/10
-abaixo permanece como evidência histórica; o banco atual concluiu a migração v13→v14 com backup
-verificado automático e `integrity_check=ok`.
+Atualizado em 2026-10-27 para a release **1.8.2** (esquema SQLite **15**). Validações de releases
+anteriores permanecem identificadas como evidência histórica; o banco atual concluiu a migração
+v14→v15 com backup verificado automático e `integrity_check=ok`.
 
 ## 1. Princípio
 
@@ -107,10 +107,10 @@ auditoria.**
 4. Validar antes de subir:
    ```bash
    sqlite3 "file:data/jarvis.db?mode=ro" "PRAGMA user_version; PRAGMA integrity_check;"
-   # esperado para backup atual 1.8.1: 14 e ok; versões anteriores podem ser migradas no boot
+   # esperado para backup atual 1.8.2: 15 e ok; versões anteriores podem ser migradas no boot
    ```
 5. Subir: `docker compose -f docker-compose.yml up -d --no-build`; aguardar `healthy`.
-6. Validar login, `/api/health` (schema 14 para 1.8.1), contagens de auditoria/agentes e um chat curto.
+6. Validar login, `/api/health` (schema 15 para 1.8.2), contagens de auditoria/agentes e um chat curto.
 7. Rollback da restauração: parar e renomear `data.pre-restore.<stamp>` de volta.
 
 **Nunca** faça restore sobre o banco de produção sem backup do estado atual e sem janela
@@ -121,7 +121,7 @@ autorizada. O restore drill deve usar cópia isolada, nunca o volume vivo.
 | Verificação | Comando | Esperado |
 | --- | --- | --- |
 | Integridade | `sqlite3 ... "PRAGMA integrity_check;"` | `ok` |
-| Esquema atual | `sqlite3 ... "PRAGMA user_version;"` | `14` (1.8.1) |
+| Esquema atual | `sqlite3 ... "PRAGMA user_version;"` | `15` (1.8.2) |
 | Checksums | `(cd "$BK" && sha256sum -c SHA256SUMS.txt)` | todos OK |
 | Idade | `find /opt/laytech-ai/jarvis-data-backups -maxdepth 1 -type d -printf '%T@ %p\n' \| sort -n \| tail -1` | ≤ 26 h |
 | Tamanho/WAL | `du -h data/jarvis.db*` | WAL < 256 MB (proposta) |

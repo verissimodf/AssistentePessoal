@@ -1,9 +1,9 @@
-# 🤖 AssistentePessoal (J.A.R.V.I.S.) — v1.8.1
+# 🤖 AssistentePessoal (J.A.R.V.I.S.) — v1.8.2
 
-[![Version](https://img.shields.io/badge/version-1.8.1-blue.svg?style=flat-square)](package.json)
+[![Version](https://img.shields.io/badge/version-1.8.2-blue.svg?style=flat-square)](package.json)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg?style=flat-square&logo=node.js)](https://nodejs.org/)
-[![Test Suite](https://img.shields.io/badge/tests-632%20backend%20%2B%20109%20frontend-success.svg?style=flat-square)](tests/)
-[![Schema](https://img.shields.io/badge/schema-14-informational.svg?style=flat-square)](server/migrations.js)
+[![Test Suite](https://img.shields.io/badge/tests-636%20backend%20%2B%20109%20frontend-success.svg?style=flat-square)](tests/)
+[![Schema](https://img.shields.io/badge/schema-15-informational.svg?style=flat-square)](server/migrations.js)
 [![Privacy](https://img.shields.io/badge/privacy-local--first-blueviolet.svg?style=flat-square)](#-segurança-e-privacidade)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
 
@@ -12,7 +12,7 @@ memória, agentes e integrações com serviços da máquina. O desenho padrão �
 dados, banco, documentos, memórias e segredos ficam na máquina do operador; chamadas externas só
 acontecem quando o provedor/integração correspondente está configurado e habilitado.
 
-> **Estado atual:** release **1.8.1** publicada e implantada, esquema SQLite **14**, container
+> **Estado atual:** release **1.8.2** publicada e implantada, esquema SQLite **15**, container
 > `healthy` e smoke test de API/painel aprovado em 2026-10-27. A inbox AgentMail desta instalação
 > já foi reivindicada explicitamente; novas inboxes legadas também exigem claim no painel. Evidências em
 > [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md).
@@ -122,7 +122,7 @@ export BUILD_VERSION="$(node -p 'require("./package.json").version')"
 export BUILD_COMMIT="$(git rev-parse HEAD)"
 # Em build local ainda não publicado; use Registrado somente após merge/tag no remoto.
 export BUILD_COMMIT_STATUS="Não registrado (local)"
-export SCHEMA_VERSION=14
+export SCHEMA_VERSION=15
 export BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 export RELEASE_BUILD=1
 export IMAGE_TAG="$(git rev-parse --short HEAD)"
@@ -309,12 +309,12 @@ depende de `.gitattributes` para preservar LF nas skills.
 ```json
 {
   "ok": true,
-  "version": "1.8.1",
-  "commit": "4556df8db445d5c54f1f49998015eba83e1f5486",
-  "buildTime": "2026-10-27T20:41:49Z",
+  "version": "1.8.2",
+  "commit": "88a3ce55fbeb24dff4fcc8ea86142e3e9dbb8c6d",
+  "buildTime": "2026-10-27T21:10:00Z",
   "mode": "production",
-  "schemaVersion": 14,
-  "schemaVersionBuild": 14,
+  "schemaVersion": 15,
+  "schemaVersionBuild": 15,
   "commitStatus": "Registrado",
   "setupRequired": false
 }

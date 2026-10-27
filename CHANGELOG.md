@@ -4,6 +4,38 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 
 ---
 
+## [1.8.2] — 2026-10-27
+
+### Melhorias aplicadas
+- Avaliação offline e versionada de seis fluxos críticos (chat/aprovação, RAG/injeção, e-mail,
+  fallback/telemetria, ownership/exportação de memória e scheduler), exposta por `npm run eval:agents`
+  e executada no CI.
+- Scheduler limita a duas execuções simultâneas por admin, impede concorrência duplicada por bot e
+  grava chaves idempotentes para disparos daily/interval/file. Disparos interrompidos ficam em estado
+  `interrupted` e não são repetidos automaticamente.
+- Memórias podem ser corrigidas e exportadas em JSON pelo painel. Exportação e alterações geram
+  eventos de auditoria sem registrar o conteúdo; a correção descarta embeddings antigos e tenta
+  gerar um novo.
+- Busca RAG mostra trecho, documento, bloco, modo, relevância e motivo do fallback lexical.
+- CI constrói imagem com metadados estritos e executa o verificador isolado de artefato, API e painel.
+
+### Migração e validação
+- Migração v15 aditiva cria `bot_schedule_claims`; backup v14 verificado, tabelas preservadas e
+  integridade/FKs conferidas.
+- Backend **636/636**, frontend **109/109**, avaliação offline **86/86**, TypeScript sem erros,
+  build Vite/Nitro, Compose e verificador Docker de release aprovados.
+- Publicada e implantada como `assistente-pessoal:1.8.2`, commit `88a3ce55fbeb24dff4fcc8ea86142e3e9dbb8c6d`,
+  manifest `sha256:98ee1d6b…`; container `healthy`, sem reinícios; API/painel HTTP 200 e SQLite íntegro.
+- Não houve leitura de conteúdo de e-mail, envio real, chamada a modelo pago ou teste com provider
+  externo nesta validação.
+
+### Limites mantidos
+- Telemetria continua agregada em memória do processo; retenção configurável persistente ainda não
+  foi implementada.
+- Retenção automática de memórias permanece desativada; requer política explícita por administrador.
+- OAuth de calendário/e-mail, CRUD de tarefas, fila durável para tarefas longas, STT local e resumo
+  automático com revisão humana continuam pendentes de validação de necessidade e operacionalização.
+
 ## [1.8.1] — 2026-10-27
 
 ### Segurança e corrigido
