@@ -1,45 +1,45 @@
 # 📋 Relatório de Auditoria Técnica e Homologação (Production Readiness)
 **Projeto:** J.A.R.V.I.S. (Assistente Pessoal Local)
-**Versão Atual:** 1.8.2
+**Versão Atual:** 1.9.0
 **Data do último release/deploy registrado:** 27 de Outubro de 2026
-**Status do Release:** ✅ **1.8.2 publicada em `origin/main` e implantada; container healthy, schema 15, smoke de API/painel aprovado.**
-**Commit da imagem atual:** `88a3ce55fbeb24dff4fcc8ea86142e3e9dbb8c6d` (branch `main`)
+**Status do Release:** ✅ **1.9.0 publicada em `origin/main` e implantada; container healthy, schema 18, smoke de API/painel aprovado. OAuth real aguarda configuração de provedores.**
+**Commit da imagem atual:** `f633fb7e2647357e17e7ea0eda90f8c7215c9b91` (branch `main`)
 **Repositório Oficial:** `https://github.com/verissimodf/AssistentePessoal`
 
 ---
 
-## Estado atual — release 1.8.2 — 27/10/2026
+## Estado atual — release 1.9.0 — 27/10/2026
 
 | Item | Evidência local pós-deploy |
 | --- | --- |
-| Versão / esquema | `1.8.2` / SQLite `15` |
-| Commit construído | `88a3ce55fbeb24dff4fcc8ea86142e3e9dbb8c6d` (`main`, publicado em `origin/main`) |
-| Imagem | `assistente-pessoal:1.8.2`, manifest `sha256:98ee1d6b5758dd6a61368729717390dc6969bd2437e82fadb3f8331eaafce700` |
-| Build | `2026-10-27T21:10:00Z`, `commitStatus=Registrado`, schema de build 15 |
+| Versão / esquema | `1.9.0` / SQLite `18` |
+| Commit construído | `f633fb7e2647357e17e7ea0eda90f8c7215c9b91` (`main`, publicado em `origin/main`) |
+| Imagem | `assistente-pessoal:1.9.0`, manifest `sha256:3def0096e45455e05eb776c403e4ca4333007aba9c8c85f89256e50d9526ddf3` |
+| Build | `2026-10-27T23:02:50Z`, `commitStatus=Registrado`, schema de build 18 |
 | Container | `running`, `healthy`, `restarts=0`; volume de dados e rede Docker mantidos |
-| Smoke | `/api/health` reporta versão/commit/schema esperados; painel HTTP `200` |
-| Banco | `integrity_check=ok`, `foreign_key_check=0`; migração v14→v15 com backup verificado automático em `/app/data/backups/jarvis-2026-10-27T21-14-13-224Z-v14.db` |
+| Smoke | `/api/health` HTTP 200 reporta versão/commit/schema esperados; painel HTTP `200` |
+| Banco | `integrity_check=ok`, `foreign_key_check=0`; migração v15→v18 com backup verificado automático em `/app/data/backups/jarvis-2026-10-27T23-09-38-162Z-v15.db` |
 | Backup pré-release | `/app/data/backups/pre-1.8.1-20261027T202000Z.db` + `master.key`, integridade verificada |
-| Testes locais | Backend **636/636**, frontend **109/109**, avaliação offline **86/86**, `tsc --noEmit` sem erros, build Vite/Nitro OK |
+| Testes locais | Backend **652/652**, frontend **109/109**, avaliação offline **86/86**, `tsc --noEmit` sem erros, build Vite/Nitro OK |
 | Imagem isolada | `scripts/verificar-imagem-release.sh`: labels OCI, `build-info`, health API, `setupRequired` e painel **PASS** |
-| Novos fluxos | export/correção de memória com isolamento; citações RAG; scheduler com limite concorrente e ledger idempotente |
+| Novos fluxos | fila SQLite durável e retomada conservadora; retenção com quarentena; OAuth PKCE; STT local whisper.cpp |
 | AgentMail | 1 inbox com ownership `claimed`; zero eventos sem owner. Não foi lido conteúdo nem enviado e-mail nesta validação |
-| Lint | ESLint nos 14 arquivos tocados: **415 erros** (407 Prettier, 8 `no-explicit-any`) e 1 aviso `react-refresh`; dívida existente permanece |
+| Lint | ESLint global/focado não verde por formatação em arquivos legados/minimamente tocados; módulos novos passaram no lint focado; sem formatação em massa |
 
-O commit `88a3ce5` foi enviado em fast-forward para `origin/main` e a imagem foi construída com o SHA
-completo publicado. O serviço `assistente` foi recriado explicitamente com `IMAGE_TAG=1.8.2`.
+O commit `f633fb7` foi enviado em fast-forward para `origin/main` e a imagem foi construída com o SHA
+completo publicado. O serviço `assistente` foi recriado explicitamente com `IMAGE_TAG=1.9.0`.
 Nenhum conteúdo de e-mail foi consultado, nenhum e-mail foi enviado e nenhum modelo pago foi chamado.
 
 ### Estado das propostas avaliadas
 
 - **Concluídos nesta release:** avaliação offline automatizada, portão local de verificação de imagem,
   citações/motivo do fallback RAG, correção/exportação de memórias e limites/ledger idempotente do scheduler.
-- **Parcial:** router telemetry continua acumulada apenas em memória; falta retenção configurável.
-- **Parcial:** ciclo de memória tem edição, exclusão e exportação, mas expiração automática permanece
-  desativada até existir política aprovada e opt-in do administrador.
-- **Pendentes por validação de necessidade/configuração:** resumir e-mails/documentos para revisão,
-  OAuth Google/Microsoft, CRUD de tarefas/calendário, fila local durável e STT local. Calendário ICS
-  somente leitura e conectores IMAP/SMTP/AgentMail existentes continuam disponíveis.
+- **Concluídos nesta release:** fila durável do scheduler, recuperação após reinício, retenção de
+  memória opt-in com quarentena, OAuth Gmail/Microsoft com PKCE e STT local whisper.cpp.
+- **Bloqueado por configuração:** OAuth em provedor real requer IDs/segredos/callbacks e consentimento
+  registrados pelo operador. Testes com mocks não afirmam validação de ponta a ponta externa.
+- **Operacionalização opt-in:** retenção permanece desativada por padrão; STT local precisa ser
+  escolhido nas configurações para substituir o reconhecimento do navegador.
 
 ---
 

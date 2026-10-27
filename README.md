@@ -12,9 +12,9 @@ memória, agentes e integrações com serviços da máquina. O desenho padrão �
 dados, banco, documentos, memórias e segredos ficam na máquina do operador; chamadas externas só
 acontecem quando o provedor/integração correspondente está configurado e habilitado.
 
-> **Estado do candidato 1.9.0:** implementações e testes locais concluídos para fila durável,
-> retenção de memória, OAuth Gmail/Microsoft e STT local; migrações v16–v18. A validação final e
-> operacionalização estão registradas em [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
+> **Release 1.9.0 implantada:** fila durável, retenção de memória, OAuth Gmail/Microsoft e STT local;
+> migrações v16–v18 aplicadas com backup verificado. OAuth com provedores reais depende de cadastro
+> e credenciais do operador. Evidências em [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
 > Ver [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md) e
 > [`reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md`](reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md).
 
