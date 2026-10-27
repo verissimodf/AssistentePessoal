@@ -68,15 +68,35 @@ describe("Teste de conexão IMAP/SMTP (aba Comunicação)", () => {
   it("traduz o resultado em texto distinguindo os quatro estados (função pura)", () => {
     const ch = (ok: boolean, state: string, reason: string | null) => ({ ok, state, reason });
     // conexão validada
-    expect(connectionText({ mode: "imap", imap: ch(true, "connected", null), smtp: ch(true, "connected", null) })).toMatch(/validada/i);
+    expect(
+      connectionText({
+        mode: "imap",
+        imap: ch(true, "connected", null),
+        smtp: ch(true, "connected", null),
+      }),
+    ).toMatch(/validada/i);
     // mock / não verificado — nunca afirma conexão real
-    const mock = connectionText({ mode: "mock", imap: ch(false, "unsupported", null), smtp: ch(false, "unsupported", null) });
+    const mock = connectionText({
+      mode: "mock",
+      imap: ch(false, "unsupported", null),
+      smtp: ch(false, "unsupported", null),
+    });
     expect(mock).toMatch(/simulado/i);
     expect(mock).toMatch(/não verificad/i);
     // falha de autenticação (não confundir com rede)
-    expect(connectionText({ mode: "imap", imap: ch(false, "reconnect", "auth"), smtp: ch(false, "reconnect", "auth") })).toMatch(/autentica/i);
+    expect(
+      connectionText({
+        mode: "imap",
+        imap: ch(false, "reconnect", "auth"),
+        smtp: ch(false, "reconnect", "auth"),
+      }),
+    ).toMatch(/autentica/i);
     // falha de rede/timeout
-    const net = connectionText({ mode: "imap", imap: ch(false, "error", "dns"), smtp: ch(false, "error", "timeout") });
+    const net = connectionText({
+      mode: "imap",
+      imap: ch(false, "error", "dns"),
+      smtp: ch(false, "error", "timeout"),
+    });
     expect(net).toMatch(/DNS/i);
     expect(net).toMatch(/tempo esgotado/i);
   });

@@ -48,7 +48,9 @@ describe("CommandPalette Component (Ctrl+K / Cmd+K)", () => {
       expect(screen.getByTestId("input-command-palette")).toBeInTheDocument();
     });
 
-    expect(screen.getByPlaceholderText("Digite um comando, página ou skill...")).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText("Digite um comando, página ou skill..."),
+    ).toBeInTheDocument();
   });
 
   it("abre ao disparar o evento customizado open-command-palette", async () => {

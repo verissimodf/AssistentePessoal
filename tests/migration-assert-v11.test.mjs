@@ -15,8 +15,7 @@ const fresh = () => {
   const dir = mkdtempSync(join(tmpdir(), "jarvis-assert-"));
   return { db: new DatabaseSync(join(dir, "jarvis.db")), dir };
 };
-const tableOf = (db, name) =>
-  db.prepare("SELECT type FROM sqlite_master WHERE name = ?").get(name);
+const tableOf = (db, name) => db.prepare("SELECT type FROM sqlite_master WHERE name = ?").get(name);
 const userVersion = (db) => db.prepare("PRAGMA user_version").get().user_version;
 
 test("v11: migração cria session_focus com colunas e PK esperadas (asserção aprova)", () => {
@@ -43,7 +42,9 @@ test("v11: VIEW homónima aborta a migração com asserção de esquema e faz ro
 
   assert.throws(
     () => migrate(db, dir),
-    (e) => /asserção de esquema/.test(e.message) && /session_focus é view, esperado table/.test(e.message),
+    (e) =>
+      /asserção de esquema/.test(e.message) &&
+      /session_focus é view, esperado table/.test(e.message),
   );
   // Rollback completo: versão continua 10, sem tabela parcial, a VIEW pré-existente intacta.
   assert.equal(userVersion(db), 10);
@@ -64,7 +65,10 @@ test("v11: tabela homónima com estrutura divergente também aborta (colunas obr
     (e) => /asserção de esquema/.test(e.message) && /sem colunas/.test(e.message),
   );
   assert.equal(userVersion(db), 10);
-  const cols = db.prepare('PRAGMA table_info("session_focus")').all().map((c) => c.name);
+  const cols = db
+    .prepare('PRAGMA table_info("session_focus")')
+    .all()
+    .map((c) => c.name);
   assert.deepEqual(cols, ["admin_id"]); // objeto pré-existente não foi "consertado" às escondidas
   db.close();
 });

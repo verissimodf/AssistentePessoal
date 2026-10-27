@@ -1,6 +1,6 @@
 # 🏛️ Arquitetura do Sistema e Fluxo de Dados
 
-Documento atualizado para a release **1.9.0** (esquema SQLite **18**). Descreve a topologia real,
+Documento atualizado para a release **1.9.1** (esquema SQLite **18**). Descreve a topologia real,
 os componentes e os limites de confiança. Para configuração, ver `docs/CONFIGURACAO.md`.
 
 ---
@@ -132,7 +132,7 @@ escopo. O CSRF é obrigatório em toda mutação com cookie.
 ## 6. Dados e migrações
 
 - SQLite nativo (`node:sqlite`) em WAL, `busy_timeout=5000`, transações `BEGIN IMMEDIATE`.
-- `PRAGMA user_version` é a versão do schema; a release 1.9.0 usa **18**. As v16–v18 adicionam
+- `PRAGMA user_version` é a versão do schema; a release 1.9.1 usa **18**. As v16–v18 adicionam
   fila durável de scheduler, políticas de retenção e conexões OAuth com backup verificado e
   preservação das linhas anteriores. A v15 cria o ledger
   idempotente `bot_schedule_claims`; v14 adicionou `agentmail_inboxes` e ownership explícito.

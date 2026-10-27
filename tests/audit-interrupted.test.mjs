@@ -22,10 +22,16 @@ CREATE TABLE audit (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, kind TEXT, de
 CREATE TABLE approvals (id TEXT PRIMARY KEY, command TEXT, status TEXT, output TEXT, created_at TEXT);
 CREATE TABLE approval_actions (approval_id TEXT PRIMARY KEY, action TEXT NOT NULL, created_at TEXT NOT NULL);
 `);
-raw.prepare("INSERT INTO approvals (id, command, status, output, created_at) VALUES (?,?,?,?,?)")
+raw
+  .prepare("INSERT INTO approvals (id, command, status, output, created_at) VALUES (?,?,?,?,?)")
   .run("ap-running", "echo x", "running", "", "2026-01-01");
-raw.prepare("INSERT INTO approval_actions (approval_id, action, created_at) VALUES (?,?,?)")
-  .run("ap-running", JSON.stringify({ kind: "run_command", command: "echo x", correlation: CORR }), "2026-01-01");
+raw
+  .prepare("INSERT INTO approval_actions (approval_id, action, created_at) VALUES (?,?,?)")
+  .run(
+    "ap-running",
+    JSON.stringify({ kind: "run_command", command: "echo x", correlation: CORR }),
+    "2026-01-01",
+  );
 raw.close();
 
 const { db } = await import("../server/db.js");
@@ -40,5 +46,9 @@ test("boot marca interrupted e emite unknown (sem retroativo de sucesso)", () =>
   assert.equal(d.status, "unknown");
   assert.equal(d.reason, "interrupted");
   assert.equal(d.correlation, CORR);
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM audit WHERE kind='run_command(done)'").get().n, 0, "nenhum sucesso retroativo");
+  assert.equal(
+    db.prepare("SELECT COUNT(*) n FROM audit WHERE kind='run_command(done)'").get().n,
+    0,
+    "nenhum sucesso retroativo",
+  );
 });

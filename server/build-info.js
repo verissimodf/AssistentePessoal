@@ -13,7 +13,14 @@ import { fileURLToPath } from "node:url";
 
 const UNKNOWN = "unknown";
 // Data do build, não a hora do processo — é o que prova "quando foi isto construído".
-let FILE = { appVersion: UNKNOWN, commit: UNKNOWN, buildTime: UNKNOWN, mode: UNKNOWN, schemaVersion: UNKNOWN, commitStatus: UNKNOWN };
+let FILE = {
+  appVersion: UNKNOWN,
+  commit: UNKNOWN,
+  buildTime: UNKNOWN,
+  mode: UNKNOWN,
+  schemaVersion: UNKNOWN,
+  commitStatus: UNKNOWN,
+};
 
 // Localização espelha o resto do serviço: `JARVIS_DATA_DIR` → cwd (o container passa o data dir),
 // com o diretório do módulo como último recurso. Sem ficheiro → tudo `unknown`, sem exceção.
@@ -68,5 +75,8 @@ export const buildInfo = () => ({
   // Esquema declarado no build (o runtime expõe também o user_version efetivo do banco).
   schemaVersion: /^\d+$/.test(String(SCHEMA_VERSION)) ? Number(SCHEMA_VERSION) : null,
   // "Registrado" | "Não registrado (local)" | "unknown" — nunca inferido do branch.
-  commitStatus: typeof BUILD_COMMIT_STATUS === "string" && BUILD_COMMIT_STATUS.trim() ? BUILD_COMMIT_STATUS : UNKNOWN,
+  commitStatus:
+    typeof BUILD_COMMIT_STATUS === "string" && BUILD_COMMIT_STATUS.trim()
+      ? BUILD_COMMIT_STATUS
+      : UNKNOWN,
 });

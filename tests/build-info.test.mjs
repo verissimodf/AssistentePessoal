@@ -180,20 +180,16 @@ const BUILD_SCRIPT = join(REPO_ROOT, "scripts", "write-build-info.mjs");
 test("o script de build grava o JSON no diretório de dados do serviço", async () => {
   const dataDir = mkdtempSync(join(tmpdir(), "jarvis-buildinfo-writer-"));
   const { execFileSync } = await import("node:child_process");
-  const out = execFileSync(
-    process.execPath,
-    [BUILD_SCRIPT],
-    {
-      env: {
-        ...process.env,
-        JARVIS_DATA_DIR: dataDir,
-        APP_VERSION: "2.0.0",
-        GIT_SHA: "main",
-        BUILD_TIME: "agora",
-      },
-      encoding: "utf8",
+  const out = execFileSync(process.execPath, [BUILD_SCRIPT], {
+    env: {
+      ...process.env,
+      JARVIS_DATA_DIR: dataDir,
+      APP_VERSION: "2.0.0",
+      GIT_SHA: "main",
+      BUILD_TIME: "agora",
     },
-  );
+    encoding: "utf8",
+  });
   assert.match(out, /commit=unknown/, "o script registra que rejeitou o branch");
   const raw = JSON.parse(
     (await import("node:fs")).readFileSync(join(dataDir, "server", "build-info.json"), "utf8"),
@@ -234,9 +230,9 @@ test("sem APP_VERSION o script cai no `.app-version` (manifesto do repositório)
       env: { ...process.env, JARVIS_DATA_DIR: dataDir, APP_VERSION: vazio },
       encoding: "utf8",
     });
-  // Leitura ancorada no dataDir deste teste: o `before` já importou o serviço apontando para OUTRO
-  // diretório, então o módulo em memória não pode decidir onde gravar aqui.
-  const raw = JSON.parse(readFileSync(join(dataDir, "server", "build-info.json"), "utf8"));
+    // Leitura ancorada no dataDir deste teste: o `before` já importou o serviço apontando para OUTRO
+    // diretório, então o módulo em memória não pode decidir onde gravar aqui.
+    const raw = JSON.parse(readFileSync(join(dataDir, "server", "build-info.json"), "utf8"));
     assert.equal(
       raw.appVersion,
       manifest,
@@ -281,23 +277,19 @@ test("RELEASE_BUILD=1 com SHA completo, versão e RFC3339 aprova e grava o JSON"
   const dataDir = mkdtempSync(join(tmpdir(), "jarvis-buildinfo-strict-ok-"));
   const sha = "1972e00b4e2d2a88516df7e29fd2227260bfa5d6";
   const when = "2026-10-18T17:40:00Z";
-  const out = execFileSync(
-    process.execPath,
-    [BUILD_SCRIPT],
-    {
-      env: {
-        ...process.env,
-        JARVIS_DATA_DIR: dataDir,
-        RELEASE_BUILD: "1",
-        GIT_SHA: sha,
-        BUILD_TIME: when,
-        APP_VERSION: "1.0.0",
-        SCHEMA_VERSION: "15",
-        BUILD_COMMIT_STATUS: "Registrado",
-      },
-      encoding: "utf8",
+  const out = execFileSync(process.execPath, [BUILD_SCRIPT], {
+    env: {
+      ...process.env,
+      JARVIS_DATA_DIR: dataDir,
+      RELEASE_BUILD: "1",
+      GIT_SHA: sha,
+      BUILD_TIME: when,
+      APP_VERSION: "1.0.0",
+      SCHEMA_VERSION: "15",
+      BUILD_COMMIT_STATUS: "Registrado",
     },
-  );
+    encoding: "utf8",
+  });
   assert.match(out, /commit=1972e00b/, "o script confirma o SHA aceite");
   const raw = JSON.parse(readFileSync(join(dataDir, "server", "build-info.json"), "utf8"));
   assert.equal(raw.commit, sha);

@@ -29,26 +29,26 @@ describe("DocumentsPage — RAG Semântico Híbrido & Ingestão Multiformato", (
 
   describe("parseDocError", () => {
     it("converte erro pdf_no_text_layer para mensagem amigável de PDF escaneado", () => {
-      const err = new Error("422: {\"error\":\"pdf_no_text_layer\"}");
+      const err = new Error('422: {"error":"pdf_no_text_layer"}');
       expect(parseDocError(err)).toBe(
         "O arquivo PDF é escaneado ou uma imagem sem camada de texto pesquisável.",
       );
     });
 
     it("converte erro docx_no_text_content para mensagem amigável de DOCX sem texto", () => {
-      const err = new Error("422: {\"error\":\"docx_no_text_content\"}");
+      const err = new Error('422: {"error":"docx_no_text_content"}');
       expect(parseDocError(err)).toBe("O arquivo DOCX não contém texto pesquisável legível.");
     });
 
     it("converte erro document_too_large para mensagem amigável de limite de tamanho", () => {
-      const err = new Error("413: {\"error\":\"document_too_large\"}");
+      const err = new Error('413: {"error":"document_too_large"}');
       expect(parseDocError(err)).toBe(
         "O arquivo excede o limite permitido (máximo 10 MB para PDF/DOCX ou 2 MB para texto).",
       );
     });
 
     it("converte erro unsupported_type para mensagem de formatos aceitos", () => {
-      const err = new Error("415: {\"error\":\"unsupported_type\"}");
+      const err = new Error('415: {"error":"unsupported_type"}');
       expect(parseDocError(err)).toBe(
         "Formato de arquivo não suportado. Aceitos: .txt, .md, .csv, .json, .pdf e .docx.",
       );
@@ -167,9 +167,13 @@ describe("DocumentsPage — RAG Semântico Híbrido & Ingestão Multiformato", (
         expect(screen.getByTestId("dialog-chunks")).toBeInTheDocument();
         expect(screen.getByText("Chunks — especificacao.docx")).toBeInTheDocument();
         expect(screen.getByText("Bloco #1")).toBeInTheDocument();
-        expect(screen.getByText("Primeiro parágrafo da especificação técnica.")).toBeInTheDocument();
+        expect(
+          screen.getByText("Primeiro parágrafo da especificação técnica."),
+        ).toBeInTheDocument();
         expect(screen.getByText("Bloco #2")).toBeInTheDocument();
-        expect(screen.getByText("Segundo parágrafo detalhando arquitetura RAG.")).toBeInTheDocument();
+        expect(
+          screen.getByText("Segundo parágrafo detalhando arquitetura RAG."),
+        ).toBeInTheDocument();
       });
     });
   });
@@ -178,7 +182,7 @@ describe("DocumentsPage — RAG Semântico Híbrido & Ingestão Multiformato", (
     it("exibe alerta amigável quando API retorna 422 pdf_no_text_layer no upload manual", async () => {
       mockApi.mockImplementation(async (path: string, options?: any) => {
         if (path === "/api/documents" && options?.method === "POST") {
-          throw new Error("422: {\"error\":\"pdf_no_text_layer\"}");
+          throw new Error('422: {"error":"pdf_no_text_layer"}');
         }
         if (path === "/api/documents") return [];
         return [];
@@ -297,4 +301,3 @@ describe("DocumentsPage — RAG Semântico Híbrido & Ingestão Multiformato", (
     });
   });
 });
-

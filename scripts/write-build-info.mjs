@@ -7,7 +7,8 @@
 import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-const clean = (v, fallback = "unknown") => (typeof v === "string" && v.trim() ? v.trim() : fallback);
+const clean = (v, fallback = "unknown") =>
+  typeof v === "string" && v.trim() ? v.trim() : fallback;
 const SHA = /^[0-9a-f]{7,40}$/i;
 
 const commit = clean(process.env.GIT_SHA);
@@ -61,17 +62,25 @@ const info = {
 if (process.env.RELEASE_BUILD === "1") {
   const problems = [];
   if (!/^[0-9a-f]{40}$/.test(info.commit))
-    problems.push(`GIT_SHA inválido ("${info.commit}") — tem de ser o SHA completo (40 hex) do commit efetivamente construído`);
+    problems.push(
+      `GIT_SHA inválido ("${info.commit}") — tem de ser o SHA completo (40 hex) do commit efetivamente construído`,
+    );
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(info.buildTime))
-    problems.push(`BUILD_TIME inválido ("${info.buildTime}") — tem de ser UTC em RFC3339 (ex.: 2026-10-18T17:40:00Z)`);
+    problems.push(
+      `BUILD_TIME inválido ("${info.buildTime}") — tem de ser UTC em RFC3339 (ex.: 2026-10-18T17:40:00Z)`,
+    );
   if (!info.appVersion || info.appVersion === "unknown" || info.appVersion === "sem-build")
     problems.push("APP_VERSION ausente — tem de vir do manifesto (package.json) ou de --build-arg");
   if (!/^\d+$/.test(String(info.schemaVersion)))
-    problems.push(`SCHEMA_VERSION inválido ("${info.schemaVersion}") — tem de ser o user_version numérico do SQLite`);
+    problems.push(
+      `SCHEMA_VERSION inválido ("${info.schemaVersion}") — tem de ser o user_version numérico do SQLite`,
+    );
   if (info.commitStatus === "unknown")
     problems.push("BUILD_COMMIT_STATUS ausente — use 'Registrado' ou 'Não registrado (local)'");
   if (problems.length) {
-    console.error(`[build-info] RELEASE_BUILD com metadados inválidos:\n - ${problems.join("\n - ")}`);
+    console.error(
+      `[build-info] RELEASE_BUILD com metadados inválidos:\n - ${problems.join("\n - ")}`,
+    );
     process.exit(1);
   }
 }

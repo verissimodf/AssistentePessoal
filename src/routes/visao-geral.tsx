@@ -74,7 +74,9 @@ const known = (v?: string | null): string | null =>
 const normFocus = (f: Partial<SessionFocus> | null | undefined): SessionFocus => ({
   objective: typeof f?.objective === "string" ? f.objective : "",
   summary: typeof f?.summary === "string" ? f.summary : "",
-  decisions: Array.isArray(f?.decisions) ? f.decisions.filter((d): d is string => typeof d === "string") : [],
+  decisions: Array.isArray(f?.decisions)
+    ? f.decisions.filter((d): d is string => typeof d === "string")
+    : [],
   updatedAt: typeof f?.updatedAt === "string" ? f.updatedAt : null,
 });
 
@@ -152,14 +154,19 @@ function OverviewPage() {
     edit({ decisions: [...draft.decisions, v] });
     setDecInput("");
   };
-  const dropDecision = (i: number) => edit({ decisions: draft.decisions.filter((_, x) => x !== i) });
+  const dropDecision = (i: number) =>
+    edit({ decisions: draft.decisions.filter((_, x) => x !== i) });
   const saveFocus = async () => {
     setSaving(true);
     setFocusErr(null);
     try {
       const next = normFocus(await saveSessionFocus(draft));
       setFocus(next);
-      setDraft({ objective: next.objective, summary: next.summary, decisions: [...next.decisions] });
+      setDraft({
+        objective: next.objective,
+        summary: next.summary,
+        decisions: [...next.decisions],
+      });
       setSavedAt(new Date().toISOString());
     } catch {
       setFocusErr(t("ov_focus_err"));
@@ -326,7 +333,12 @@ function OverviewPage() {
                     {draft.decisions.map((d, i) => (
                       <li key={`${i}-${d}`} className="flex items-center gap-2 text-sm">
                         <span className="flex-1">{d}</span>
-                        <Button size="sm" variant="ghost" aria-label={t("delete")} onClick={() => dropDecision(i)}>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={t("delete")}
+                          onClick={() => dropDecision(i)}
+                        >
                           ×
                         </Button>
                       </li>

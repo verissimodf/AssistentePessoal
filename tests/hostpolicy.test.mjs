@@ -26,7 +26,19 @@ test("quebra de linha nunca é permitida (bypass comprovado: `ls \\n rm -rf`)", 
   assert.equal(decide("ls \nrm -rf /", { ...base, autonomy: "safe" }), "deny");
 });
 test("redirecionamento, substituição e subshell nunca são permitidos", () => {
-  for (const c of ["ls > /tmp/x", "ls >> /tmp/x", "ls < /etc/passwd", "ls ${HOME}", "ls $(id)", "ls `id`", "ls | id", "(ls)", "ls & id", "ls \\x", "ls 2>&1"]) {
+  for (const c of [
+    "ls > /tmp/x",
+    "ls >> /tmp/x",
+    "ls < /etc/passwd",
+    "ls ${HOME}",
+    "ls $(id)",
+    "ls `id`",
+    "ls | id",
+    "(ls)",
+    "ls & id",
+    "ls \\x",
+    "ls 2>&1",
+  ]) {
     assert.equal(isAllowlisted(c, base.allowlist), false, c);
     assert.equal(decide(c, { ...base, autonomy: "safe" }), "deny", c);
   }

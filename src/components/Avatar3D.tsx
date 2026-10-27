@@ -38,7 +38,11 @@ export function Avatar3D({ state, level = 0, audioLevel }: Avatar3DProps) {
 
         let renderer: InstanceType<typeof THREE.WebGLRenderer>;
         try {
-          renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+          renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            alpha: true,
+            powerPreference: "high-performance",
+          });
         } catch {
           setWebglSupported(false);
           return;
@@ -49,7 +53,9 @@ export function Avatar3D({ state, level = 0, audioLevel }: Avatar3DProps) {
           return;
         }
 
-        renderer.setPixelRatio(Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio : 1));
+        renderer.setPixelRatio(
+          Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio : 1),
+        );
         el.appendChild(renderer.domElement);
 
         const scene = new THREE.Scene();
@@ -109,7 +115,10 @@ export function Avatar3D({ state, level = 0, audioLevel }: Avatar3DProps) {
           const r = 2 + Math.random() * 1.8;
           const th = Math.random() * Math.PI * 2;
           const ph = Math.acos(2 * Math.random() - 1);
-          pts.set([r * Math.sin(ph) * Math.cos(th), r * Math.sin(ph) * Math.sin(th), r * Math.cos(ph)], i * 3);
+          pts.set(
+            [r * Math.sin(ph) * Math.cos(th), r * Math.sin(ph) * Math.sin(th), r * Math.cos(ph)],
+            i * 3,
+          );
         }
         const particleGeo = new THREE.BufferGeometry();
         particleGeo.setAttribute("position", new THREE.BufferAttribute(pts, 3));

@@ -46,7 +46,10 @@ export function createVAD(opts: Partial<VADOptions> = {}) {
   let noiseFloor = 0.01;
 
   return {
-    process(buffer: Float32Array, nowMs: number = performance.now()): {
+    process(
+      buffer: Float32Array,
+      nowMs: number = performance.now(),
+    ): {
       isVoice: boolean;
       rms: number;
       zcr: number;
@@ -152,7 +155,7 @@ export function createOfflineWakeWordDetector(opts: Partial<OfflineWakeWordOptio
     feed(
       buffer: Float32Array,
       frequencyData?: Uint8Array,
-      nowMs: number = performance.now()
+      nowMs: number = performance.now(),
     ): boolean {
       if (!buffer || buffer.length === 0) return false;
 
@@ -268,7 +271,8 @@ class SharedAudioEngine {
     }
 
     const AudioContextClass =
-      window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextClass) {
       throw new Error("AudioContext not supported in this environment");
     }
@@ -407,24 +411,32 @@ export function startHandsFreeSession(config: HandsFreeConfig) {
   if (config.word) {
     const w = typeof window !== "undefined" ? (window as unknown as Record<string, unknown>) : {};
     const Rec =
-      (w["SpeechRecognition"] as unknown as { new (): {
-        lang: string;
-        continuous: boolean;
-        interimResults: boolean;
-        onresult: (e: { results: ArrayLike<{ [index: number]: { transcript: string } }> }) => void;
-        onend: () => void;
-        start: () => void;
-        abort: () => void;
-      } }) ||
-      (w["webkitSpeechRecognition"] as unknown as { new (): {
-        lang: string;
-        continuous: boolean;
-        interimResults: boolean;
-        onresult: (e: { results: ArrayLike<{ [index: number]: { transcript: string } }> }) => void;
-        onend: () => void;
-        start: () => void;
-        abort: () => void;
-      } });
+      (w["SpeechRecognition"] as unknown as {
+        new (): {
+          lang: string;
+          continuous: boolean;
+          interimResults: boolean;
+          onresult: (e: {
+            results: ArrayLike<{ [index: number]: { transcript: string } }>;
+          }) => void;
+          onend: () => void;
+          start: () => void;
+          abort: () => void;
+        };
+      }) ||
+      (w["webkitSpeechRecognition"] as unknown as {
+        new (): {
+          lang: string;
+          continuous: boolean;
+          interimResults: boolean;
+          onresult: (e: {
+            results: ArrayLike<{ [index: number]: { transcript: string } }>;
+          }) => void;
+          onend: () => void;
+          start: () => void;
+          abort: () => void;
+        };
+      });
 
     if (Rec) {
       try {

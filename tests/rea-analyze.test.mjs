@@ -3,7 +3,14 @@
 // Temporary data dir + synthetic data only (same bootstrap as phase2-fixes.test.mjs).
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, chmodSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  chmodSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, delimiter } from "node:path";
 
@@ -12,7 +19,8 @@ process.env.JARVIS_DATA_DIR = dir;
 process.env.JARVIS_NO_LISTEN = "1";
 const { createApp } = await import("../server/index.js");
 const { auth, db } = await import("../server/db.js");
-const { callTool, reaResolvePath, parseReaRoots, reaFingerprint, REA_TEMPLATE } = await import("../server/tools.js");
+const { callTool, reaResolvePath, parseReaRoots, reaFingerprint, REA_TEMPLATE } =
+  await import("../server/tools.js");
 
 const PW = "senha-muito-forte-1";
 const ORIGIN = "http://localhost:8080";
@@ -21,13 +29,21 @@ const A = {};
 const req = (path, { method = "GET", body, s } = {}) =>
   fetch(base + path, {
     method,
-    headers: { origin: ORIGIN, ...(body !== undefined ? { "content-type": "application/json" } : {}), ...(s ? { cookie: s.cookie, "x-jarvis-csrf": s.csrf } : {}) },
+    headers: {
+      origin: ORIGIN,
+      ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(s ? { cookie: s.cookie, "x-jarvis-csrf": s.csrf } : {}),
+    },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 async function login(u, t) {
   const r = await req("/api/auth/login", { method: "POST", body: { username: u, password: PW } });
   const j = await r.json();
-  Object.assign(t, { cookie: r.headers.get("set-cookie").split(";")[0], csrf: j.csrf, id: j.admin.id });
+  Object.assign(t, {
+    cookie: r.headers.get("set-cookie").split(";")[0],
+    csrf: j.csrf,
+    id: j.admin.id,
+  });
   t.principal = auth.validateSession(t.cookie.split("=")[1]);
 }
 const putSettings = (body, s = A) => req("/api/settings", { method: "PUT", body, s });
@@ -92,7 +108,9 @@ process.stdout.write(JSON.stringify(payload) + "\\n");
 `.replace(/\r\n/g, "\n");
 
   writeFileSync(join(binDir, "rea"), reaScript, { mode: 0o755 });
-  try { chmodSync(join(binDir, "rea"), 0o755); } catch {}
+  try {
+    chmodSync(join(binDir, "rea"), 0o755);
+  } catch {}
   if (process.platform === "win32") {
     writeFileSync(join(binDir, "rea.cmd"), `@echo off\r\nnode "%~dp0rea" %*\r\n`);
   }
@@ -103,9 +121,18 @@ process.stdout.write(JSON.stringify(payload) + "\\n");
   auth.setupFirstAdmin({ token: auth.ensureBootstrap().token, username: "ana", password: PW });
   await login("ana", A);
   mkdirSync(join(TARGET_NATIVE, "lib"), { recursive: true });
-  writeFileSync(join(TARGET_NATIVE, "package.json"), JSON.stringify({ name: "demo-app", version: "1.0.0", main: "main.js" }));
-  writeFileSync(join(TARGET_NATIVE, "main.js"), `const { ipcMain } = require("electron");\nconst { searchNotes } = require("./lib/search.js");\nipcMain.handle("search", (_e, q) => searchNotes(q));\n`);
-  writeFileSync(join(TARGET_NATIVE, "lib/search.js"), "function searchNotes(notes, q){ return notes.filter(n => n.includes(q)); }\nmodule.exports = { searchNotes };\n");
+  writeFileSync(
+    join(TARGET_NATIVE, "package.json"),
+    JSON.stringify({ name: "demo-app", version: "1.0.0", main: "main.js" }),
+  );
+  writeFileSync(
+    join(TARGET_NATIVE, "main.js"),
+    `const { ipcMain } = require("electron");\nconst { searchNotes } = require("./lib/search.js");\nipcMain.handle("search", (_e, q) => searchNotes(q));\n`,
+  );
+  writeFileSync(
+    join(TARGET_NATIVE, "lib/search.js"),
+    "function searchNotes(notes, q){ return notes.filter(n => n.includes(q)); }\nmodule.exports = { searchNotes };\n",
+  );
 });
 after(() => server.close());
 
@@ -118,14 +145,26 @@ T("reaResolvePath: absolute, charset and traversal", () => {
   const separator = root.endsWith("/") ? "" : "/";
   const absoluteInRoot = `${root}${separator}demo-app`;
   assert.equal(reaResolvePath("main.js", {}).ok, false, "não absoluto");
-  assert.equal(reaResolvePath(`${root}${separator}..${separator}etc${separator}passwd`, {}).ok, false, "traversal");
+  assert.equal(
+    reaResolvePath(`${root}${separator}..${separator}etc${separator}passwd`, {}).ok,
+    false,
+    "traversal",
+  );
   assert.equal(reaResolvePath(`${root}${separator}a; b`, {}).ok, false, "metacaractere");
   assert.equal(reaResolvePath("/opt/sem-permissao/app", {}).ok, false, "fora da raiz");
   assert.equal(reaResolvePath(absoluteInRoot, {}).ok, true, "dentro da raiz");
   if (process.platform === "win32") {
-    assert.equal(reaResolvePath(root + separator + "demo~1", {}).ok, true, "caminho Windows curto com til aceito dentro da raiz");
+    assert.equal(
+      reaResolvePath(root + separator + "demo~1", {}).ok,
+      true,
+      "caminho Windows curto com til aceito dentro da raiz",
+    );
   }
-  assert.equal(reaResolvePath(absoluteInRoot, { roots: "/outra/raiz" }).ok, false, "raiz configurável");
+  assert.equal(
+    reaResolvePath(absoluteInRoot, { roots: "/outra/raiz" }).ok,
+    false,
+    "raiz configurável",
+  );
 });
 
 T("reaResolvePath: demo target resolves (bootstrap layout)", () => {
@@ -135,7 +174,11 @@ T("reaResolvePath: demo target resolves (bootstrap layout)", () => {
 
 // ---------- fluxo completo pelo HTTP + aprovação ----------
 T("rea_analyze: integração desabilitada → recusa sem aprovação", async () => {
-  const out = await callTool("rea_analyze", { path: TARGET }, { autonomy: "confirm", pending: [], principal: A.principal });
+  const out = await callTool(
+    "rea_analyze",
+    { path: TARGET },
+    { autonomy: "confirm", pending: [], principal: A.principal },
+  );
   assert.match(out, /não está habilitada/i);
 });
 
@@ -151,7 +194,11 @@ T("rea_analyze: pede aprovação, roda após aprovação e grava Evidence + índ
   // Sem aprovação: nada é executado e nenhum resultado existe.
   assert.ok(!existsSync(join(dir, "rea", "index.jsonl")), "nenhuma execução antes da aprovação");
 
-  const r = await req(`/api/approvals/${approval.id}`, { method: "POST", body: { approve: true }, s: A });
+  const r = await req(`/api/approvals/${approval.id}`, {
+    method: "POST",
+    body: { approve: true },
+    s: A,
+  });
   assert.ok(r.ok, "aprovação pelo painel");
   const j = await r.json();
   assert.match(j.output, /Evidence:/, "resumo com evidence_id");
@@ -170,7 +217,10 @@ function matchEvidence(text) {
   const rea = JSON.parse(results.data).integrations.rea;
   const roots = parseReaRoots(rea);
   const base = roots[0] ? roots[0].replace(/targets$/, "targets") : null;
-  const files = readFileSync(join(dir, "rea", "index.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  const files = readFileSync(join(dir, "rea", "index.jsonl"), "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l));
   assert.equal(files.length, 1, "um recibo no índice");
   assert.equal(files[0].ok, true, "execução registrada como ok");
   assert.equal(files[0].path, TARGET, "caminho carimbado é o aprovado");
@@ -190,9 +240,13 @@ T("approval negada não executa nada", async () => {
   const ctx = { autonomy: "confirm", pending: [], principal: A.principal };
   await callTool("rea_analyze", { path: TARGET }, ctx);
   const approval = ctx.pending[0];
-  const before = readFileSync(join(dir, "rea", "index.jsonl"), "utf8").trim().split("\n").length;
+  const before = readFileSync(join(dir, "rea", "index.jsonl"), "utf8")
+    .trim()
+    .split("\n").length;
   await req(`/api/approvals/${approval.id}`, { method: "POST", body: { approve: false }, s: A });
-  const after = readFileSync(join(dir, "rea", "index.jsonl"), "utf8").trim().split("\n").length;
+  const after = readFileSync(join(dir, "rea", "index.jsonl"), "utf8")
+    .trim()
+    .split("\n").length;
   assert.equal(after, before, "índice inalterado quando negado");
 });
 
@@ -201,8 +255,20 @@ T("mudança de raiz entre pedido e aprovação → cancelada", async () => {
   await callTool("rea_analyze", { path: TARGET }, ctx);
   const approval = ctx.pending[0];
   // admin muda a configuração da integração antes de aprovar
-  await putSettings({ integrations: { rea: { enabled: true, command: "rea analyze-javascript-application {path} --json", roots: "/raiz-alterada" } } });
-  const r = await req(`/api/approvals/${approval.id}`, { method: "POST", body: { approve: true }, s: A });
+  await putSettings({
+    integrations: {
+      rea: {
+        enabled: true,
+        command: "rea analyze-javascript-application {path} --json",
+        roots: "/raiz-alterada",
+      },
+    },
+  });
+  const r = await req(`/api/approvals/${approval.id}`, {
+    method: "POST",
+    body: { approve: true },
+    s: A,
+  });
   const j = await r.json();
   assert.match(j.output, /cancelada/i, "fingerprint/raiz reavaliados na aprovação");
   // restauração explícita (merge mantém chaves anteriores)
@@ -214,9 +280,14 @@ T("comando alterado no painel é recusado na execução", async () => {
   const ctx = { autonomy: "confirm", pending: [], principal: A.principal };
   const out = await callTool("rea_analyze", { path: TARGET }, ctx);
   assert.match(out, /aprovação/i, "template padrão continua aceito");
-  for (const p of ctx.pending) await req(`/api/approvals/${p.id}`, { method: "POST", body: { approve: false }, s: A });
+  for (const p of ctx.pending)
+    await req(`/api/approvals/${p.id}`, { method: "POST", body: { approve: false }, s: A });
   await putSettings({ integrations: { rea: { enabled: true, command: "rea arbitrary --exec" } } });
-  const refused = await callTool("rea_analyze", { path: TARGET }, { autonomy: "confirm", pending: [], principal: A.principal });
+  const refused = await callTool(
+    "rea_analyze",
+    { path: TARGET },
+    { autonomy: "confirm", pending: [], principal: A.principal },
+  );
   assert.match(refused, /não pode ser alterado/i, "divergência do template é recusada");
   await putSettings({ integrations: { rea: { enabled: true, command: REA_TEMPLATE, roots: "" } } });
 });
@@ -224,30 +295,49 @@ T("comando alterado no painel é recusado na execução", async () => {
 // ---------- comando determinístico /rea no chat (sem LLM) ----------
 T("/rea no chat: enfileira aprovação sem provedor e executa após aprovação", async () => {
   await putSettings({ integrations: { rea: { enabled: true } } });
-  const r = await req("/api/chat", { method: "POST", body: { message: `/rea ${TARGET}`, clientMsgId: "9d2b7a1e-8f42-4a5a-9d9e-2222aaaabbbb" }, s: A });
+  const r = await req("/api/chat", {
+    method: "POST",
+    body: { message: `/rea ${TARGET}`, clientMsgId: "9d2b7a1e-8f42-4a5a-9d9e-2222aaaabbbb" },
+    s: A,
+  });
   assert.ok(r.ok, `status ${r.status}`);
   const j = await r.json();
   assert.match(j.reply, /aprovação/i, "resposta determinística enfileira a aprovação");
   assert.equal((j.pending || []).length, 1, "pending vem na resposta do chat");
   const id = j.pending[0].id;
 
-  const before = readFileSync(join(dir, "rea", "index.jsonl"), "utf8").trim().split("\n").length;
+  const before = readFileSync(join(dir, "rea", "index.jsonl"), "utf8")
+    .trim()
+    .split("\n").length;
   const ap = await req(`/api/approvals/${id}`, { method: "POST", body: { approve: true }, s: A });
   const aj = await ap.json();
   assert.match(aj.output, /Evidence:/, "REA executou após a aprovação no chat");
-  const after = readFileSync(join(dir, "rea", "index.jsonl"), "utf8").trim().split("\n").length;
+  const after = readFileSync(join(dir, "rea", "index.jsonl"), "utf8")
+    .trim()
+    .split("\n").length;
   assert.equal(after, before + 1, "execução registrada no índice");
 });
 
 T("/rea: caminho fora das raízes → recusa determinística, sem aprovação", async () => {
-  const r = await req("/api/chat", { method: "POST", body: { message: "/rea /opt/sem-permissao/app", clientMsgId: "aa3b7a1e-8f42-4a5a-9d9e-3333bbbbcccc" }, s: A });
+  const r = await req("/api/chat", {
+    method: "POST",
+    body: {
+      message: "/rea /opt/sem-permissao/app",
+      clientMsgId: "aa3b7a1e-8f42-4a5a-9d9e-3333bbbbcccc",
+    },
+    s: A,
+  });
   const j = await r.json();
   assert.match(j.reply, /fora das raízes/i);
   assert.equal((j.pending || []).length, 0, "nada pendente quando recusado");
 });
 
 T("/rea sem caminho → mesma troca de uso", async () => {
-  const r = await req("/api/chat", { method: "POST", body: { message: "/rea", clientMsgId: "bb4b7a1e-8f42-4a5a-9d9e-4444ccccdddd" }, s: A });
+  const r = await req("/api/chat", {
+    method: "POST",
+    body: { message: "/rea", clientMsgId: "bb4b7a1e-8f42-4a5a-9d9e-4444ccccdddd" },
+    s: A,
+  });
   const j = await r.json();
   assert.match(j.reply, /Uso:/i);
 });

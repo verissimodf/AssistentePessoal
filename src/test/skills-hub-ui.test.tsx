@@ -105,7 +105,9 @@ describe("AgentsPage — MCP Connection Assistant", () => {
       expect(screen.getByTestId("btn-copy-mcp")).toBeInTheDocument();
     });
 
-    expect(screen.getByText("Conectar Agentes Externos (MCP: Claude / Goose / IDE)")).toBeInTheDocument();
+    expect(
+      screen.getByText("Conectar Agentes Externos (MCP: Claude / Goose / IDE)"),
+    ).toBeInTheDocument();
     expect(screen.getByText(/jarvis_service_token/i)).toBeInTheDocument();
 
     const copyBtn = screen.getByTestId("btn-copy-mcp");
@@ -176,14 +178,14 @@ describe("AgentsPage — Multi-Provider Router & Telemetry (v1.6.0)", () => {
                 },
               },
             }),
-            { status: 200, headers: { "content-type": "application/json" } }
+            { status: 200, headers: { "content-type": "application/json" } },
           );
         }
         return new Response(JSON.stringify([]), {
           status: 200,
           headers: { "content-type": "application/json" },
         });
-      })
+      }),
     );
 
     render(<AgentsPage defaultTab="skills" />);
@@ -210,4 +212,3 @@ describe("AgentsPage — Multi-Provider Router & Telemetry (v1.6.0)", () => {
     expect(telemetrySection).toHaveTextContent("1 acionado(s)");
   });
 });
-

@@ -1,6 +1,6 @@
 # Configuração
 
-Atualizado para **1.9.0** (esquema 18). A configuração de aplicação é feita no painel e persistida
+Atualizado para **1.9.1** (esquema 18). A configuração de aplicação é feita no painel e persistida
 cifrada em `data/jarvis.db`; variáveis de ambiente cobrem infraestrutura e segurança.
 
 ## Proveniência dos valores

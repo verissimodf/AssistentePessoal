@@ -19,7 +19,10 @@ export const storeActive = (id: string | null) => {
  * no servidor; caso contrário abre a mais recente; sem conversas, começa uma nova (null).
  * Nunca apaga nada — a lista vem inteira do servidor.
  */
-export function pickActiveConversation(storedId: string | null, list: ConversationSummary[]): string | null {
+export function pickActiveConversation(
+  storedId: string | null,
+  list: ConversationSummary[],
+): string | null {
   if (storedId && list.some((c) => c.id === storedId)) return storedId;
   return list[0]?.id ?? null;
 }
@@ -50,6 +53,8 @@ export function formatConversationDate(iso: string, lang: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   const opts: Intl.DateTimeFormatOptions =
-    d.toDateString() === new Date().toDateString() ? { hour: "2-digit", minute: "2-digit" } : { day: "2-digit", month: "short" };
+    d.toDateString() === new Date().toDateString()
+      ? { hour: "2-digit", minute: "2-digit" }
+      : { day: "2-digit", month: "short" };
   return new Intl.DateTimeFormat(LOCALES[lang] || "pt-BR", opts).format(d);
 }

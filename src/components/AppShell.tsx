@@ -1,5 +1,17 @@
 import { Link, Outlet } from "@tanstack/react-router";
-import { Activity, Bot, Brain, FileText, LayoutDashboard, LogOut, Mail, MessageSquare, Settings, Users, Search } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  Brain,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+  Mail,
+  MessageSquare,
+  Settings,
+  Users,
+  Search,
+} from "lucide-react";
 import { logout, useAuthState, useBridgeStatus } from "@/lib/bridge";
 import { AuthGate, useAuthText } from "@/components/AuthGate";
 import { LANGS, useI18n, type Lang } from "@/lib/i18n";
@@ -62,28 +74,49 @@ export function AppShell() {
             className="rounded-md border border-input bg-secondary px-2 py-1 text-xs"
             aria-label="Language"
           >
-            {LANGS.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+            {LANGS.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.label}
+              </option>
+            ))}
           </select>
           <div className="flex items-center gap-2 text-xs" title={online ? "" : t("demo_hint")}>
-            <span className={`h-2 w-2 rounded-full ${online ? "bg-chart-3" : "bg-accent"} animate-pulse`} />
+            <span
+              className={`h-2 w-2 rounded-full ${online ? "bg-chart-3" : "bg-accent"} animate-pulse`}
+            />
             {/* Sempre visível: em modo demo o painel mostra dados fictícios e não deve passar por produção. */}
             <span className="text-muted-foreground">{online ? t("connected") : t("demo")}</span>
           </div>
           {auth === "ok" && (
-            <button onClick={() => logout()} className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground" aria-label={a("logout")}>
-              <LogOut className="h-3 w-3" /><span className="hidden md:inline">{a("logout")}</span>
+            <button
+              onClick={() => logout()}
+              className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+              aria-label={a("logout")}
+            >
+              <LogOut className="h-3 w-3" />
+              <span className="hidden md:inline">{a("logout")}</span>
             </button>
           )}
         </div>
       </aside>
       <main className="flex-1 overflow-hidden">
-        <AuthGate><Outlet /></AuthGate>
+        <AuthGate>
+          <Outlet />
+        </AuthGate>
       </main>
     </div>
   );
 }
 
-export function PageHeader({ title, sub, children }: { title: string; sub?: string; children?: React.ReactNode }) {
+export function PageHeader({
+  title,
+  sub,
+  children,
+}: {
+  title: string;
+  sub?: string;
+  children?: React.ReactNode;
+}) {
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>

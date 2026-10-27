@@ -11,13 +11,8 @@ process.env.JARVIS_DATA_DIR = dir;
 process.env.JARVIS_NO_LISTEN = "1";
 
 const { PERSONAL_DEFAULTS } = await import("../server/settings.js");
-const {
-  DEFAULT_OLLAMA_MODEL,
-  assertModelAvailable,
-  modelNotFoundFrom,
-  embed,
-  runAgent,
-} = await import("../server/llm.js");
+const { DEFAULT_OLLAMA_MODEL, assertModelAvailable, modelNotFoundFrom, embed, runAgent } =
+  await import("../server/llm.js");
 const { chatExchange } = await import("../server/conversations.js");
 const { auth, db } = await import("../server/db.js");
 
@@ -83,7 +78,10 @@ test("o catálogo é sondado no máximo uma vez por minuto (cache por baseUrl)",
 });
 
 test("resposta do provedor com modelo inexistente é traduzida em model_not_found (não provider_error)", () => {
-  const r = modelNotFoundFrom(404, '{"error":{"message":"model \'llama3.1\' not found, try pulling it first"}}');
+  const r = modelNotFoundFrom(
+    404,
+    '{"error":{"message":"model \'llama3.1\' not found, try pulling it first"}}',
+  );
   assert.ok(r);
   assert.equal(r.code, "model_not_found");
   assert.equal(r.status, 400);
@@ -92,20 +90,20 @@ test("resposta do provedor com modelo inexistente é traduzida em model_not_foun
 });
 
 test("erro de configuração do modelo chega ao chat como 400 model_not_found (nunca 502 genérico)", async () => {
-  auth.setupFirstAdmin({ token: auth.ensureBootstrap().token, username: "ana", password: "senha-muito-forte-1" });
+  auth.setupFirstAdmin({
+    token: auth.ensureBootstrap().token,
+    username: "ana",
+    password: "senha-muito-forte-1",
+  });
   const adminId = db.prepare("SELECT id FROM admins WHERE active=1").get().id;
   await assert.rejects(
     () =>
-      chatExchange(
-        adminId,
-        { message: "oi" },
-        async () => {
-          const e = new Error("modelo ausente");
-          e.code = "model_not_found";
-          e.status = 400;
-          throw e;
-        },
-      ),
+      chatExchange(adminId, { message: "oi" }, async () => {
+        const e = new Error("modelo ausente");
+        e.code = "model_not_found";
+        e.status = 400;
+        throw e;
+      }),
     (e) => e.status === 400 && e.code === "model_not_found",
   );
 });
@@ -135,7 +133,11 @@ test("salvar preferências pessoais não apaga o modelo padrão do provedor (reg
   // Configuração explícita continua vencendo o default.
   updateSettings({ providers: { ollama: { model: "gemma3:4b" } } }, { adminId });
   assert.equal(getSettings(adminId).providers.ollama.model, "gemma3:4b");
-  assert.equal(getSettings(adminId).providers.ollama.baseUrl, "http://ollama-llm:11434/v1", "baseUrl default mantido");
+  assert.equal(
+    getSettings(adminId).providers.ollama.baseUrl,
+    "http://ollama-llm:11434/v1",
+    "baseUrl default mantido",
+  );
   // E o valor explícito nunca é exposto como segredo pelas settings públicas.
   assert.equal(JSON.stringify(publicSettings(adminId)).includes("sk-"), false);
 });

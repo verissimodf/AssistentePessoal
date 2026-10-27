@@ -43,7 +43,9 @@ before(async () => {
   stubHits = [];
   stub = createServer((req, res) => {
     let body = "";
-    req.on("data", (c) => { body += c; });
+    req.on("data", (c) => {
+      body += c;
+    });
     req.on("end", () => {
       stubHits.push({ url: req.url, body });
       res.writeHead(200, { "content-type": "application/json" });
@@ -56,11 +58,17 @@ before(async () => {
   updateSettings({ host: { enabled: true } }, { adminId: admin.id, allowGlobal: true });
 });
 
-after(async () => { await new Promise((r) => stub.close(r)); await new Promise((r) => server.close(r)); });
+after(async () => {
+  await new Promise((r) => stub.close(r));
+  await new Promise((r) => server.close(r));
+});
 
 const ctx = () => ({ autonomy: "confirm", pending: [], principal });
 const setOpenhands = (enabled, port = stubPort) =>
-  updateSettings({ integrations: { openhands: { enabled, kind: "http", command: `http://127.0.0.1:${port}` } } }, { adminId: admin.id, allowGlobal: true });
+  updateSettings(
+    { integrations: { openhands: { enabled, kind: "http", command: `http://127.0.0.1:${port}` } } },
+    { adminId: admin.id, allowGlobal: true },
+  );
 
 // ---------------------------------------------------------------- openhands_task
 test("openhands_task: integração desabilitada é recusada sem aprovação e sem requisição", async () => {
@@ -80,14 +88,20 @@ test("openhands_task: NADA é enviado antes da aprovação; aprovar executa exat
   assert.match(out, /aprovação/);
   assert.equal(c.pending.length, 1);
   assert.equal(db.prepare("SELECT COUNT(*) n FROM approvals").get().n, before + 1);
-  assert.equal(db.prepare("SELECT status FROM approvals WHERE id=?").get(c.pending[0].id).status, "pending");
+  assert.equal(
+    db.prepare("SELECT status FROM approvals WHERE id=?").get(c.pending[0].id).status,
+    "pending",
+  );
   assert.equal(stubHits.length, 0, "nenhuma requisição antes da aprovação");
 
   const r = await resolveApproval(c.pending[0].id, true, principal);
   assert.match(r.output, /conversation_id/);
   assert.equal(stubHits.length, 1);
   assert.match(stubHits[0].body, /tarefa A/);
-  assert.equal(db.prepare("SELECT status FROM approvals WHERE id=?").get(c.pending[0].id).status, "done");
+  assert.equal(
+    db.prepare("SELECT status FROM approvals WHERE id=?").get(c.pending[0].id).status,
+    "done",
+  );
 });
 
 test("openhands_task: a mesma aprovação não pode ser consumida duas vezes", async () => {
@@ -96,7 +110,9 @@ test("openhands_task: a mesma aprovação não pode ser consumida duas vezes", a
   await callTool("openhands_task", { task: "tarefa B" }, c);
   await resolveApproval(c.pending[0].id, true, principal);
   const hitsAfter = stubHits.length;
-  await assert.rejects(() => resolveApproval(c.pending[0].id, true, principal), { code: "already_resolved" });
+  await assert.rejects(() => resolveApproval(c.pending[0].id, true, principal), {
+    code: "already_resolved",
+  });
   assert.equal(stubHits.length, hitsAfter, "replay não executa de novo");
 });
 
@@ -125,7 +141,10 @@ test("openhands_task: negar não envia nada", async () => {
   const r = await resolveApproval(c.pending[0].id, false, principal);
   assert.match(r.output, /Negado/);
   assert.equal(stubHits.length, hits);
-  assert.equal(db.prepare("SELECT status FROM approvals WHERE id=?").get(c.pending[0].id).status, "denied");
+  assert.equal(
+    db.prepare("SELECT status FROM approvals WHERE id=?").get(c.pending[0].id).status,
+    "denied",
+  );
 });
 
 test("openhands_task: desabilitar a integração após o pedido invalida a aprovação", async () => {
@@ -149,7 +168,10 @@ test("send_message: canal não configurado permanece inócuo, sem aprovação", 
 });
 
 test("send_message: canal habilitado sem destinatário é inócuo", async () => {
-  updateSettings({ comms: { telegram: { enabled: true, botToken: "x" } } }, { adminId: admin.id, allowGlobal: false });
+  updateSettings(
+    { comms: { telegram: { enabled: true, botToken: "x" } } },
+    { adminId: admin.id, allowGlobal: false },
+  );
   const c = ctx();
   const out = await callTool("send_message", { channel: "telegram", text: "oi" }, c);
   assert.match(out, /sem destinatário/);
@@ -157,13 +179,23 @@ test("send_message: canal habilitado sem destinatário é inócuo", async () => 
 });
 
 test("send_message: nada é enviado antes da aprovação; aprovar envia uma vez", async () => {
-  updateSettings({ comms: { telegram: { enabled: true, botToken: "token-de-teste", chatId: "999" } } }, { adminId: admin.id, allowGlobal: false });
+  updateSettings(
+    { comms: { telegram: { enabled: true, botToken: "token-de-teste", chatId: "999" } } },
+    { adminId: admin.id, allowGlobal: false },
+  );
   const calls = [];
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async (url, init) => { calls.push({ url: String(url), body: init?.body }); return { ok: true, status: 200, text: async () => "{}" }; };
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url: String(url), body: init?.body });
+    return { ok: true, status: 200, text: async () => "{}" };
+  };
   try {
     const c = ctx();
-    const out = await callTool("send_message", { channel: "telegram", text: "mensagem de teste" }, c);
+    const out = await callTool(
+      "send_message",
+      { channel: "telegram", text: "mensagem de teste" },
+      c,
+    );
     assert.match(out, /aprovação/);
     assert.equal(c.pending.length, 1);
     assert.equal(calls.length, 0, "nenhum envio antes da aprovação");
@@ -172,34 +204,49 @@ test("send_message: nada é enviado antes da aprovação; aprovar envia uma vez"
     assert.equal(calls.length, 1);
     assert.match(String(calls[0].body), /mensagem de teste/);
     assert.match(calls[0].url, /api\.telegram\.org/);
-  } finally { globalThis.fetch = realFetch; }
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 test("send_message: negar não envia", async () => {
   const calls = [];
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => { calls.push(1); return { ok: true, status: 200, text: async () => "{}" }; };
+  globalThis.fetch = async () => {
+    calls.push(1);
+    return { ok: true, status: 200, text: async () => "{}" };
+  };
   try {
     const c = ctx();
     await callTool("send_message", { channel: "telegram", text: "não deve sair" }, c);
     await resolveApproval(c.pending[0].id, false, principal);
     assert.equal(calls.length, 0);
-  } finally { globalThis.fetch = realFetch; }
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 test("send_message: mudar o destinatário após o pedido invalida a aprovação", async () => {
   const calls = [];
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => { calls.push(1); return { ok: true, status: 200, text: async () => "{}" }; };
+  globalThis.fetch = async () => {
+    calls.push(1);
+    return { ok: true, status: 200, text: async () => "{}" };
+  };
   try {
     const c = ctx();
     await callTool("send_message", { channel: "telegram", text: "conteudo original" }, c);
     // O destinatário muda entre o pedido e a aprovação.
-    updateSettings({ comms: { telegram: { enabled: true, botToken: "token-de-teste", chatId: "111" } } }, { adminId: admin.id, allowGlobal: false });
+    updateSettings(
+      { comms: { telegram: { enabled: true, botToken: "token-de-teste", chatId: "111" } } },
+      { adminId: admin.id, allowGlobal: false },
+    );
     const r = await resolveApproval(c.pending[0].id, true, principal);
     assert.match(r.output, /mudou desde a aprovação|alterado desde a aprovação|desabilitado/);
     assert.equal(calls.length, 0, "nada é enviado quando o destino mudou");
-  } finally { globalThis.fetch = realFetch; }
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 test("send_message: canal signal está desabilitado (executor estruturado pendente)", async () => {

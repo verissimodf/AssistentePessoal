@@ -2,6 +2,18 @@
 
 Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O formato é baseado no [Keep a Changelog](https://keepachangelog.com) e este projeto adere ao [Semantic Versioning](https://semver.org).
 
+## [1.9.1] — 2026-10-27
+
+### Corrigido
+- Ponte TTS usa a voz pré-cadastrada do container `xtts-service` e encaminha amostras clonadas, salvas pelo painel, ao endpoint `/voice/clone`.
+- Validação de caminho, extensão, tamanho e texto na ponte de voz; erros do serviço upstream não expõem detalhes internos; health reflete a disponibilidade real do XTTS.
+- Incluído `voice-adapter-core.mjs` no runtime Docker para evitar falha de import no boot.
+- Formatados os 88 arquivos rastreados com violações Prettier no baseline. Não houve alteração intencional de comportamento nesses arquivos.
+
+### Validação
+- Backend **657/657**, frontend **109/109**, TypeScript e build Vite/Nitro aprovados; smoke TTS local sintetizou WAV via XTTS.
+- `xtts-service` existente foi reutilizado, sem rebuild: XTTS-v2 carrega sob demanda e está operacional em CPU.
+
 ## [1.9.0] — 2026-10-27
 
 ### Adicionado

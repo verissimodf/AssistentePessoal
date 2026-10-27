@@ -155,7 +155,8 @@ export function claimAgentMailInbox(adminId, { confirm } = {}) {
   if (confirm !== "ASSUMIR") throw new ClaimError(400, "confirmation_required");
   const cfg = agentMailConfig(process.env, getSettings(adminId));
   const inboxId = cfg.inboxId.trim();
-  if (!cfg.enabled || !cfg.apiKey || !inboxId) throw new ClaimError(400, "integration_missing_inbox");
+  if (!cfg.enabled || !cfg.apiKey || !inboxId)
+    throw new ClaimError(400, "integration_missing_inbox");
   const owner = ownerOf("agentmail_inbox", inboxId);
   if (owner && owner !== adminId) throw new ClaimError(409, "already_owned");
   if (owner === adminId) return { ok: true, inboxId, alreadyOwned: true };
@@ -164,10 +165,12 @@ export function claimAgentMailInbox(adminId, { confirm } = {}) {
     const currentOwner = ownerOf("agentmail_inbox", inboxId);
     if (currentOwner) throw new ClaimError(409, "already_owned");
     db.prepare("INSERT INTO agentmail_inboxes (id, created_at) VALUES (?, ?)").run(inboxId, now());
-    db.prepare("INSERT INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin) VALUES ('agentmail_inbox', ?, ?, ?, 'claimed')")
-      .run(inboxId, adminId, now());
-    db.prepare("INSERT INTO legacy_claims (resource_type, resource_id, admin_id, at) VALUES ('agentmail_inbox', ?, ?, ?)")
-      .run(inboxId, adminId, now());
+    db.prepare(
+      "INSERT INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin) VALUES ('agentmail_inbox', ?, ?, ?, 'claimed')",
+    ).run(inboxId, adminId, now());
+    db.prepare(
+      "INSERT INTO legacy_claims (resource_type, resource_id, admin_id, at) VALUES ('agentmail_inbox', ?, ?, ?)",
+    ).run(inboxId, adminId, now());
     audit("agentmail_inbox.claimed", { admin: adminId, type: "agentmail_inbox", count: 1 });
     return { ok: true, inboxId, alreadyOwned: false };
   });
@@ -179,7 +182,10 @@ export function claimAgentMailInbox(adminId, { confirm } = {}) {
  * Fábrica do cliente. `fetchImpl` é injetável (sem socket nos testes de contrato). Nunca devolve
  * ou loga a chave; erros carregam apenas status + código estável.
  */
-export function createAgentMailClient(cfg, { fetchImpl = fetch, timeoutMs = REQUEST_TIMEOUT_MS } = {}) {
+export function createAgentMailClient(
+  cfg,
+  { fetchImpl = fetch, timeoutMs = REQUEST_TIMEOUT_MS } = {},
+) {
   const call = async (path, { method = "GET", body } = {}) => {
     if (!cfg?.apiKey) throw new AgentMailError(401, "agentmail_not_configured");
     let res;
@@ -212,13 +218,15 @@ export function createAgentMailClient(cfg, { fetchImpl = fetch, timeoutMs = REQU
     return json;
   };
 
-  const inboxPath = (inboxId) => `/inboxes/${encodeURIComponent(String(inboxId ?? cfg.inboxId ?? ""))}`;
+  const inboxPath = (inboxId) =>
+    `/inboxes/${encodeURIComponent(String(inboxId ?? cfg.inboxId ?? ""))}`;
   return {
     kind: "agentmail",
     listInboxes: () => call("/inboxes"),
     listMessages: (inboxId, { limit = 10 } = {}) =>
       call(`${inboxPath(inboxId)}/messages?limit=${encodeURIComponent(String(limit))}`),
-    getMessage: (inboxId, messageId) => call(`${inboxPath(inboxId)}/messages/${encodeURIComponent(String(messageId))}`),
+    getMessage: (inboxId, messageId) =>
+      call(`${inboxPath(inboxId)}/messages/${encodeURIComponent(String(messageId))}`),
     sendMessage: (inboxId, { to, subject, text, html } = {}) =>
       call(`${inboxPath(inboxId)}/messages/send`, {
         method: "POST",
@@ -231,7 +239,8 @@ export function createAgentMailClient(cfg, { fetchImpl = fetch, timeoutMs = REQU
     createWebhook: (url, eventTypes = ["message.received"]) =>
       call("/webhooks", { method: "POST", body: { url: String(url), event_types: eventTypes } }),
     listWebhooks: () => call("/webhooks"),
-    deleteWebhook: (webhookId) => call(`/webhooks/${encodeURIComponent(String(webhookId))}`, { method: "DELETE" }),
+    deleteWebhook: (webhookId) =>
+      call(`/webhooks/${encodeURIComponent(String(webhookId))}`, { method: "DELETE" }),
   };
 }
 
@@ -240,7 +249,14 @@ export function createAgentMailClient(cfg, { fetchImpl = fetch, timeoutMs = REQU
 /** Impressão digital estável de (inbox, destinatário, assunto, corpo): prende a aprovação ao conteúdo. */
 export function agentMailSendFingerprint({ inboxId, to, subject, text }) {
   return createHash("sha256")
-    .update(JSON.stringify([String(inboxId ?? ""), String(to ?? ""), String(subject ?? ""), String(text ?? "")]))
+    .update(
+      JSON.stringify([
+        String(inboxId ?? ""),
+        String(to ?? ""),
+        String(subject ?? ""),
+        String(text ?? ""),
+      ]),
+    )
     .digest("hex")
     .slice(0, 32);
 }
@@ -257,10 +273,17 @@ export function describeAgentMailSend(adminId, { to, subject, text } = {}, setti
   if (!cfg.inboxId || !owns(adminId, "agentmail_inbox", cfg.inboxId))
     return { ok: false, reason: "Caixa AgentMail não reivindicada por este administrador." };
   const dest = String(to ?? "").trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dest)) return { ok: false, reason: "Destinatário inválido." };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dest))
+    return { ok: false, reason: "Destinatário inválido." };
   const subjectStr = String(subject ?? "").trim();
   if (!subjectStr) return { ok: false, reason: "Assunto vazio." };
-  return { ok: true, inboxId: cfg.inboxId, to: dest, subject: subjectStr, text: String(text ?? "") };
+  return {
+    ok: true,
+    inboxId: cfg.inboxId,
+    to: dest,
+    subject: subjectStr,
+    text: String(text ?? ""),
+  };
 }
 
 /**
@@ -269,11 +292,26 @@ export function describeAgentMailSend(adminId, { to, subject, text } = {}, setti
  * (provider_message_id, como comms.js).
  */
 export async function sendAgentMailApproved(adminId, action, expect, { clientFactory } = {}) {
-  const d = describeAgentMailSend(adminId, { to: action?.to, subject: action?.subject, text: action?.text });
+  const d = describeAgentMailSend(adminId, {
+    to: action?.to,
+    subject: action?.subject,
+    text: action?.text,
+  });
   if (!d.ok) return { output: d.reason };
-  if (!action?.inboxId || action.inboxId !== agentMailConfig(process.env, getSettings(adminId)).inboxId)
+  if (
+    !action?.inboxId ||
+    action.inboxId !== agentMailConfig(process.env, getSettings(adminId)).inboxId
+  )
     return { output: "Envio cancelado: a caixa mudou desde a aprovação." };
-  if (expect && agentMailSendFingerprint({ inboxId: action.inboxId, to: d.to, subject: d.subject, text: d.text }) !== expect)
+  if (
+    expect &&
+    agentMailSendFingerprint({
+      inboxId: action.inboxId,
+      to: d.to,
+      subject: d.subject,
+      text: d.text,
+    }) !== expect
+  )
     return { output: "Envio cancelado: o destinatário/assunto/corpo mudou desde a aprovação." };
   audit("send_email(agentmail)", { account: "agentmail", status: "started" });
   const client = (clientFactory ?? defaultClientFactory)();
@@ -281,7 +319,9 @@ export async function sendAgentMailApproved(adminId, action, expect, { clientFac
   const id = res?.message_id ?? res?.messageId;
   return {
     output: id ? "Enviado via AgentMail." : "AgentMail não retornou identificador de mensagem.",
-    verify: id ? { verifier: "provider_message_id", ok: true } : { verifier: "contract_text", ok: false },
+    verify: id
+      ? { verifier: "provider_message_id", ok: true }
+      : { verifier: "contract_text", ok: false },
   };
 }
 
@@ -291,7 +331,9 @@ export function setAgentMailClientFactory(fn) {
   clientFactory = fn;
 }
 function defaultClientFactory() {
-  return clientFactory ? clientFactory(agentMailConfig()) : createAgentMailClient(agentMailConfig());
+  return clientFactory
+    ? clientFactory(agentMailConfig())
+    : createAgentMailClient(agentMailConfig());
 }
 /** Cliente para leituras administrativas e ferramentas (usa a config efetiva atual). */
 export function getAgentMailClient() {

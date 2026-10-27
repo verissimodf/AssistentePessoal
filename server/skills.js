@@ -5,10 +5,10 @@ import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "n
 import { dirname, join, relative, resolve, sep } from "node:path";
 import os from "node:os";
 
-export const GLOBAL_SKILLS_DIR = process.env.JARVIS_GLOBAL_SKILLS_DIR || join(os.homedir(), ".agent-skills");
+export const GLOBAL_SKILLS_DIR =
+  process.env.JARVIS_GLOBAL_SKILLS_DIR || join(os.homedir(), ".agent-skills");
 // Cache per catalog location prevents concurrent/serial tests from cross-contaminating fixtures.
 const catalogCache = new Map();
-
 
 /**
  * Lê o catálogo mestre de skills indexadas.
@@ -89,7 +89,9 @@ export function listSkills({ category, tag, baseDir = GLOBAL_SKILLS_DIR } = {}) 
 
   if (tag) {
     const tagLower = tag.toLowerCase();
-    list = list.filter((s) => Array.isArray(s.tags) && s.tags.some((t) => t.toLowerCase() === tagLower));
+    list = list.filter(
+      (s) => Array.isArray(s.tags) && s.tags.some((t) => t.toLowerCase() === tagLower),
+    );
   }
 
   return list.map((s) => ({
@@ -103,8 +105,29 @@ export function listSkills({ category, tag, baseDir = GLOBAL_SKILLS_DIR } = {}) 
 }
 
 const STOP_WORDS = new Set([
-  "com", "para", "que", "por", "sem", "uma", "uns", "das", "dos", "como", "sobre", "qual",
-  "the", "and", "for", "with", "from", "that", "this", "about", "how", "what", "where"
+  "com",
+  "para",
+  "que",
+  "por",
+  "sem",
+  "uma",
+  "uns",
+  "das",
+  "dos",
+  "como",
+  "sobre",
+  "qual",
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "that",
+  "this",
+  "about",
+  "how",
+  "what",
+  "where",
 ]);
 
 /**
@@ -129,7 +152,13 @@ export function matchSkillsForPrompt(prompt, limit = 5, baseDir = GLOBAL_SKILLS_
 
     // Correspondência exata ou substring em ID ou Nome
     if (idStr === text || nameStr === text) score += 20;
-    else if (idStr.includes(text) || nameStr.includes(text) || text.includes(idStr) || text.includes(nameStr)) score += 10;
+    else if (
+      idStr.includes(text) ||
+      nameStr.includes(text) ||
+      text.includes(idStr) ||
+      text.includes(nameStr)
+    )
+      score += 10;
 
     for (const w of words) {
       if (idStr.includes(w)) score += 5;
@@ -255,7 +284,13 @@ export function loadSkill(identifier, baseDir = GLOBAL_SKILLS_DIR) {
     clean = decodeURIComponent(clean).trim();
   } catch {}
 
-  const isPathLike = clean.includes("..") || clean.includes("\0") || clean.startsWith("/") || clean.startsWith("\\") || clean.includes("/") || clean.includes("\\");
+  const isPathLike =
+    clean.includes("..") ||
+    clean.includes("\0") ||
+    clean.startsWith("/") ||
+    clean.startsWith("\\") ||
+    clean.includes("/") ||
+    clean.includes("\\");
 
   // Verifica proativamente tentativas de Path Traversal antes de qualquer busca
   if (isPathLike) {
@@ -267,7 +302,8 @@ export function loadSkill(identifier, baseDir = GLOBAL_SKILLS_DIR) {
 
   // 1. Busca por ID exato ou nome
   let skill = skills.find(
-    (s) => s.id?.toLowerCase() === clean.toLowerCase() || s.name?.toLowerCase() === clean.toLowerCase()
+    (s) =>
+      s.id?.toLowerCase() === clean.toLowerCase() || s.name?.toLowerCase() === clean.toLowerCase(),
   );
 
   // 1.1 Se não encontrou exato e não é um caminho com separadores, busca por prefixo/início do ID ou substring

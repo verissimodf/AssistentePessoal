@@ -8,9 +8,19 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { MIGRATIONS, migrate, currentVersion, snapshotCounts, targetVersion } from "../server/migrations.js";
+import {
+  MIGRATIONS,
+  migrate,
+  currentVersion,
+  snapshotCounts,
+  targetVersion,
+} from "../server/migrations.js";
 
-const cols = (db, table) => db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+const cols = (db, table) =>
+  db
+    .prepare(`PRAGMA table_info(${table})`)
+    .all()
+    .map((c) => c.name);
 
 // Base mínima: todas as tabelas preservadas + approval_actions (não preservado, mas esperado)
 function fresh() {
@@ -27,9 +37,15 @@ function fresh() {
     CREATE TABLE approval_actions (approval_id TEXT PRIMARY KEY, action TEXT NOT NULL, created_at TEXT NOT NULL);
     `);
   // Seed approval_actions com dados simulando estado "pós-P1" (v8)
-  db.prepare("INSERT INTO approval_actions (approval_id, action, created_at) VALUES ('a1', '{\"correlation\":\"c1\"}', 't')").run();
-  db.prepare("INSERT INTO approval_actions (approval_id, action, created_at) VALUES ('a2', '{}', 't')").run();           // sem correlation
-  db.prepare("INSERT INTO approval_actions (approval_id, action, created_at) VALUES ('a3', '{\"other\":\"data\"}', 't')").run(); // sem correlation
+  db.prepare(
+    "INSERT INTO approval_actions (approval_id, action, created_at) VALUES ('a1', '{\"correlation\":\"c1\"}', 't')",
+  ).run();
+  db.prepare(
+    "INSERT INTO approval_actions (approval_id, action, created_at) VALUES ('a2', '{}', 't')",
+  ).run(); // sem correlation
+  db.prepare(
+    "INSERT INTO approval_actions (approval_id, action, created_at) VALUES ('a3', '{\"other\":\"data\"}', 't')",
+  ).run(); // sem correlation
   db.prepare("INSERT INTO audit (at, kind, detail) VALUES ('t','x','{}')").run();
   return { db, dir };
 }
@@ -69,14 +85,31 @@ test("v8 → v9: backfill de correlações existentes preserva valores e deixa N
 test("v8 → v9: índice idx_approval_actions_correlation criado", () => {
   const { db, dir } = fresh();
   migrate(db, dir, { migrations: MIGRATIONS.slice(0, 9) });
-  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_approval_actions_correlation'").get(), "índice existe");
+  assert.ok(
+    db
+      .prepare(
+        "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_approval_actions_correlation'",
+      )
+      .get(),
+    "índice existe",
+  );
 });
 
 test("v8 → v9: triggers de integridade audit", () => {
   const { db, dir } = fresh();
   migrate(db, dir, { migrations: MIGRATIONS.slice(0, 9) });
-  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='trg_audit_no_update'").get(), "trg_audit_no_update existe");
-  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='trg_audit_no_delete'").get(), "trg_audit_no_delete existe");
+  assert.ok(
+    db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='trg_audit_no_update'")
+      .get(),
+    "trg_audit_no_update existe",
+  );
+  assert.ok(
+    db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='trg_audit_no_delete'")
+      .get(),
+    "trg_audit_no_delete existe",
+  );
 });
 
 test("v8 → v9: pragma integrity_check ok", () => {
@@ -122,7 +155,10 @@ test("falha na v9: rollback usando backup verificado recupera schema v8", () => 
   }
   // Banco deve permanecer em v8
   assert.equal(currentVersion(db), 8);
-  assert.ok(!cols(db, "approval_actions").includes("correlation_id"), "coluna ausente após rollback");
+  assert.ok(
+    !cols(db, "approval_actions").includes("correlation_id"),
+    "coluna ausente após rollback",
+  );
   // A existência do backup verificado já foi confirmada na migração anterior (test 1).
   // Este teste foca no rollback: a versão voltou a 8 e a coluna sumiu.
 });
@@ -137,5 +173,8 @@ test("v9 reexecutável sobre banco já migrado: idempotente", () => {
   assert.equal(again.backup, null, "idempotente: sem novo backup");
   assert.equal(again.to, 9, "idempotente: versão continua 9");
   // Dados persistem: coluna e índice ainda existem
-  assert.ok(db.prepare("SELECT correlation_id FROM approval_actions WHERE approval_id='a1'").get(), "dados persistem");
+  assert.ok(
+    db.prepare("SELECT correlation_id FROM approval_actions WHERE approval_id='a1'").get(),
+    "dados persistem",
+  );
 });

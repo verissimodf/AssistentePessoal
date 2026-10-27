@@ -141,7 +141,13 @@ describe("Voz Full-Duplex — Interrupção (Barge-In) e Playback", () => {
     const ac = new AbortController();
     ac.abort();
 
-    const promise = speak("Interrompido antes de iniciar", "pt-BR", "browser", undefined, ac.signal);
+    const promise = speak(
+      "Interrompido antes de iniciar",
+      "pt-BR",
+      "browser",
+      undefined,
+      ac.signal,
+    );
     await promise;
 
     // Não deve invocar fala se o sinal já iniciou abortado

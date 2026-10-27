@@ -12,13 +12,15 @@ process.env.JARVIS_NO_LISTEN = "1";
 process.env.JARVIS_TTS_TIMEOUT_MS = "120";
 process.env.JARVIS_TTS_COLD_START_MS = "900";
 
-const { tts, getVoiceState, setVoiceFetch, resetVoiceState, VoiceError } = await import(
-  "../server/voice.js"
-);
+const { tts, getVoiceState, setVoiceFetch, resetVoiceState, VoiceError } =
+  await import("../server/voice.js");
 
 const admin = async () => "admin-teste";
 const audioResponse = () =>
-  new Response(new Uint8Array([82, 73, 70, 70]), { status: 200, headers: { "content-type": "audio/wav" } });
+  new Response(new Uint8Array([82, 73, 70, 70]), {
+    status: 200,
+    headers: { "content-type": "audio/wav" },
+  });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 after(() => resetVoiceState());
@@ -141,7 +143,10 @@ test("voice: timeouts configuráveis têm piso, teto e defaults sãos", async ()
   const def = resolveTtsTimeouts({});
   assert.equal(def.timeoutMs, 20_000, "default morno");
   assert.equal(def.coldTimeoutMs, 120_000, "default cold-start (cobre ~39 s de carga)");
-  const huge = resolveTtsTimeouts({ JARVIS_TTS_TIMEOUT_MS: "999999999", JARVIS_TTS_COLD_START_MS: "999999999" });
+  const huge = resolveTtsTimeouts({
+    JARVIS_TTS_TIMEOUT_MS: "999999999",
+    JARVIS_TTS_COLD_START_MS: "999999999",
+  });
   assert.equal(huge.timeoutMs, 60_000, "teto do morno");
   assert.equal(huge.coldTimeoutMs, 300_000, "teto absoluto do cold-start");
   const tiny = resolveTtsTimeouts({ JARVIS_TTS_TIMEOUT_MS: "1", JARVIS_TTS_COLD_START_MS: "1" });
@@ -162,7 +167,11 @@ test("voice: /api/tts devolve 503 estruturado com estado de aquecimento (nunca 5
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${server.address().port}`;
   try {
-    auth.setupFirstAdmin({ token: auth.ensureBootstrap().token, username: "ana", password: "senha-muito-forte-1" });
+    auth.setupFirstAdmin({
+      token: auth.ensureBootstrap().token,
+      username: "ana",
+      password: "senha-muito-forte-1",
+    });
     const login = await fetch(`${base}/api/auth/login`, {
       method: "POST",
       headers: { origin: "http://localhost:8080", "content-type": "application/json" },

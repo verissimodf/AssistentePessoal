@@ -13,8 +13,14 @@ process.env.JARVIS_DATA_DIR = dir;
 process.env.JARVIS_NO_LISTEN = "1";
 
 const {
-  buildInventory, collectDiagnostics, validateItem, validateInventory,
-  classificaEndpoint, TOOL_META, ESTADOS, METODOS,
+  buildInventory,
+  collectDiagnostics,
+  validateItem,
+  validateInventory,
+  classificaEndpoint,
+  TOOL_META,
+  ESTADOS,
+  METODOS,
 } = await import("../server/diagnostics.js");
 const { TOOL_DEFS } = await import("../server/tools.js");
 const { TOOL_SCOPES, SCOPES, ADMIN_ONLY } = await import("../server/auth.js");
@@ -40,27 +46,66 @@ function mkCtx(over = {}) {
     telegram: { enabled: true, hasKey: true },
     email: { transporte: "mock", contasAtivas: 0 },
     voice: { habilitado: true, tts: "browser" },
-    skills: { dir: "/tmp/hub", present: true, total: 4, version: "1.2.1-builtin", source: "builtin", reason: null },
-    providers: { ollama: { enabled: true, hasKey: false, model: "qwen2.5:7b", endpoint: "interno" } },
+    skills: {
+      dir: "/tmp/hub",
+      present: true,
+      total: 4,
+      version: "1.2.1-builtin",
+      source: "builtin",
+      reason: null,
+    },
+    providers: {
+      ollama: { enabled: true, hasKey: false, model: "qwen2.5:7b", endpoint: "interno" },
+    },
     integracoes: { context7: { enabled: true, hasKey: false, endpoint: "interno" } },
     // Navegador habilitado em modo local: o inventário de referência deve refletir um sistema
     // operacional (o caso "desligado" tem teste próprio abaixo).
     browser: { enabled: true, mode: "local", endpoint: null, hasToken: false },
     expostas: [
-      "web_search", "fetch_url", "remember", "recall", "run_command", "cli_agent",
-      "document_search", "rea_analyze", "send_email", "context7_docs",
-      "gigabrain_recall", "gigabrain_remember",
+      "web_search",
+      "fetch_url",
+      "remember",
+      "recall",
+      "run_command",
+      "cli_agent",
+      "document_search",
+      "rea_analyze",
+      "send_email",
+      "context7_docs",
+      "gigabrain_recall",
+      "gigabrain_remember",
     ],
     expostasAtivas: [
-      "web_search", "fetch_url", "remember", "recall", "run_command", "cli_agent",
-      "document_search", "rea_analyze", "send_email", "context7_docs",
-      "gigabrain_recall", "gigabrain_remember",
+      "web_search",
+      "fetch_url",
+      "remember",
+      "recall",
+      "run_command",
+      "cli_agent",
+      "document_search",
+      "rea_analyze",
+      "send_email",
+      "context7_docs",
+      "gigabrain_recall",
+      "gigabrain_remember",
     ],
     usaTemplate: false,
     counts: {
-      conversas: 1, mensagens: 2, memorias: 3, agentes: 1, agentesAtivos: 1,
-      bots: 0, runs: 0, documentos: 0, auditoria: 10, sessoesAtivas: 1, tokensAtivos: 0,
-      jobsExpurgo: 0, aprovacoesPendentes: 0, aprovacoesResolvidas: 0, aprovacoesOutras: 0,
+      conversas: 1,
+      mensagens: 2,
+      memorias: 3,
+      agentes: 1,
+      agentesAtivos: 1,
+      bots: 0,
+      runs: 0,
+      documentos: 0,
+      auditoria: 10,
+      sessoesAtivas: 1,
+      tokensAtivos: 0,
+      jobsExpurgo: 0,
+      aprovacoesPendentes: 0,
+      aprovacoesResolvidas: 0,
+      aprovacoesOutras: 0,
     },
     execucaoProvedor: null,
     ultimaAprovacaoDone: null,
@@ -93,10 +138,20 @@ test("inventário de referência valida e cobre ferramentas, acessos, automaçõ
   const ids = new Set(inv.itens.map((i) => i.id));
   for (const t of Object.keys(TOOL_DEFS)) assert.ok(ids.has(`tool:${t}`), `falta tool:${t}`);
   for (const id of [
-    "servico:api", "servico:banco", "servico:skills-hub", "acesso:sessao-admin", "acesso:token-servico",
-    "auto:fila-aprovacoes", "auto:expurgo-drec", "dados:memorias", "dados:auditoria",
-    "integracao:email-envio", "integracao:voz", "integracao:navegador",
-  ]) assert.ok(ids.has(id), `falta ${id}`);
+    "servico:api",
+    "servico:banco",
+    "servico:skills-hub",
+    "acesso:sessao-admin",
+    "acesso:token-servico",
+    "auto:fila-aprovacoes",
+    "auto:expurgo-drec",
+    "dados:memorias",
+    "dados:auditoria",
+    "integracao:email-envio",
+    "integracao:voz",
+    "integracao:navegador",
+  ])
+    assert.ok(ids.has(id), `falta ${id}`);
   assert.equal(inv.resumo.saude, "ok");
 });
 
@@ -112,7 +167,16 @@ test("navegador: desligado é reportado como INDISPONÍVEL com motivo (não fing
 
 test("skills hub: catálogo ausente marca INDISPONÍVEL com o motivo (transparência, não finge disponibilidade)", () => {
   const inv = buildInventory(
-    mkCtx({ skills: { dir: "/x", present: false, total: 0, version: null, source: null, reason: "catalog_missing" } }),
+    mkCtx({
+      skills: {
+        dir: "/x",
+        present: false,
+        total: 0,
+        version: null,
+        source: null,
+        reason: "catalog_missing",
+      },
+    }),
   );
   const item = porId(inv, "servico:skills-hub");
   assert.equal(item.estado, "INDISPONÍVEL");
@@ -142,7 +206,10 @@ test("execução recente eleva a OPERACIONAL; evidência antiga NÃO (expira em 
   const antigo = buildInventory(mkCtx({ ultimaAprovacaoDone: iso(Date.now() - 60 * DIA) }));
   assert.equal(porId(antigo, "tool:run_command").estado, "TESTADO");
   assert.equal(porId(antigo, "auto:fila-aprovacoes").estado, "TESTADO");
-  assert.ok(porId(antigo, "tool:run_command").evidencias.some((e) => e.metodo === "execucao"), "evidência antiga permanece visível");
+  assert.ok(
+    porId(antigo, "tool:run_command").evidencias.some((e) => e.metodo === "execucao"),
+    "evidência antiga permanece visível",
+  );
 });
 
 test("provedor local: OPERACIONAL só com resposta real recente; caso contrário HABILITADO", () => {
@@ -154,9 +221,11 @@ test("provedor local: OPERACIONAL só com resposta real recente; caso contrário
 });
 
 test("Zen bloqueado exige evidência de bloqueio; OmniRoute sem chave é limitação registrada", () => {
-  const inv = buildInventory(mkCtx({
-    providers: { opencode_go: { enabled: true, hasKey: true, model: null, endpoint: "externo" } },
-  }));
+  const inv = buildInventory(
+    mkCtx({
+      providers: { opencode_go: { enabled: true, hasKey: true, model: null, endpoint: "externo" } },
+    }),
+  );
   const zen = porId(inv, "provedor:opencode_go");
   assert.equal(zen.estado, "BLOQUEADO");
   assert.ok(zen.evidencias.some((e) => e.metodo === "documento"));
@@ -176,7 +245,10 @@ test("validador rejeita OPERACIONAL sem execução recente", () => {
   it.estado = "TESTADO";
   it.evidencias.push({ metodo: "execucao", ref: "x", data: iso(Date.now() - 60 * DIA) });
   it.estado = "OPERACIONAL";
-  assert.ok(validateItem(it).some((v) => v.includes("OPERACIONAL exige execução recente")), "execução velha não vale como OPERACIONAL");
+  assert.ok(
+    validateItem(it).some((v) => v.includes("OPERACIONAL exige execução recente")),
+    "execução velha não vale como OPERACIONAL",
+  );
 });
 
 test("validador rejeita evidência sem referência e execução sem data", () => {
@@ -204,7 +276,9 @@ test("validador rejeita flag habilitado/testado sem implementado e divergência 
 test("validador rejeita DESCONHECIDO com evidência e NÃO TESTADO com teste", () => {
   const desconhecido = clonaItem("tool:run_command");
   desconhecido.estado = "DESCONHECIDO";
-  assert.ok(validateItem(desconhecido).some((v) => v.includes("DESCONHECIDO não pode ter evidências")));
+  assert.ok(
+    validateItem(desconhecido).some((v) => v.includes("DESCONHECIDO não pode ter evidências")),
+  );
 
   const naoTestado = clonaItem("tool:run_command");
   naoTestado.estado = "NÃO TESTADO";
@@ -222,7 +296,16 @@ test("validador de inventário rejeita ids duplicados", () => {
 });
 
 test("estados e métodos permitidos são os aprovados no dossiê", () => {
-  assert.deepEqual(ESTADOS, ["OPERACIONAL", "HABILITADO", "TESTADO", "IMPLEMENTADO", "NÃO TESTADO", "BLOQUEADO", "INDISPONÍVEL", "DESCONHECIDO"]);
+  assert.deepEqual(ESTADOS, [
+    "OPERACIONAL",
+    "HABILITADO",
+    "TESTADO",
+    "IMPLEMENTADO",
+    "NÃO TESTADO",
+    "BLOQUEADO",
+    "INDISPONÍVEL",
+    "DESCONHECIDO",
+  ]);
   assert.deepEqual(METODOS, ["codigo", "config", "teste", "execucao", "documento"]);
   assert.equal(classificaEndpoint("http://servico-interno:8080/v1"), "interno");
   assert.equal(classificaEndpoint("http://192.168.2.40:8090"), "interno");
@@ -241,18 +324,32 @@ test("sem segredos, tokens, chatId ou URLs internas no inventário real", async 
   const { token } = auth.ensureBootstrap();
   const a = auth.setupFirstAdmin({ token, username: "ana", password: PW });
   adminId = a.id;
-  updateSettings({
-    providers: { opencode_go: { enabled: true, apiKey: "sk-FAKE-SECRET-999", model: "zen-max" } },
-    comms: { telegram: { enabled: true, botToken: "9999:FAKE-TOKEN", chatId: 987654321 } },
-  }, { adminId });
-  updateSettings({
-    integrations: { context7: { enabled: true, command: "http://internal-secr3t-host:9999/rpc", kind: "http" } },
-  }, { adminId, allowGlobal: true });
+  updateSettings(
+    {
+      providers: { opencode_go: { enabled: true, apiKey: "sk-FAKE-SECRET-999", model: "zen-max" } },
+      comms: { telegram: { enabled: true, botToken: "9999:FAKE-TOKEN", chatId: 987654321 } },
+    },
+    { adminId },
+  );
+  updateSettings(
+    {
+      integrations: {
+        context7: { enabled: true, command: "http://internal-secr3t-host:9999/rpc", kind: "http" },
+      },
+    },
+    { adminId, allowGlobal: true },
+  );
 
   const inv = collectDiagnostics({ adminId, version: "1.2.0" });
   assert.deepEqual(validateInventory(inv), []);
   const txt = JSON.stringify(inv);
-  for (const proibido of ["sk-FAKE-SECRET-999", "9999:FAKE-TOKEN", "987654321", "internal-secr3t-host", "9999"]) {
+  for (const proibido of [
+    "sk-FAKE-SECRET-999",
+    "9999:FAKE-TOKEN",
+    "987654321",
+    "internal-secr3t-host",
+    "9999",
+  ]) {
     assert.ok(!txt.includes(proibido), `vazou para o inventário: ${proibido}`);
   }
   assert.ok(txt.includes("chave configurada"), "booleano seguro de chave ausente");
@@ -282,31 +379,62 @@ test("inventário não contém URL, e-mail nem ciphertext (invariante geral)", (
   const txt = JSON.stringify(collectDiagnostics({ adminId, version: "1.2.0" }));
   assert.doesNotMatch(txt, /https?:\/\//i, "nenhuma URL pode aparecer no payload");
   assert.doesNotMatch(txt, /enc:/, "nenhum valor cifrado pode aparecer no payload");
-  assert.doesNotMatch(txt, /\b[\w.+-]+@[\w-]+\.[a-z]{2,}\b/i, "nenhum e-mail pode aparecer no payload");
+  assert.doesNotMatch(
+    txt,
+    /\b[\w.+-]+@[\w-]+\.[a-z]{2,}\b/i,
+    "nenhum e-mail pode aparecer no payload",
+  );
 });
 
 test("isolamento: contagens do próprio administrador e nenhum dado do outro", () => {
-  const b = auth.createAdmin({ adminId }, { username: "bia", password: "outra-senha-bem-forte-2", currentPassword: PW });
+  const b = auth.createAdmin(
+    { adminId },
+    { username: "bia", password: "outra-senha-bem-forte-2", currentPassword: PW },
+  );
   adminB = b.id;
   const t = iso(Date.now() - 2 * DIA);
 
-  db.prepare("INSERT INTO memories (id, content, created_at) VALUES (?, ?, ?)").run("mem-ana-1", "nota da ana um", t);
-  db.prepare("INSERT INTO memories (id, content, created_at) VALUES (?, ?, ?)").run("mem-ana-2", "nota da ana dois", t);
+  db.prepare("INSERT INTO memories (id, content, created_at) VALUES (?, ?, ?)").run(
+    "mem-ana-1",
+    "nota da ana um",
+    t,
+  );
+  db.prepare("INSERT INTO memories (id, content, created_at) VALUES (?, ?, ?)").run(
+    "mem-ana-2",
+    "nota da ana dois",
+    t,
+  );
   assignNew("memory", "mem-ana-1", adminId);
   assignNew("memory", "mem-ana-2", adminId);
 
-  db.prepare("INSERT INTO memories (id, content, created_at) VALUES (?, ?, ?)").run("mem-bia-1", "segredo-bia-xyz", t);
+  db.prepare("INSERT INTO memories (id, content, created_at) VALUES (?, ?, ?)").run(
+    "mem-bia-1",
+    "segredo-bia-xyz",
+    t,
+  );
   assignNew("memory", "mem-bia-1", adminB);
-  db.prepare("INSERT INTO conversations (id, admin_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)").run("conv-bia", adminB, "conversa da bia", t, t);
-  db.prepare("INSERT INTO conversation_messages (id, conversation_id, role, content, created_at) VALUES (?, ?, 'assistant', ?, ?)").run("msg-bia-1", "conv-bia", "resposta-bia-segredo", t);
-  updateSettings({ comms: { telegram: { enabled: true, botToken: "7777:BIA-SECRET" } } }, { adminId: adminB });
+  db.prepare(
+    "INSERT INTO conversations (id, admin_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+  ).run("conv-bia", adminB, "conversa da bia", t, t);
+  db.prepare(
+    "INSERT INTO conversation_messages (id, conversation_id, role, content, created_at) VALUES (?, ?, 'assistant', ?, ?)",
+  ).run("msg-bia-1", "conv-bia", "resposta-bia-segredo", t);
+  updateSettings(
+    { comms: { telegram: { enabled: true, botToken: "7777:BIA-SECRET" } } },
+    { adminId: adminB },
+  );
 
   const inv = collectDiagnostics({ adminId, version: "1.2.0" });
   assert.equal(porId(inv, "dados:memorias").detalhes.registros, 2, "conta só as memórias da ana");
   assert.equal(porId(inv, "dados:conversas").detalhes.conversas, 0, "conversa da bia não aparece");
 
   const txt = JSON.stringify(inv);
-  for (const proibido of ["segredo-bia-xyz", "resposta-bia-segredo", "7777:BIA-SECRET", "conversa da bia"]) {
+  for (const proibido of [
+    "segredo-bia-xyz",
+    "resposta-bia-segredo",
+    "7777:BIA-SECRET",
+    "conversa da bia",
+  ]) {
     assert.ok(!txt.includes(proibido), `vazou dado de outro administrador: ${proibido}`);
   }
 });
@@ -345,7 +473,10 @@ test("rota de diagnóstico é registrada somente com acesso de sessão", () => {
 });
 
 test("login administrativo estabelece a sessão da suíte", async () => {
-  const r = await req("/api/auth/login", { method: "POST", body: { username: "ana", password: PW } });
+  const r = await req("/api/auth/login", {
+    method: "POST",
+    body: { username: "ana", password: PW },
+  });
   assert.equal(r.status, 200);
   const { csrf } = await r.json();
   sessao = { cookie: r.headers.get("set-cookie").split(";")[0], csrf };
@@ -359,7 +490,12 @@ test("anônimo não acessa o diagnóstico", async () => {
 });
 
 test("token de serviço não acessa o diagnóstico", async () => {
-  const mk = await req("/api/auth/tokens", { method: "POST", body: { name: "diag", scopes: ["chat"] }, cookie: sessao.cookie, csrf: sessao.csrf });
+  const mk = await req("/api/auth/tokens", {
+    method: "POST",
+    body: { name: "diag", scopes: ["chat"] },
+    cookie: sessao.cookie,
+    csrf: sessao.csrf,
+  });
   assert.equal(mk.status, 200);
   const { token } = await mk.json();
   const r = await req("/api/diagnostics", { bearer: token });
@@ -382,6 +518,11 @@ test("sessão administrativa recebe o inventário, sem segredos", async () => {
 });
 
 test("diagnóstico não oferece mutação (POST não registrado)", async () => {
-  const r = await req("/api/diagnostics", { method: "POST", body: {}, cookie: sessao.cookie, csrf: sessao.csrf });
+  const r = await req("/api/diagnostics", {
+    method: "POST",
+    body: {},
+    cookie: sessao.cookie,
+    csrf: sessao.csrf,
+  });
   assert.equal(r.status, 404);
 });

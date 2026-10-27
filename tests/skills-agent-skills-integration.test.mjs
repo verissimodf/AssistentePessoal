@@ -496,7 +496,9 @@ test("HTTP nativo: /api/skills descobre, seleciona e carrega a skill vendorizada
     const hugeDir = join(hub, "skills", "huge");
     mkdirSync(hugeDir, { recursive: true });
     writeFileSync(join(hugeDir, "SKILL.md"), "x".repeat(2 * 1024 * 1024 + 1), "utf8");
-    const huge = await fetch(`${base}/api/skills/${encodeURIComponent("skills/huge/SKILL.md")}`, { headers });
+    const huge = await fetch(`${base}/api/skills/${encodeURIComponent("skills/huge/SKILL.md")}`, {
+      headers,
+    });
     assert.equal(huge.status, 413, "arquivo acima do limite é recusado, não carregado");
   } finally {
     await new Promise((resolve) => server.close(resolve));

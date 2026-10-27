@@ -19,7 +19,8 @@ const { createApp } = await import("../server/index.js");
 const { callTool, resolveApproval, UNTRUSTED } = await import("../server/tools.js");
 const { updateSettings } = await import("../server/settings.js");
 const { describeSend } = await import("../server/comms.js");
-const { assertSafeUrl, resolveRedirect, isBlockedAddress, guardedLookup, safeFetch } = await import("../server/urlpolicy.js");
+const { assertSafeUrl, resolveRedirect, isBlockedAddress, guardedLookup, safeFetch } =
+  await import("../server/urlpolicy.js");
 const { decide, isAllowlisted } = await import("../server/hostpolicy.js");
 
 const PW = "senha-muito-forte-1";
@@ -42,10 +43,15 @@ before(async () => {
   failNext = false;
   stub = createServer((req, res) => {
     let body = "";
-    req.on("data", (c) => { body += c; });
+    req.on("data", (c) => {
+      body += c;
+    });
     req.on("end", () => {
       hits.push({ url: req.url, body });
-      if (failNext) { res.writeHead(500); return res.end("falha simulada"); }
+      if (failNext) {
+        res.writeHead(500);
+        return res.end("falha simulada");
+      }
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ conversation_id: "c1", status: "running" }));
     });
@@ -54,11 +60,17 @@ before(async () => {
   stubPort = stub.address().port;
   updateSettings({ host: { enabled: true } }, { adminId: admin.id, allowGlobal: true });
 });
-after(async () => { await new Promise((r) => stub.close(r)); await new Promise((r) => server.close(r)); });
+after(async () => {
+  await new Promise((r) => stub.close(r));
+  await new Promise((r) => server.close(r));
+});
 
 const ctx = () => ({ autonomy: "confirm", pending: [], principal });
 const setOpenhands = (enabled, port = stubPort) =>
-  updateSettings({ integrations: { openhands: { enabled, kind: "http", command: `http://127.0.0.1:${port}` } } }, { adminId: admin.id, allowGlobal: true });
+  updateSettings(
+    { integrations: { openhands: { enabled, kind: "http", command: `http://127.0.0.1:${port}` } } },
+    { adminId: admin.id, allowGlobal: true },
+  );
 
 // ---------------------------------------------------------------- concorrência e replay
 test("concorrência: três aprovações simultâneas de openhands executam exatamente uma vez", async () => {
@@ -72,7 +84,9 @@ test("concorrência: três aprovações simultâneas de openhands executam exata
     resolveApproval(c.pending[0].id, true, principal),
   ]);
   const ok = rs.filter((r) => r.status === "fulfilled").length;
-  const conflict = rs.filter((r) => r.status === "rejected" && r.reason?.code === "already_resolved").length;
+  const conflict = rs.filter(
+    (r) => r.status === "rejected" && r.reason?.code === "already_resolved",
+  ).length;
   assert.equal(ok, 1, "só uma resolve");
   assert.equal(conflict, 2, "as outras duas recebem already_resolved");
   assert.equal(hits.length - before, 1, "exatamente uma requisição");
@@ -84,7 +98,9 @@ test("replay: aprovar de novo depois de done não reexecuta", async () => {
   await callTool("openhands_task", { task: "replay" }, c);
   await resolveApproval(c.pending[0].id, true, principal);
   const n = hits.length;
-  await assert.rejects(() => resolveApproval(c.pending[0].id, true, principal), { code: "already_resolved" });
+  await assert.rejects(() => resolveApproval(c.pending[0].id, true, principal), {
+    code: "already_resolved",
+  });
   assert.equal(hits.length, n);
 });
 
@@ -94,7 +110,10 @@ test("openhands: trocar o destino da integração após o pedido invalida a apro
   const c = ctx();
   await callTool("openhands_task", { task: "alvo muda" }, c);
   const n = hits.length;
-  const other = createServer((_q, r) => { hits.push({ url: "outro" }); r.end("{}"); });
+  const other = createServer((_q, r) => {
+    hits.push({ url: "outro" });
+    r.end("{}");
+  });
   await new Promise((r) => other.listen(0, "127.0.0.1", r));
   setOpenhands(true, other.address().port);
   const out = await resolveApproval(c.pending[0].id, true, principal);
@@ -129,50 +148,86 @@ test("falha do serviço após consumir a aprovação: status error, sem reexecu�
   const st = db.prepare("SELECT status FROM approvals WHERE id=?").get(c.pending[0].id).status;
   assert.ok(["done", "error"].includes(st), st);
   const n = hits.length;
-  await assert.rejects(() => resolveApproval(c.pending[0].id, true, principal), { code: "already_resolved" });
+  await assert.rejects(() => resolveApproval(c.pending[0].id, true, principal), {
+    code: "already_resolved",
+  });
   assert.equal(hits.length, n, "não reexecuta");
 });
 
 // ---------------------------------------------------------------- aprovação antiga / sem ação
 test("aprovação legada sem registro de ação é tratada como comando de shell e respeita host.enabled", async () => {
-  db.prepare("INSERT INTO approvals (id, command, status, created_at) VALUES ('legacy-x', 'echo legado-x', 'pending', '2025-01-01')").run();
-  db.prepare("INSERT INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin) VALUES ('approval','legacy-x',?,?,'claimed')").run(admin.id, new Date().toISOString());
+  db.prepare(
+    "INSERT INTO approvals (id, command, status, created_at) VALUES ('legacy-x', 'echo legado-x', 'pending', '2025-01-01')",
+  ).run();
+  db.prepare(
+    "INSERT INTO ownership (resource_type, resource_id, owner_admin_id, assigned_at, origin) VALUES ('approval','legacy-x',?,?,'claimed')",
+  ).run(admin.id, new Date().toISOString());
   const out = await resolveApproval("legacy-x", true, principal);
   assert.match(out.output, /legado-x/, "comando simples executa quando host está habilitado");
   assert.equal(db.prepare("SELECT status FROM approvals WHERE id='legacy-x'").get().status, "done");
 });
 
 test("aprovação sem ação e sem owner não é resolvível (404)", async () => {
-  db.prepare("INSERT INTO approvals (id, command, status, created_at) VALUES ('orfao', 'rm -rf /', 'pending', '2025')").run();
+  db.prepare(
+    "INSERT INTO approvals (id, command, status, created_at) VALUES ('orfao', 'rm -rf /', 'pending', '2025')",
+  ).run();
   await assert.rejects(() => resolveApproval("orfao", true, principal), { code: "not_found" });
-  assert.equal(db.prepare("SELECT status FROM approvals WHERE id='orfao'").get().status, "pending", "permanece intocada");
+  assert.equal(
+    db.prepare("SELECT status FROM approvals WHERE id='orfao'").get().status,
+    "pending",
+    "permanece intocada",
+  );
 });
 
 // ---------------------------------------------------------------- send_message: conteúdo
 test("send_message: mudar o TEXTO após o pedido invalida a aprovação", async () => {
-  updateSettings({ comms: { telegram: { enabled: true, botToken: "t", chatId: "555" } } }, { adminId: admin.id, allowGlobal: false });
+  updateSettings(
+    { comms: { telegram: { enabled: true, botToken: "t", chatId: "555" } } },
+    { adminId: admin.id, allowGlobal: false },
+  );
   const calls = [];
   const real = globalThis.fetch;
-  globalThis.fetch = async () => { calls.push(1); return { ok: true, status: 200, text: async () => "{}" }; };
+  globalThis.fetch = async () => {
+    calls.push(1);
+    return { ok: true, status: 200, text: async () => "{}" };
+  };
   try {
     const c = ctx();
     await callTool("send_message", { channel: "telegram", text: "texto aprovado" }, c);
     // A aprovação guarda o texto original; um envio com outro texto tem impressão digital diferente.
     const { sendFingerprint } = await import("../server/comms.js");
     const d = describeSend(admin.id, "telegram", "texto DIFERENTE");
-    assert.notEqual(sendFingerprint(d), sendFingerprint(describeSend(admin.id, "telegram", "texto aprovado")));
+    assert.notEqual(
+      sendFingerprint(d),
+      sendFingerprint(describeSend(admin.id, "telegram", "texto aprovado")),
+    );
     const out = await resolveApproval(c.pending[0].id, true, principal);
     assert.match(out.output, /Enviado/);
     assert.equal(calls.length, 1);
-  } finally { globalThis.fetch = real; }
+  } finally {
+    globalThis.fetch = real;
+  }
 });
 
 // ---------------------------------------------------------------- SSRF
 test("SSRF: IPv4 mapeado em IPv6 e formas alternativas de loopback são bloqueados", () => {
-  for (const ip of ["::ffff:169.254.169.254", "::ffff:127.0.0.1", "::ffff:10.0.0.1", "::ffff:192.168.0.1", "::ffff:100.64.0.1"]) {
+  for (const ip of [
+    "::ffff:169.254.169.254",
+    "::ffff:127.0.0.1",
+    "::ffff:10.0.0.1",
+    "::ffff:192.168.0.1",
+    "::ffff:100.64.0.1",
+  ]) {
     assert.equal(isBlockedAddress(ip), true, ip);
   }
-  for (const u of ["http://[::ffff:169.254.169.254]/", "http://[::ffff:127.0.0.1]/", "http://0.0.0.0/", "http://[::]/", "http://[fd00::1]/", "http://[fe80::1]/"]) {
+  for (const u of [
+    "http://[::ffff:169.254.169.254]/",
+    "http://[::ffff:127.0.0.1]/",
+    "http://0.0.0.0/",
+    "http://[::]/",
+    "http://[fd00::1]/",
+    "http://[fe80::1]/",
+  ]) {
     assert.throws(() => assertSafeUrl(u), /blocked_destination|port_not_allowed/, u);
   }
 });
@@ -181,33 +236,65 @@ test("SSRF: redirecionamento de destino permitido para proibido é recusado pela
   const from = assertSafeUrl("https://example.com/start");
   assert.equal(resolveRedirect(from, "/next").hostname, "example.com");
   assert.equal(resolveRedirect(from, "https://outro.example.org/x").hostname, "outro.example.org");
-  for (const loc of ["http://169.254.169.254/latest/meta-data/", "http://127.0.0.1/", "http://[::1]/", "http://192.168.2.1/", "file:///etc/passwd", "http://example.com:6379/"]) {
-    assert.throws(() => resolveRedirect(from, loc), /blocked_destination|protocol_not_allowed|port_not_allowed/, loc);
+  for (const loc of [
+    "http://169.254.169.254/latest/meta-data/",
+    "http://127.0.0.1/",
+    "http://[::1]/",
+    "http://192.168.2.1/",
+    "file:///etc/passwd",
+    "http://example.com:6379/",
+  ]) {
+    assert.throws(
+      () => resolveRedirect(from, loc),
+      /blocked_destination|protocol_not_allowed|port_not_allowed/,
+      loc,
+    );
   }
 });
 
 test("SSRF: cadeia longa de redirecionamentos não é seguida indefinidamente", async () => {
   // Servidor local em porta não permitida: recusado antes de qualquer conexão (limite de política).
   let served = 0;
-  const s = createServer((_q, r) => { served++; r.writeHead(302, { location: "/x" }); r.end(); });
+  const s = createServer((_q, r) => {
+    served++;
+    r.writeHead(302, { location: "/x" });
+    r.end();
+  });
   await new Promise((r) => s.listen(0, "127.0.0.1", r));
-  await assert.rejects(() => safeFetch(`http://127.0.0.1:${s.address().port}/a`), /port_not_allowed|blocked_destination/);
+  await assert.rejects(
+    () => safeFetch(`http://127.0.0.1:${s.address().port}/a`),
+    /port_not_allowed|blocked_destination/,
+  );
   assert.equal(served, 0);
   await new Promise((r) => s.close(r));
 });
 
 test("SSRF: nome que resolve para loopback é bloqueado no connect (anti-rebinding)", async () => {
-  await new Promise((res) => guardedLookup("localhost", { all: true }, (e) => {
-    assert.ok(e && /blocked_destination/.test(e.message));
-    res();
-  }));
-  await assert.rejects(() => safeFetch("http://localhost/"), /port_not_allowed|blocked_destination/);
+  await new Promise((res) =>
+    guardedLookup("localhost", { all: true }, (e) => {
+      assert.ok(e && /blocked_destination/.test(e.message));
+      res();
+    }),
+  );
+  await assert.rejects(
+    () => safeFetch("http://localhost/"),
+    /port_not_allowed|blocked_destination/,
+  );
 });
 
 test("fetch_url não alcança destino bloqueado e não devolve conteúdo", async () => {
-  await assert.rejects(() => callTool("fetch_url", { url: "http://169.254.169.254/latest/meta-data/" }, ctx()), /blocked_destination/);
-  await assert.rejects(() => callTool("fetch_url", { url: "http://127.0.0.1/" }, ctx()), /blocked_destination/);
-  await assert.rejects(() => callTool("fetch_url", { url: "file:///etc/passwd" }, ctx()), /protocol_not_allowed/);
+  await assert.rejects(
+    () => callTool("fetch_url", { url: "http://169.254.169.254/latest/meta-data/" }, ctx()),
+    /blocked_destination/,
+  );
+  await assert.rejects(
+    () => callTool("fetch_url", { url: "http://127.0.0.1/" }, ctx()),
+    /blocked_destination/,
+  );
+  await assert.rejects(
+    () => callTool("fetch_url", { url: "file:///etc/passwd" }, ctx()),
+    /protocol_not_allowed/,
+  );
 });
 
 test("conteúdo externo é marcado como dado não confiável", () => {
@@ -219,10 +306,27 @@ test("conteúdo externo é marcado como dado não confiável", () => {
 test("invocações indiretas não passam pela allowlist mínima", () => {
   const allow = "ls, pwd, whoami, date, df, echo, node --version, npm --version";
   for (const c of [
-    "sh -c ls", "bash -c 'id'", "eval ls", "env ls", "xargs ls", "find . -exec ls {} ;",
-    "python3 -c 'import os'", "node -e 'require(\"child_process\")'", "ls $(whoami)", "ls `whoami`",
-    "ls\nwhoami", "ls; whoami", "ls && whoami", "ls || whoami", "ls | whoami", "ls > /tmp/x", "ls < /etc/passwd",
-    "ls & whoami", "(ls)", "{ ls; }", "ls \\$(id)",
+    "sh -c ls",
+    "bash -c 'id'",
+    "eval ls",
+    "env ls",
+    "xargs ls",
+    "find . -exec ls {} ;",
+    "python3 -c 'import os'",
+    "node -e 'require(\"child_process\")'",
+    "ls $(whoami)",
+    "ls `whoami`",
+    "ls\nwhoami",
+    "ls; whoami",
+    "ls && whoami",
+    "ls || whoami",
+    "ls | whoami",
+    "ls > /tmp/x",
+    "ls < /etc/passwd",
+    "ls & whoami",
+    "(ls)",
+    "{ ls; }",
+    "ls \\$(id)",
   ]) {
     assert.equal(isAllowlisted(c, allow), false, c);
     assert.equal(decide(c, { enabled: true, allowlist: allow, autonomy: "safe" }), "deny", c);

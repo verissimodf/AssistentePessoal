@@ -160,14 +160,14 @@ export function DocumentsPage() {
       const res = await reindexDocument(docId);
       if (res && res.ok) {
         setMsg(
-          `Documento reindexado com sucesso para RAG Semântico (${res.vectorizedChunks || 0} blocos vetorizados).`
+          `Documento reindexado com sucesso para RAG Semântico (${res.vectorizedChunks || 0} blocos vetorizados).`,
         );
         refresh();
       } else {
         setError(
           res?.reason === "embedding_provider_unavailable"
             ? "Provedor de embeddings indisponível no momento. Verifique as configurações de IA."
-            : "Falha ao gerar embeddings para o documento."
+            : "Falha ao gerar embeddings para o documento.",
         );
       }
     } catch (e) {
@@ -185,14 +185,14 @@ export function DocumentsPage() {
       const res = await reindexAllPendingDocuments();
       if (res && res.ok) {
         setMsg(
-          `Sincronização concluída: ${res.upgraded || 0} documento(s) promovido(s) para RAG Semântico.`
+          `Sincronização concluída: ${res.upgraded || 0} documento(s) promovido(s) para RAG Semântico.`,
         );
         refresh();
       } else {
         setError(
           res?.reason === "embedding_provider_unavailable"
             ? "Provedor de embeddings indisponível no momento. Verifique as configurações de IA."
-            : "Falha ao sincronizar documentos pendentes."
+            : "Falha ao sincronizar documentos pendentes.",
         );
       }
     } catch (e) {
@@ -201,7 +201,6 @@ export function DocumentsPage() {
       setReindexingAll(false);
     }
   };
-
 
   useEffect(() => {
     refresh();
@@ -285,7 +284,17 @@ export function DocumentsPage() {
     if (!q.trim()) return refresh();
     try {
       const r = await api<
-        { id: string; name: string; snippet: string; chunk_index: number; search_mode: string; fallback_reason?: string; score: number; chunk_count?: number; rag_status?: string }[]
+        {
+          id: string;
+          name: string;
+          snippet: string;
+          chunk_index: number;
+          search_mode: string;
+          fallback_reason?: string;
+          score: number;
+          chunk_count?: number;
+          rag_status?: string;
+        }[]
       >(`/api/documents/search?q=${encodeURIComponent(q)}`);
       setItems(
         r.map((x) => ({
@@ -347,7 +356,7 @@ export function DocumentsPage() {
   };
 
   const pendingDocs = items.filter(
-    (d) => d.rag_status === "lexical_only" || d.rag_status === "lexical"
+    (d) => d.rag_status === "lexical_only" || d.rag_status === "lexical",
   );
   const pendingCount = pendingDocs.length;
 
@@ -503,16 +512,23 @@ export function DocumentsPage() {
                 </div>
                 <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
                   <span>{formatBytes(d.size)}</span>
-                  {d.created_at && (
-                    <span>• {new Date(d.created_at).toLocaleDateString()}</span>
-                  )}
+                  {d.created_at && <span>• {new Date(d.created_at).toLocaleDateString()}</span>}
                 </div>
                 {d.search_result && (
-                  <div className="mt-2 max-w-2xl rounded border border-border/50 bg-muted/20 p-2 text-xs" data-testid={`rag-citation-${d.id}`}>
-                    <p className="line-clamp-3 text-muted-foreground">“{d.search_result.snippet}”</p>
+                  <div
+                    className="mt-2 max-w-2xl rounded border border-border/50 bg-muted/20 p-2 text-xs"
+                    data-testid={`rag-citation-${d.id}`}
+                  >
+                    <p className="line-clamp-3 text-muted-foreground">
+                      “{d.search_result.snippet}”
+                    </p>
                     <p className="mt-1 text-[10px] text-muted-foreground/80">
-                      Fonte: {d.name}, bloco {d.search_result.chunk_index + 1} · {d.search_result.search_mode} · relevância {(d.search_result.score * 100).toFixed(0)}%
-                      {d.search_result.fallback_reason ? ` · fallback: ${d.search_result.fallback_reason}` : ""}
+                      Fonte: {d.name}, bloco {d.search_result.chunk_index + 1} ·{" "}
+                      {d.search_result.search_mode} · relevância{" "}
+                      {(d.search_result.score * 100).toFixed(0)}%
+                      {d.search_result.fallback_reason
+                        ? ` · fallback: ${d.search_result.fallback_reason}`
+                        : ""}
                     </p>
                   </div>
                 )}
@@ -568,7 +584,8 @@ export function DocumentsPage() {
             <FileCode className="mx-auto mb-2 h-8 w-8 opacity-40" />
             <p>Nenhum documento cadastrado.</p>
             <p className="mt-1 text-xs">
-              Envie arquivos PDF, DOCX, TXT, MD, CSV ou cole textos manuais para habilitar a busca RAG híbrida.
+              Envie arquivos PDF, DOCX, TXT, MD, CSV ou cole textos manuais para habilitar a busca
+              RAG híbrida.
             </p>
           </div>
         )}
@@ -576,10 +593,7 @@ export function DocumentsPage() {
 
       {/* Modal / Dialog de Inspeção de Chunks */}
       <Dialog open={!!selectedDoc} onOpenChange={(open) => !open && setSelectedDoc(null)}>
-        <DialogContent
-          className="max-w-2xl max-h-[85vh] flex flex-col"
-          data-testid="dialog-chunks"
-        >
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col" data-testid="dialog-chunks">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <Layers className="h-5 w-5 text-primary" />
@@ -607,17 +621,11 @@ export function DocumentsPage() {
                   className="rounded-md border border-border/60 bg-muted/30 p-3 text-xs"
                 >
                   <div className="mb-2 flex items-center justify-between text-[11px] text-muted-foreground border-b border-border/40 pb-1.5">
-                    <span className="font-medium text-foreground">
-                      Bloco #{c.chunk_index + 1}
-                    </span>
+                    <span className="font-medium text-foreground">Bloco #{c.chunk_index + 1}</span>
                     <div className="flex items-center gap-2">
                       <span>~{c.token_estimate} tokens</span>
                       <span className="text-border">•</span>
-                      <span
-                        className={
-                          c.has_embedding ? "text-emerald-400" : "text-amber-400"
-                        }
-                      >
+                      <span className={c.has_embedding ? "text-emerald-400" : "text-amber-400"}>
                         {c.has_embedding ? "Vetor Ativo" : "Sem Vetor"}
                       </span>
                     </div>

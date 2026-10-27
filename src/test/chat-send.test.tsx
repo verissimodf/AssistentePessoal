@@ -8,7 +8,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const toast = { success: vi.fn(), error: vi.fn() };
 vi.mock("sonner", () => ({
-  toast: { success: (...a: unknown[]) => toast.success(...a), error: (...a: unknown[]) => toast.error(...a) },
+  toast: {
+    success: (...a: unknown[]) => toast.success(...a),
+    error: (...a: unknown[]) => toast.error(...a),
+  },
 }));
 
 const apiMock = vi.fn();
@@ -27,7 +30,12 @@ vi.mock("@/lib/bridge", () => ({
 }));
 
 vi.mock("@/components/Avatar3D", () => ({ Avatar3D: () => null }));
-vi.mock("@/lib/voice", () => ({ listenOnce: vi.fn(async () => ""), speak: vi.fn(async () => {}), stopSpeaking: vi.fn(), useWake: () => 0 }));
+vi.mock("@/lib/voice", () => ({
+  listenOnce: vi.fn(async () => ""),
+  speak: vi.fn(async () => {}),
+  stopSpeaking: vi.fn(),
+  useWake: () => 0,
+}));
 
 import { ChatPage } from "@/routes/index";
 
@@ -39,7 +47,13 @@ const FAIL_MSG = "Falha ao enviar — sua mensagem foi preservada. Tente novamen
 
 const exchange = (reply = "PONG recebido") => ({
   reply,
-  conversation: { id: "c1", title: "PONG", created_at: "2026-10-17T10:00:00.000Z", updated_at: "2026-10-17T10:00:00.000Z", agent_id: null },
+  conversation: {
+    id: "c1",
+    title: "PONG",
+    created_at: "2026-10-17T10:00:00.000Z",
+    updated_at: "2026-10-17T10:00:00.000Z",
+    agent_id: null,
+  },
   reasoning: null,
   tools: [],
   pending: [],
@@ -58,7 +72,17 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  for (const m of [apiMock, settingsMock, listMock, openMock, delMock, chat, toast.success, toast.error]) m.mockReset();
+  for (const m of [
+    apiMock,
+    settingsMock,
+    listMock,
+    openMock,
+    delMock,
+    chat,
+    toast.success,
+    toast.error,
+  ])
+    m.mockReset();
   localStorage.clear();
   apiMock.mockImplementation(async (path: string) => (path === "/api/agents" ? [] : {}));
   settingsMock.mockImplementation(async () => ({ general: { agentName: "Jarvis" } }));
@@ -74,7 +98,12 @@ describe("envio de mensagem no painel (incidente PONG)", () => {
     type("PONG");
     clickSend();
     await waitFor(() => expect(chat).toHaveBeenCalledTimes(1));
-    const [convId, content, id, pin] = chat.mock.calls[0] as [string | null, string, string, string | undefined];
+    const [convId, content, id, pin] = chat.mock.calls[0] as [
+      string | null,
+      string,
+      string,
+      string | undefined,
+    ];
     expect(convId).toBeNull(); // sem conversa selecionada → o servidor cria uma
     expect(content).toBe("PONG");
     expect(V4.test(id)).toBe(true); // clientMsgId válido (idempotência do servidor)
@@ -108,7 +137,12 @@ describe("envio de mensagem no painel (incidente PONG)", () => {
 
   it("não duplica: novo envio é bloqueado enquanto o anterior está em andamento", async () => {
     let resolveIt: (v: unknown) => void = () => {};
-    chat.mockImplementation(() => new Promise((res) => { resolveIt = res; }));
+    chat.mockImplementation(
+      () =>
+        new Promise((res) => {
+          resolveIt = res;
+        }),
+    );
     render(<ChatPage />);
     await waitFor(() => expect(listMock).toHaveBeenCalled());
     type("PONG");

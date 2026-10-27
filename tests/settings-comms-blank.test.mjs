@@ -36,14 +36,23 @@ before(async () => {
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${server.address().port}`;
   auth.setupFirstAdmin({ token: auth.ensureBootstrap().token, username: "ana", password: PW });
-  const r = await req("/api/auth/login", { method: "POST", body: { username: "ana", password: PW } });
+  const r = await req("/api/auth/login", {
+    method: "POST",
+    body: { username: "ana", password: PW },
+  });
   const j = await r.json();
-  Object.assign(A, { cookie: r.headers.get("set-cookie").split(";")[0], csrf: j.csrf, id: j.admin.id });
+  Object.assign(A, {
+    cookie: r.headers.get("set-cookie").split(";")[0],
+    csrf: j.csrf,
+    id: j.admin.id,
+  });
   assert.equal(
     (
       await req("/api/settings", {
         method: "PUT",
-        body: { comms: { gmail: { enabled: true, user: "ana@exemplo.test", appPassword: SECRET } } },
+        body: {
+          comms: { gmail: { enabled: true, user: "ana@exemplo.test", appPassword: SECRET } },
+        },
         s: A,
       })
     ).status,
@@ -62,7 +71,9 @@ test("comms: segredo nunca retorna ao cliente — apenas hasKey", async () => {
 });
 
 test("comms: campo em branco preserva o usuário salvo (não apaga em silêncio)", async () => {
-  const r = await json(await req("/api/settings", { method: "PUT", body: { comms: { gmail: { user: "" } } }, s: A }));
+  const r = await json(
+    await req("/api/settings", { method: "PUT", body: { comms: { gmail: { user: "" } } }, s: A }),
+  );
   assert.equal(r.status, 200);
   assert.equal(r.body.comms.gmail.user, "ana@exemplo.test", "usuário preservado");
   assert.equal((await settings()).comms.gmail.user, "ana@exemplo.test");
@@ -70,7 +81,11 @@ test("comms: campo em branco preserva o usuário salvo (não apaga em silêncio)
 
 test("comms: campo em branco preserva o segredo salvo", async () => {
   const r = await json(
-    await req("/api/settings", { method: "PUT", body: { comms: { gmail: { appPassword: "   " } } }, s: A }),
+    await req("/api/settings", {
+      method: "PUT",
+      body: { comms: { gmail: { appPassword: "   " } } },
+      s: A,
+    }),
   );
   assert.equal(r.status, 200);
   assert.equal(r.body.comms.gmail.hasKey, true, "segredo continua salvo");
@@ -93,7 +108,11 @@ test("comms: valor novo substitui o anterior (a atualização explícita funcion
 
 test("comms: desabilitar a conta é a remoção explícita (credenciais preservadas, uso desativado)", async () => {
   const r = await json(
-    await req("/api/settings", { method: "PUT", body: { comms: { gmail: { enabled: false } } }, s: A }),
+    await req("/api/settings", {
+      method: "PUT",
+      body: { comms: { gmail: { enabled: false } } },
+      s: A,
+    }),
   );
   assert.equal(r.status, 200);
   assert.equal(r.body.comms.gmail.enabled, false, "conta desativada de forma explícita");

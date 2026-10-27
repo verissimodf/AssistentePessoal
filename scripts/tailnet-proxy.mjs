@@ -40,10 +40,15 @@ for (const [listenPort, targetPort] of MAPS) {
     const upstream = net.connect(targetPort, TARGET_HOST);
     client.pipe(upstream);
     upstream.pipe(client);
-    const kill = () => { client.destroy(); upstream.destroy(); };
+    const kill = () => {
+      client.destroy();
+      upstream.destroy();
+    };
     client.on("error", kill);
     upstream.on("error", kill);
   });
   server.on("error", (e) => console.warn(`[tailnet-proxy] ${IP}:${listenPort} -> ${e.message}`));
-  server.listen(listenPort, IP, () => console.log(`[tailnet-proxy] ${IP}:${listenPort} -> ${TARGET_HOST}:${targetPort}`));
+  server.listen(listenPort, IP, () =>
+    console.log(`[tailnet-proxy] ${IP}:${listenPort} -> ${TARGET_HOST}:${targetPort}`),
+  );
 }

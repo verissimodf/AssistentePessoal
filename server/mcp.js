@@ -53,7 +53,8 @@ export const TOOLS = [
   },
   {
     name: "reindex_document",
-    description: "Reindex a document to generate vector embeddings for semantic RAG (promotes lexical_only to hybrid).",
+    description:
+      "Reindex a document to generate vector embeddings for semantic RAG (promotes lexical_only to hybrid).",
     inputSchema: {
       type: "object",
       properties: { id: { type: "string", description: "Document ID to reindex" } },
@@ -62,11 +63,15 @@ export const TOOLS = [
   },
   {
     name: "load_skill",
-    description: "Load instructions and guidelines of a specialized skill from the Global Hub (.agent-skills) on demand.",
+    description:
+      "Load instructions and guidelines of a specialized skill from the Global Hub (.agent-skills) on demand.",
     inputSchema: {
       type: "object",
       properties: {
-        skill: { type: "string", description: "Skill identifier (e.g. threejs-expert, gsap-motion, karpathy-engineering)" },
+        skill: {
+          type: "string",
+          description: "Skill identifier (e.g. threejs-expert, gsap-motion, karpathy-engineering)",
+        },
       },
       required: ["skill"],
     },
@@ -105,7 +110,11 @@ export const PROMPTS = [
     name: "jarvis_context",
     description: "Prompt with J.A.R.V.I.S. system context, memories, and skills guidance",
     arguments: [
-      { name: "task", description: "The task you want to execute with J.A.R.V.I.S.", required: true },
+      {
+        name: "task",
+        description: "The task you want to execute with J.A.R.V.I.S.",
+        required: true,
+      },
     ],
   },
 ];
@@ -125,8 +134,8 @@ export const call = async (path, init = {}, { base = BASE, token = TOKEN } = {})
       r.status === 401
         ? "token inválido ou revogado"
         : r.status === 403
-        ? `sem permissão (${body.need || "escopo"})`
-        : `erro ${r.status}${body.error ? `: ${body.error}` : ""}`
+          ? `sem permissão (${body.need || "escopo"})`
+          : `erro ${r.status}${body.error ? `: ${body.error}` : ""}`,
     );
   }
   return body;
@@ -155,18 +164,32 @@ export async function handle(msg, { base = BASE, token = TOKEN } = {}) {
       if (name === "jarvis_ask") {
         const res = await call(
           "/api/chat",
-          { method: "POST", body: JSON.stringify({ messages: [{ role: "user", content: a.prompt }] }) },
-          { base, token }
+          {
+            method: "POST",
+            body: JSON.stringify({ messages: [{ role: "user", content: a.prompt }] }),
+          },
+          { base, token },
         );
         text = res.reply || "";
       } else if (name === "jarvis_remember") {
         await call("/api/memories", { method: "POST", body: JSON.stringify(a) }, { base, token });
         text = "ok";
       } else if (name === "jarvis_recall") {
-        const list = await call(`/api/memories?q=${encodeURIComponent(a.query || "")}`, {}, { base, token });
-        text = Array.isArray(list) && list.length ? list.map((m) => `- ${m.content}`).join("\n") : "nada";
+        const list = await call(
+          `/api/memories?q=${encodeURIComponent(a.query || "")}`,
+          {},
+          { base, token },
+        );
+        text =
+          Array.isArray(list) && list.length
+            ? list.map((m) => `- ${m.content}`).join("\n")
+            : "nada";
       } else if (name === "document_search") {
-        const results = await call(`/api/documents/search?q=${encodeURIComponent(a.query || "")}`, {}, { base, token });
+        const results = await call(
+          `/api/documents/search?q=${encodeURIComponent(a.query || "")}`,
+          {},
+          { base, token },
+        );
         if (!Array.isArray(results) || results.length === 0) {
           text = "Nenhum documento encontrado para a consulta.";
         } else {
@@ -175,12 +198,16 @@ export async function handle(msg, { base = BASE, token = TOKEN } = {}) {
               (d) =>
                 `- [${d.name || d.filename}] (modo: ${d.search_mode || "lexical"}, score: ${d.score})\n  ${
                   d.snippet || (d.content ? d.content.slice(0, 300) : "")
-                }`
+                }`,
             )
             .join("\n\n");
         }
       } else if (name === "reindex_document") {
-        const res = await call(`/api/documents/${encodeURIComponent(a.id)}/reindex`, { method: "POST" }, { base, token });
+        const res = await call(
+          `/api/documents/${encodeURIComponent(a.id)}/reindex`,
+          { method: "POST" },
+          { base, token },
+        );
         if (res && res.ok) {
           text = `Documento ${res.id} reindexado com sucesso para RAG Semântico (${res.vectorizedChunks || 0} blocos vetorizados). Status: ${res.rag_status}.`;
         } else {
@@ -207,7 +234,7 @@ export async function handle(msg, { base = BASE, token = TOKEN } = {}) {
           text = skills
             .map(
               (s) =>
-                `- ${s.id}: ${s.name} [categoria: ${s.category || "geral"}]\n  ${s.description || ""}`
+                `- ${s.id}: ${s.name} [categoria: ${s.category || "geral"}]\n  ${s.description || ""}`,
             )
             .join("\n\n");
         }
@@ -307,13 +334,16 @@ if (isDirectCli) {
         JSON.stringify(
           result === null
             ? { jsonrpc: "2.0", id: msg.id, error: { code: -32601, message: "Method not found" } }
-            : { jsonrpc: "2.0", id: msg.id, result }
-        ) + "\n"
+            : { jsonrpc: "2.0", id: msg.id, result },
+        ) + "\n",
       );
     } catch (e) {
       process.stdout.write(
-        JSON.stringify({ jsonrpc: "2.0", id: msg.id, error: { code: -32000, message: e.message } }) +
-          "\n"
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: msg.id,
+          error: { code: -32000, message: e.message },
+        }) + "\n",
       );
     }
   });

@@ -32,7 +32,10 @@ const req = (path, { method = "GET", body, s } = {}) =>
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 const events = (kind) =>
-  db.prepare("SELECT detail FROM audit WHERE kind = ? ORDER BY id").all(kind).map((r) => JSON.parse(r.detail));
+  db
+    .prepare("SELECT detail FROM audit WHERE kind = ? ORDER BY id")
+    .all(kind)
+    .map((r) => JSON.parse(r.detail));
 
 before(async () => {
   server = createApp();
@@ -40,30 +43,72 @@ before(async () => {
   base = `http://127.0.0.1:${server.address().port}`;
   auth.setupFirstAdmin({ token: auth.ensureBootstrap().token, username: "ana", password: PW });
   adminId = db.prepare("SELECT id FROM admins WHERE active = 1").get().id;
-  const r = await req("/api/auth/login", { method: "POST", body: { username: "ana", password: PW } });
+  const r = await req("/api/auth/login", {
+    method: "POST",
+    body: { username: "ana", password: PW },
+  });
   const j = await r.json();
   S = { cookie: r.headers.get("set-cookie").split(";")[0], csrf: j.csrf };
 });
-after(async () => { await new Promise((r) => server.close(r)); });
+after(async () => {
+  await new Promise((r) => server.close(r));
+});
 
 test("template embutido: sem send_message; ferramentas nunca dependem de escopo admin-only", () => {
-  assert.equal(DEFAULT_AGENT.tools.includes("send_message"), false, "send_message fora do template");
-  assert.deepEqual(DEFAULT_AGENT.tools, ["web_search", "fetch_url", "remember", "recall", "run_command", "cli_agent", "document_search", "rea_analyze", "gigabrain_recall", "gigabrain_remember"]);
+  assert.equal(
+    DEFAULT_AGENT.tools.includes("send_message"),
+    false,
+    "send_message fora do template",
+  );
+  assert.deepEqual(DEFAULT_AGENT.tools, [
+    "web_search",
+    "fetch_url",
+    "remember",
+    "recall",
+    "run_command",
+    "cli_agent",
+    "document_search",
+    "rea_analyze",
+    "gigabrain_recall",
+    "gigabrain_remember",
+  ]);
   for (const t of DEFAULT_AGENT.tools) {
     const scope = TOOL_SCOPES[t];
     assert.ok(scope, `escopo declarado para ${t}`);
-    assert.equal(ADMIN_ONLY.includes(scope), false, `${t} não pode exigir escopo admin-only (${scope})`);
+    assert.equal(
+      ADMIN_ONLY.includes(scope),
+      false,
+      `${t} não pode exigir escopo admin-only (${scope})`,
+    );
   }
 });
 
 test("POST /api/agents cria e audita agent.created (ator + item; sem conteúdo)", async () => {
-  const r = await req("/api/agents", { method: "POST", body: { name: "Auxiliar", provider: "ollama", model: "qwen2.5:7b", instructions: "texto-livre-que-nao-vai-para-a-auditoria", tools: ["remember"] }, s: S });
+  const r = await req("/api/agents", {
+    method: "POST",
+    body: {
+      name: "Auxiliar",
+      provider: "ollama",
+      model: "qwen2.5:7b",
+      instructions: "texto-livre-que-nao-vai-para-a-auditoria",
+      tools: ["remember"],
+    },
+    s: S,
+  });
   assert.equal(r.status, 200);
   const saved = await r.json();
   agentId = saved.id;
   assert.deepEqual(events("agent.created"), [{ admin: adminId, type: "agent", ids: [saved.id] }]);
-  const all = db.prepare("SELECT detail FROM audit").all().map((x) => x.detail).join("\n");
-  assert.equal(all.includes("texto-livre-que-nao-vai-para-a-auditoria"), false, "conteúdo do agente nunca entra na auditoria");
+  const all = db
+    .prepare("SELECT detail FROM audit")
+    .all()
+    .map((x) => x.detail)
+    .join("\n");
+  assert.equal(
+    all.includes("texto-livre-que-nao-vai-para-a-auditoria"),
+    false,
+    "conteúdo do agente nunca entra na auditoria",
+  );
 });
 
 test("PUT registra agent.updated com o estado resultante (desativação e reativação)", async () => {
@@ -80,13 +125,23 @@ test("PUT registra agent.updated com o estado resultante (desativação e reativ
 test("DELETE audita agent.deleted e libera a propriedade; id desconhecido não fabrica evento", async () => {
   const bad = await req("/api/agents/nao-existe", { method: "DELETE", s: S });
   assert.equal(bad.status, 404);
-  assert.equal(events("agent.deleted").length, 0, "tentativa inválida não gera evento (sem histórico retroativo)");
+  assert.equal(
+    events("agent.deleted").length,
+    0,
+    "tentativa inválida não gera evento (sem histórico retroativo)",
+  );
   const del = await req(`/api/agents/${agentId}`, { method: "DELETE", s: S });
   assert.equal(del.status, 200);
   assert.deepEqual(events("agent.deleted"), [{ admin: adminId, type: "agent", ids: [agentId] }]);
-  assert.equal(db.prepare("SELECT COUNT(*) n FROM ownership WHERE resource_type='agent' AND resource_id=?").get(agentId).n, 0);
+  assert.equal(
+    db
+      .prepare("SELECT COUNT(*) n FROM ownership WHERE resource_type='agent' AND resource_id=?")
+      .get(agentId).n,
+    0,
+  );
   assert.equal(db.prepare("SELECT COUNT(*) n FROM agents WHERE id=?").get(agentId).n, 0);
   for (const kind of ["agent.created", "agent.updated", "agent.deleted"]) {
-    for (const d of events(kind)) assert.equal("dropped" in d, false, "nenhum campo do evento foi descartado pela sanitização");
+    for (const d of events(kind))
+      assert.equal("dropped" in d, false, "nenhum campo do evento foi descartado pela sanitização");
   }
 });

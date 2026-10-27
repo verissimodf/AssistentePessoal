@@ -38,11 +38,18 @@ const A = {};
 const req = (path, { method = "GET", body, s, csrf = true } = {}) =>
   fetch(base + path, {
     method,
-    headers: { origin: ORIGIN, ...(body !== undefined ? { "content-type": "application/json" } : {}), ...(s ? { cookie: s.cookie, ...(csrf ? { "x-jarvis-csrf": s.csrf } : {}) } : {}) },
+    headers: {
+      origin: ORIGIN,
+      ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(s ? { cookie: s.cookie, ...(csrf ? { "x-jarvis-csrf": s.csrf } : {}) } : {}),
+    },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 const rows = () => db.prepare("SELECT kind, detail FROM audit").all();
-const dbText = () => rows().map((r) => `${r.kind} ${r.detail}`).join("\n");
+const dbText = () =>
+  rows()
+    .map((r) => `${r.kind} ${r.detail}`)
+    .join("\n");
 const httpText = async () => (await req("/api/audit", { s: A })).text();
 
 before(async () => {
@@ -50,7 +57,10 @@ before(async () => {
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${server.address().port}`;
   auth.setupFirstAdmin({ token: auth.ensureBootstrap().token, username: "ana", password: PW });
-  const r = await req("/api/auth/login", { method: "POST", body: { username: "ana", password: PW } });
+  const r = await req("/api/auth/login", {
+    method: "POST",
+    body: { username: "ana", password: PW },
+  });
   const j = await r.json();
   Object.assign(A, { cookie: r.headers.get("set-cookie").split(";")[0], csrf: j.csrf });
 });
@@ -62,15 +72,30 @@ test("path, backup and token are not audit fields", () => {
 });
 
 test("reason accepts only known codes; agent only canonical names or UUID v4", () => {
-  assert.deepEqual(sanitizeAudit({ reason: "legacy_blocked", agent: "codex" }), { reason: "legacy_blocked", agent: "codex" });
+  assert.deepEqual(sanitizeAudit({ reason: "legacy_blocked", agent: "codex" }), {
+    reason: "legacy_blocked",
+    agent: "codex",
+  });
   assert.deepEqual(sanitizeAudit({ agent: UUID }), { agent: UUID });
-  for (const bad of [PROBE, "sk-ant-api03-abc", "ghp_abc123", "3f2b8c1e-9a4d-1b7e-8c2f-1d5e6a7b8c9d"]) {
+  for (const bad of [
+    PROBE,
+    "sk-ant-api03-abc",
+    "ghp_abc123",
+    "3f2b8c1e-9a4d-1b7e-8c2f-1d5e6a7b8c9d",
+  ]) {
     assert.deepEqual(sanitizeAudit({ reason: bad, agent: bad }), { dropped: 2 }, bad);
   }
 });
 
 test("probe in path/backup/token/reason/agent never reaches DB nor GET /api/audit", async () => {
-  audit("probe.direct", { path: `/api/${PROBE}`, backup: `/tmp/${PROBE}.db`, token: PROBE, reason: PROBE, agent: PROBE, admin: "ana" });
+  audit("probe.direct", {
+    path: `/api/${PROBE}`,
+    backup: `/tmp/${PROBE}.db`,
+    token: PROBE,
+    reason: PROBE,
+    agent: PROBE,
+    admin: "ana",
+  });
   assert.equal(dbText().includes(PROBE), false, "audit table");
   assert.equal((await httpText()).includes(PROBE), false, "audit HTTP");
   const row = rows().find((r) => r.kind === "probe.direct");
@@ -80,16 +105,30 @@ test("probe in path/backup/token/reason/agent never reaches DB nor GET /api/audi
 test("CSRF route rejection audits only the static route pattern, never url.pathname/query", async () => {
   const r = await req(`/api/memories/${PROBE}?k=${PROBE}`, { method: "DELETE", s: A, csrf: false });
   assert.equal(r.status, 403);
-  const row = rows().filter((x) => x.kind === "authz.csrf_rejected").at(-1);
+  const row = rows()
+    .filter((x) => x.kind === "authz.csrf_rejected")
+    .at(-1);
   assert.deepEqual(JSON.parse(row.detail), { route: "/api/memories/:id" });
   assert.equal(dbText().includes(PROBE), false, "audit table");
   assert.equal((await httpText()).includes(PROBE), false, "audit HTTP");
 });
 
 test("authz.denied event keeps static route, drops dynamic path", () => {
-  audit("authz.denied", { route: "/api/memories/:id", path: `/api/memories/${PROBE}`, need: "memories:write", principal: "mcp" });
-  const row = rows().filter((x) => x.kind === "authz.denied").at(-1);
-  assert.deepEqual(JSON.parse(row.detail), { route: "/api/memories/:id", need: "memories:write", principal: "mcp", dropped: 1 });
+  audit("authz.denied", {
+    route: "/api/memories/:id",
+    path: `/api/memories/${PROBE}`,
+    need: "memories:write",
+    principal: "mcp",
+  });
+  const row = rows()
+    .filter((x) => x.kind === "authz.denied")
+    .at(-1);
+  assert.deepEqual(JSON.parse(row.detail), {
+    route: "/api/memories/:id",
+    need: "memories:write",
+    principal: "mcp",
+    dropped: 1,
+  });
   assert.deepEqual(sanitizeAudit({ route: `/api/memories/${PROBE}?x=1` }), { dropped: 1 });
 });
 
@@ -108,17 +147,28 @@ test("migration.v2_report records versions, backup_verified and counts — never
 });
 
 test("real HTTP authz.denied: scoped token hitting a protected route with the probe in path and query", async () => {
-  const t = await (await req("/api/auth/tokens", { method: "POST", s: A, body: { name: "sonda", scopes: ["memories:read"] } })).json();
+  const t = await (
+    await req("/api/auth/tokens", {
+      method: "POST",
+      s: A,
+      body: { name: "sonda", scopes: ["memories:read"] },
+    })
+  ).json();
   assert.ok(t.token, "token issued");
   const before = rows().filter((x) => x.kind === "authz.denied").length;
   const r = await fetch(`${base}/api/memories/${PROBE}?probe=${PROBE}&${PROBE}=1`, {
-    method: "DELETE", headers: { origin: ORIGIN, authorization: `Bearer ${t.token}` },
+    method: "DELETE",
+    headers: { origin: ORIGIN, authorization: `Bearer ${t.token}` },
   });
   assert.equal(r.status, 403);
   assert.deepEqual(await r.json(), { error: "forbidden", need: "memories:write" });
   const denied = rows().filter((x) => x.kind === "authz.denied");
   assert.equal(denied.length, before + 1, "exactly one real denial audited");
-  assert.deepEqual(JSON.parse(denied.at(-1).detail), { route: "/api/memories/:id", need: "memories:write", principal: "service" });
+  assert.deepEqual(JSON.parse(denied.at(-1).detail), {
+    route: "/api/memories/:id",
+    need: "memories:write",
+    principal: "service",
+  });
   assert.equal(dbText().includes(PROBE), false, "audit table");
   assert.equal(dbText().includes(t.token), false, "token never audited");
   const http = await httpText();

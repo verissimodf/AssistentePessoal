@@ -58,31 +58,67 @@ let csrf: string | null = null;
 let authState: AuthState = "unknown";
 let me: { id: string; username: string } | null = null;
 const authListeners = new Set<(s: AuthState) => void>();
-const setAuth = (s: AuthState) => { authState = s; authListeners.forEach((l) => l(s)); };
+const setAuth = (s: AuthState) => {
+  authState = s;
+  authListeners.forEach((l) => l(s));
+};
 export const currentAdmin = () => me;
 
 export async function refreshAuth(): Promise<AuthState> {
-  if (!(await ping())) { csrf = null; me = null; setAuth("demo"); return authState; }
-  if (setupRequired) { setAuth("setup"); return authState; }
+  if (!(await ping())) {
+    csrf = null;
+    me = null;
+    setAuth("demo");
+    return authState;
+  }
+  if (setupRequired) {
+    setAuth("setup");
+    return authState;
+  }
   const r = await fetch(`${bridgeUrl()}/api/auth/me`, { credentials: "include" }).catch(() => null);
-  if (r?.ok) { const j = await r.json(); csrf = j.csrf; me = j.admin; setAuth("ok"); }
-  else { csrf = null; me = null; setAuth("login"); }
+  if (r?.ok) {
+    const j = await r.json();
+    csrf = j.csrf;
+    me = j.admin;
+    setAuth("ok");
+  } else {
+    csrf = null;
+    me = null;
+    setAuth("login");
+  }
   return authState;
 }
 export function useAuthState() {
   const [s, setS] = useState<AuthState>(authState);
-  useEffect(() => { authListeners.add(setS); refreshAuth(); return () => { authListeners.delete(setS); }; }, []);
+  useEffect(() => {
+    authListeners.add(setS);
+    refreshAuth();
+    return () => {
+      authListeners.delete(setS);
+    };
+  }, []);
   return s;
 }
 async function authPost(path: string, body: unknown) {
-  const r = await fetch(`${bridgeUrl()}${path}`, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const r = await fetch(`${bridgeUrl()}${path}`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw Object.assign(new Error(j.error || String(r.status)), { code: j.error, retryAfter: j.retryAfter });
+  if (!r.ok)
+    throw Object.assign(new Error(j.error || String(r.status)), {
+      code: j.error,
+      retryAfter: j.retryAfter,
+    });
   return j;
 }
 export async function login(username: string, password: string) {
   const j = await authPost("/api/auth/login", { username, password });
-  csrf = j.csrf; me = j.admin; setAuth("ok");
+  csrf = j.csrf;
+  me = j.admin;
+  setAuth("ok");
 }
 export async function setupFirstAdmin(token: string, username: string, password: string) {
   await authPost("/api/auth/setup", { token: token.trim(), username, password });
@@ -91,7 +127,9 @@ export async function setupFirstAdmin(token: string, username: string, password:
 }
 export async function logout() {
   await api("/api/auth/logout", { method: "POST", body: "{}" }).catch(() => undefined);
-  csrf = null; me = null; setAuth("login");
+  csrf = null;
+  me = null;
+  setAuth("login");
 }
 
 export function useBridgeStatus() {
@@ -115,7 +153,11 @@ export async function api<T = unknown>(path: string, init: RequestInit = {}): Pr
   if (!isForm) h["content-type"] = "application/json";
   if (method !== "GET" && csrf) h["x-jarvis-csrf"] = csrf;
   const r = await fetch(`${bridgeUrl()}${path}`, { ...init, credentials: "include", headers: h });
-  if (r.status === 401) { csrf = null; me = null; setAuth(setupRequired ? "setup" : "login"); }
+  if (r.status === 401) {
+    csrf = null;
+    me = null;
+    setAuth(setupRequired ? "setup" : "login");
+  }
   if (!r.ok) throw new Error(`${r.status}: ${await r.text()}`);
   const ct = r.headers.get("content-type") || "";
   return (ct.includes("json") ? r.json() : r.blob()) as Promise<T>;
@@ -130,7 +172,13 @@ export type Doc = {
   created_at: string;
   chunk_count?: number;
   rag_status?: "hybrid" | "lexical_only" | "lexical" | string;
-  search_result?: { snippet: string; chunk_index: number; search_mode: string; fallback_reason?: string; score: number };
+  search_result?: {
+    snippet: string;
+    chunk_index: number;
+    search_mode: string;
+    fallback_reason?: string;
+    score: number;
+  };
 };
 
 export type DocChunk = {
@@ -192,30 +240,78 @@ export async function reindexAllPendingDocuments(): Promise<ReindexPendingResult
   }
 }
 
-
 // ---------- generic collections (server first, demo fallback) ----------
 export type Memory = { id: string; content: string; tags: string; created_at: string };
 export type Agent = {
-  id: string; name: string; instructions: string; provider: string; model: string;
-  tools: string[]; active?: boolean;
+  id: string;
+  name: string;
+  instructions: string;
+  provider: string;
+  model: string;
+  tools: string[];
+  active?: boolean;
 };
 export type Bot = {
-  id: string; name: string; goal: string; agent_id: string;
-  trigger_type: "daily" | "interval" | "voice" | "file" | "message"; trigger_value: string;
-  autonomy: "confirm" | "safe" | "full"; max_steps: number; enabled: boolean; last_run?: string; scopes?: string[]; owner_admin_id?: string | null;
+  id: string;
+  name: string;
+  goal: string;
+  agent_id: string;
+  trigger_type: "daily" | "interval" | "voice" | "file" | "message";
+  trigger_value: string;
+  autonomy: "confirm" | "safe" | "full";
+  max_steps: number;
+  enabled: boolean;
+  last_run?: string;
+  scopes?: string[];
+  owner_admin_id?: string | null;
 };
-export type Run = { id: string; bot_id: string; started_at: string; status: string; output: string };
+export type Run = {
+  id: string;
+  bot_id: string;
+  started_at: string;
+  status: string;
+  output: string;
+};
 
 const seed: Record<string, unknown[]> = {
   memories: [
-    { id: "m1", content: "O usuário prefere respostas curtas e objetivas.", tags: "preferência", created_at: new Date().toISOString() },
-    { id: "m2", content: "Reunião semanal da equipe toda segunda às 9h.", tags: "agenda", created_at: new Date().toISOString() },
+    {
+      id: "m1",
+      content: "O usuário prefere respostas curtas e objetivas.",
+      tags: "preferência",
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: "m2",
+      content: "Reunião semanal da equipe toda segunda às 9h.",
+      tags: "agenda",
+      created_at: new Date().toISOString(),
+    },
   ],
   agents: [
-    { id: "jarvis", name: "Jarvis", instructions: "Você é J.A.R.V.I.S., assistente pessoal leal, preciso e elegante. Responda no idioma do usuário.", provider: "ollama", model: "qwen2.5:7b", tools: ["web_search", "remember", "recall", "run_command"], active: true },
+    {
+      id: "jarvis",
+      name: "Jarvis",
+      instructions:
+        "Você é J.A.R.V.I.S., assistente pessoal leal, preciso e elegante. Responda no idioma do usuário.",
+      provider: "ollama",
+      model: "qwen2.5:7b",
+      tools: ["web_search", "remember", "recall", "run_command"],
+      active: true,
+    },
   ],
   bots: [
-    { id: "b1", name: "Resumo matinal", goal: "Pesquise as principais notícias de tecnologia e me envie um resumo no Telegram.", agent_id: "jarvis", trigger_type: "daily", trigger_value: "08:00", autonomy: "safe", max_steps: 8, enabled: true },
+    {
+      id: "b1",
+      name: "Resumo matinal",
+      goal: "Pesquise as principais notícias de tecnologia e me envie um resumo no Telegram.",
+      agent_id: "jarvis",
+      trigger_type: "daily",
+      trigger_value: "08:00",
+      autonomy: "safe",
+      max_steps: 8,
+      enabled: true,
+    },
   ],
 };
 
@@ -233,7 +329,9 @@ export function collection<T extends { id: string }>(name: string) {
     async list(q = ""): Promise<T[]> {
       if (await ping()) return api<T[]>(`/api/${name}${q ? `?q=${encodeURIComponent(q)}` : ""}`);
       const items = demoGet<T>(name);
-      return q ? items.filter((i) => JSON.stringify(i).toLowerCase().includes(q.toLowerCase())) : items;
+      return q
+        ? items.filter((i) => JSON.stringify(i).toLowerCase().includes(q.toLowerCase()))
+        : items;
     },
     async save(item: Partial<T>): Promise<T> {
       if (online) {
@@ -242,7 +340,11 @@ export function collection<T extends { id: string }>(name: string) {
           : api<T>(`/api/${name}`, { method: "POST", body: JSON.stringify(item) });
       }
       const items = demoGet<T>(name);
-      const full = { created_at: new Date().toISOString(), ...item, id: item.id || crypto.randomUUID() } as unknown as T;
+      const full = {
+        created_at: new Date().toISOString(),
+        ...item,
+        id: item.id || crypto.randomUUID(),
+      } as unknown as T;
       const idx = items.findIndex((i) => i.id === full.id);
       if (idx >= 0) items[idx] = { ...items[idx], ...full };
       else items.unshift(full);
@@ -251,20 +353,37 @@ export function collection<T extends { id: string }>(name: string) {
     },
     async remove(id: string) {
       if (online) return api(`/api/${name}/${id}`, { method: "DELETE" });
-      demoSet(name, demoGet<T>(name).filter((i) => i.id !== id));
+      demoSet(
+        name,
+        demoGet<T>(name).filter((i) => i.id !== id),
+      );
       return undefined;
     },
   };
 }
 
 // ---------- settings ----------
-export type Settings = { general: any; providers: any; integrations: any; comms: any; voice: any; host: any; [k: string]: any };
+export type Settings = {
+  general: any;
+  providers: any;
+  integrations: any;
+  comms: any;
+  voice: any;
+  host: any;
+  [k: string]: any;
+};
 export const DEFAULT_SETTINGS: Settings = {
   general: { agentName: "Jarvis", language: "pt" },
   providers: {},
   integrations: {},
   comms: {},
-  voice: { tts: "browser", stt: "browser", wake: { clap: true, word: true, hotkey: true, ptt: true }, sensitivity: 6, hotkey: "Ctrl+Shift+J" },
+  voice: {
+    tts: "browser",
+    stt: "browser",
+    wake: { clap: true, word: true, hotkey: true, ptt: true },
+    sensitivity: 6,
+    hotkey: "Ctrl+Shift+J",
+  },
   host: { enabled: false, allowlist: "ls, dir, git status, code ., start, xdg-open" },
 };
 
@@ -282,8 +401,19 @@ export async function saveSettings(s: Settings) {
 // ---------- chat & histórico de conversas (Fase H: fonte da verdade no servidor) ----------
 export type ToolCall = { name: string; input: unknown; output?: string };
 export type PendingAction = { id: string; command: string; status?: string };
-export type ChatReply = { reply: string; reasoning?: string; tools?: ToolCall[]; pending?: PendingAction[] };
-export type ConversationSummary = { id: string; title: string; agent_id?: string | null; created_at: string; updated_at: string };
+export type ChatReply = {
+  reply: string;
+  reasoning?: string;
+  tools?: ToolCall[];
+  pending?: PendingAction[];
+};
+export type ConversationSummary = {
+  id: string;
+  title: string;
+  agent_id?: string | null;
+  created_at: string;
+  updated_at: string;
+};
 export type ConversationMessage = {
   id: string;
   role: "user" | "assistant";
@@ -305,7 +435,9 @@ export async function listConversations(): Promise<ConversationSummary[]> {
 }
 
 /** Uma conversa com as mensagens persistidas (404 se não existir ou não for do usuário). */
-export async function openConversation(id: string): Promise<{ conversation: ConversationSummary; messages: ConversationMessage[] }> {
+export async function openConversation(
+  id: string,
+): Promise<{ conversation: ConversationSummary; messages: ConversationMessage[] }> {
   return api(`/api/conversations/${encodeURIComponent(id)}`);
 }
 
@@ -327,7 +459,12 @@ export async function chatConversation(
   if (await ping())
     return api<ChatExchange>("/api/chat", {
       method: "POST",
-      body: JSON.stringify({ conversationId: conversationId ?? undefined, message, clientMsgId, agentId }),
+      body: JSON.stringify({
+        conversationId: conversationId ?? undefined,
+        message,
+        clientMsgId,
+        agentId,
+      }),
     });
   await new Promise((r) => setTimeout(r, 700));
   return {
@@ -363,7 +500,12 @@ export type DiagnosticItem = {
 export type DiagnosticInventory = {
   generatedAt: string;
   versao: { app: string | null; banco: number | null; node: string | null; uptimeSegundos: number };
-  resumo: { saude: "ok" | "atencao"; total: number; porEstado: Record<string, number>; pendencias: number };
+  resumo: {
+    saude: "ok" | "atencao";
+    total: number;
+    porEstado: Record<string, number>;
+    pendencias: number;
+  };
   itens: DiagnosticItem[];
   testes: Array<{ arquivo: string; area: string }>;
   riscos: string[];
@@ -380,7 +522,18 @@ export async function loadDiagnostics(): Promise<DiagnosticInventory | null> {
 
 // ---------- P0.1: aprovações, execuções (ledger) e auditoria (fonte de verdade = servidor) ----------
 export type ApprovalRow = { id: string; command: string; status: string; createdAt: string };
-export type ExecutionRow = { id: string; approvalId: string | null; kind: string; state: string; exitCode: number | null; verification: string; verifiedBy: string; correlation: string | null; auditId: number | null; at: string };
+export type ExecutionRow = {
+  id: string;
+  approvalId: string | null;
+  kind: string;
+  state: string;
+  exitCode: number | null;
+  verification: string;
+  verifiedBy: string;
+  correlation: string | null;
+  auditId: number | null;
+  at: string;
+};
 export type AuditRow = { id: number; at: string; kind: string; detail: string };
 
 /** Aprovações do administrador. `null` = indisponível (offline) — nunca dados de demonstração. */
@@ -390,13 +543,19 @@ export async function listApprovals(): Promise<ApprovalRow[] | null> {
 }
 /** Ledger de execuções (evidências) do administrador. `null` = indisponível (offline). */
 export async function listExecutions(): Promise<ExecutionRow[] | null> {
-  if (await ping()) return (await api<{ executions: ExecutionRow[] }>("/api/executions")).executions;
+  if (await ping())
+    return (await api<{ executions: ExecutionRow[] }>("/api/executions")).executions;
   return null;
 }
 
 // ---------- P0.2: foco da sessão (objetivo/resumo/decisões) — explícito, por dono ----------
 // Pendências e "próximo passo" NÃO vêm daqui: o painel deriva-os de aprovações/execuções reais.
-export type SessionFocus = { objective: string; summary: string; decisions: string[]; updatedAt: string | null };
+export type SessionFocus = {
+  objective: string;
+  summary: string;
+  decisions: string[];
+  updatedAt: string | null;
+};
 
 /** Foco do administrador autenticado. `null` = indisponível (offline) — nunca um objetivo de demonstração. */
 export async function loadSessionFocus(): Promise<SessionFocus | null> {
@@ -438,7 +597,11 @@ export async function loadProvenance(): Promise<Provenance | null> {
 /** Histórico de auditoria (escopo `audit:read`). `null` = indisponível ou sem permissão. */
 export async function loadAudit(): Promise<AuditRow[] | null> {
   if (!(await ping())) return null;
-  try { return await api<AuditRow[]>("/api/audit"); } catch { return null; }
+  try {
+    return await api<AuditRow[]>("/api/audit");
+  } catch {
+    return null;
+  }
 }
 
 // ---------- skills & global hub ----------
@@ -533,7 +696,6 @@ export async function listSkills(query?: {
   }
 }
 
-
 export async function getSkillDetail(id: string): Promise<SkillDetail | null> {
   if (!(await ping())) return null;
   try {
@@ -551,5 +713,3 @@ export async function getRouterTelemetry(): Promise<ProviderTelemetry | null> {
     return null;
   }
 }
-
-

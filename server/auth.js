@@ -13,27 +13,59 @@ export const MIN_PASSWORD = 12;
 
 /** Scopes a service token may hold. Admin sessions implicitly have all of them. */
 export const SCOPES = [
-  "chat", "memories:read", "memories:write", "agents:read", "agents:write", "bots:read", "bots:write",
-  "bots:run", "settings:read", "settings:write", "voice", "web", "host:run", "comms:read", "comms:send", "audit:read",
-  "documents:read", "documents:write", "skills:read",
+  "chat",
+  "memories:read",
+  "memories:write",
+  "agents:read",
+  "agents:write",
+  "bots:read",
+  "bots:write",
+  "bots:run",
+  "settings:read",
+  "settings:write",
+  "voice",
+  "web",
+  "host:run",
+  "comms:read",
+  "comms:send",
+  "audit:read",
+  "documents:read",
+  "documents:write",
+  "skills:read",
 ];
 /** Scopes reserved for a human admin session — never grantable to a token. */
-export const ADMIN_ONLY = ["approvals:resolve", "admins:manage", "sessions:manage", "tokens:manage"];
+export const ADMIN_ONLY = [
+  "approvals:resolve",
+  "admins:manage",
+  "sessions:manage",
+  "tokens:manage",
+];
 
 /** Tool → scope needed on the execution path (re-checked at call time). */
 export const TOOL_SCOPES = {
-  web_search: "web", fetch_url: "web", remember: "memories:write", recall: "memories:read",
-  run_command: "host:run", cli_agent: "host:run", send_message: "comms:send", send_email: "comms:send",
-  read_email: "comms:read", read_calendar: "comms:read", document_search: "documents:read",
+  web_search: "web",
+  fetch_url: "web",
+  remember: "memories:write",
+  recall: "memories:read",
+  run_command: "host:run",
+  cli_agent: "host:run",
+  send_message: "comms:send",
+  send_email: "comms:send",
+  read_email: "comms:read",
+  read_calendar: "comms:read",
+  document_search: "documents:read",
   // Declared in TOOL_DEFS and dispatched by callTool; without a scope here they were
   // unreachable ("Ferramenta desconhecida"). Network fetchers → "web"; delegation → "host:run".
-  context7_docs: "web", crawl_page: "web", openhands_task: "host:run",
+  context7_docs: "web",
+  crawl_page: "web",
+  openhands_task: "host:run",
   // REA: análise estática de artefatos — abre um analisador local sobre o alvo; mesmo
   // portão de execução das demais delegações (host:run + aprovação humana sempre).
   rea_analyze: "host:run",
   // Gigabrain: memória local persistente própria — mesma classe de leitura/escrita das
   // memórias nativas do JARVIS (sem shell; argv fixo; a store é do próprio admin).
-  gigabrain_recall: "memories:read", gigabrain_remember: "memories:write",
+  gigabrain_recall: "memories:read",
+  gigabrain_remember: "memories:write",
   // Hub Global de Skills (v1.2): carrega instruções e regras especializadas sob demanda.
   load_skill: "skills:read",
   // Navegador: ação de rede externa — mesmo escopo de leitura de rede dos demais fetchers.
@@ -41,20 +73,31 @@ export const TOOL_SCOPES = {
   browser_action: "web",
   // AgentMail: mesmo enquadramento de leitura/envio de e-mail do IMAP nativo. Envio segue o
   // D9: a ferramenta só enfileira aprovação humana (nunca dispara a API de envio diretamente).
-  agentmail_read_email: "comms:read", agentmail_send_email: "comms:send",
+  agentmail_read_email: "comms:read",
+  agentmail_send_email: "comms:send",
 };
 
 /** Loopback sources (all local processes look identical here). */
-export const isLoopback = (ip = "") => /^(127\.|::1$|::ffff:127\.)/.test(String(ip)) || ip === "localhost";
+export const isLoopback = (ip = "") =>
+  /^(127\.|::1$|::ffff:127\.)/.test(String(ip)) || ip === "localhost";
 
 /** Scopes a bot may be granted explicitly (least privilege; never admin-only ones). */
-export const BOT_SCOPES = ["web", "memories:read", "memories:write", "host:run", "comms:read", "comms:send", "skills:read"];
+export const BOT_SCOPES = [
+  "web",
+  "memories:read",
+  "memories:write",
+  "host:run",
+  "comms:read",
+  "comms:send",
+  "skills:read",
+];
 /** Documented compatibility policy for legacy bots (no owner, no explicit scopes): read-only. */
 export const LEGACY_BOT_SCOPES = ["web", "memories:read"];
 /** Default for a bot that has no explicit list: nothing beyond reading the web and memory. */
 export const DEFAULT_BOT_SCOPES = ["web", "memories:read"];
 /** Sanitize a bot's requested scopes: only known bot scopes, deduplicated. */
-export const sanitizeBotScopes = (list) => (Array.isArray(list) ? [...new Set(list.filter((s) => BOT_SCOPES.includes(s)))] : null);
+export const sanitizeBotScopes = (list) =>
+  Array.isArray(list) ? [...new Set(list.filter((s) => BOT_SCOPES.includes(s)))] : null;
 /** Effective scopes for a bot run. Never "*". */
 export function resolveBotScopes(bot) {
   const explicit = sanitizeBotScopes(bot?.scopes);
@@ -74,12 +117,17 @@ const VERIFIED = new WeakMap();
 export function isVerifiedAdmin(p) {
   const live = p && typeof p === "object" ? VERIFIED.get(p) : undefined;
   if (!live) return false;
-  try { return live() === true; } catch { return false; }
+  try {
+    return live() === true;
+  } catch {
+    return false;
+  }
 }
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 const safeEq = (a, b) => {
-  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
+  const x = Buffer.from(String(a)),
+    y = Buffer.from(String(b));
   return x.length === y.length && timingSafeEqual(x, y);
 };
 const randomToken = (prefix) => `${prefix}${randomBytes(32).toString("base64url")}`;
@@ -99,12 +147,19 @@ export function verifyPassword(pw, stored) {
 const DUMMY_HASH = hashPassword(randomBytes(16).toString("hex"));
 
 export class AuthError extends Error {
-  constructor(status, code, extra = {}) { super(code); this.status = status; this.code = code; Object.assign(this, extra); }
+  constructor(status, code, extra = {}) {
+    super(code);
+    this.status = status;
+    this.code = code;
+    Object.assign(this, extra);
+  }
 }
 
 function validateCredentials(username, password) {
-  if (typeof username !== "string" || !/^[a-zA-Z0-9._-]{3,32}$/.test(username)) throw new AuthError(400, "invalid_username");
-  if (typeof password !== "string" || password.length < MIN_PASSWORD || password.length > 256) throw new AuthError(400, "weak_password");
+  if (typeof username !== "string" || !/^[a-zA-Z0-9._-]{3,32}$/.test(username))
+    throw new AuthError(400, "invalid_username");
+  if (typeof password !== "string" || password.length < MIN_PASSWORD || password.length > 256)
+    throw new AuthError(400, "weak_password");
 }
 
 export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () => {} } = {}) {
@@ -114,18 +169,28 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
   // ---------- bootstrap (first admin) ----------
   /** Creates a fresh one-time token if no admin exists. Returns the file path, never the token. */
   function ensureBootstrap() {
-    if (adminCount() > 0) { clearBootstrapFile(); return null; }
+    if (adminCount() > 0) {
+      clearBootstrapFile();
+      return null;
+    }
     const token = randomToken("jbt_");
-    db.prepare("INSERT INTO bootstrap (id, token_hash, expires_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET token_hash=excluded.token_hash, expires_at=excluded.expires_at")
-      .run(sha(token), clock() + BOOTSTRAP_TTL_MS);
+    db.prepare(
+      "INSERT INTO bootstrap (id, token_hash, expires_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET token_hash=excluded.token_hash, expires_at=excluded.expires_at",
+    ).run(sha(token), clock() + BOOTSTRAP_TTL_MS);
     if (tokenFile) {
       if (existsSync(tokenFile)) unlinkSync(tokenFile);
       writeFileSync(tokenFile, token + "\n", { mode: 0o600, flag: "wx" });
-      try { chmodSync(tokenFile, 0o600); } catch { /* Windows: ACL of the user profile applies */ }
+      try {
+        chmodSync(tokenFile, 0o600);
+      } catch {
+        /* Windows: ACL of the user profile applies */
+      }
     }
     return { file: tokenFile, token };
   }
-  function clearBootstrapFile() { if (tokenFile && existsSync(tokenFile)) unlinkSync(tokenFile); }
+  function clearBootstrapFile() {
+    if (tokenFile && existsSync(tokenFile)) unlinkSync(tokenFile);
+  }
   const setupRequired = () => adminCount() === 0;
 
   /** Atomic: validates + consumes the token and inserts admin #1 in one IMMEDIATE transaction. */
@@ -135,10 +200,13 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
     try {
       if (adminCount() > 0) throw new AuthError(409, "setup_closed");
       const row = db.prepare("SELECT token_hash, expires_at FROM bootstrap WHERE id = 1").get();
-      if (!row || typeof token !== "string" || !safeEq(sha(token), row.token_hash)) throw new AuthError(403, "invalid_bootstrap_token");
+      if (!row || typeof token !== "string" || !safeEq(sha(token), row.token_hash))
+        throw new AuthError(403, "invalid_bootstrap_token");
       if (clock() > row.expires_at) throw new AuthError(403, "bootstrap_token_expired");
       const id = randomUUID();
-      db.prepare("INSERT INTO admins (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)").run(id, username, hashPassword(password), new Date(clock()).toISOString());
+      db.prepare(
+        "INSERT INTO admins (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
+      ).run(id, username, hashPassword(password), new Date(clock()).toISOString());
       db.prepare("DELETE FROM bootstrap WHERE id = 1").run();
       db.exec("COMMIT");
       clearBootstrapFile();
@@ -154,13 +222,18 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
   // ---------- admins ----------
   function createAdmin(actor, { username, password, currentPassword }) {
     validateCredentials(username, password);
-    const me = db.prepare("SELECT password_hash FROM admins WHERE id = ? AND active = 1").get(actor.adminId);
-    if (!me || !verifyPassword(currentPassword || "", me.password_hash)) throw new AuthError(403, "reauth_failed");
+    const me = db
+      .prepare("SELECT password_hash FROM admins WHERE id = ? AND active = 1")
+      .get(actor.adminId);
+    if (!me || !verifyPassword(currentPassword || "", me.password_hash))
+      throw new AuthError(403, "reauth_failed");
     db.exec("BEGIN IMMEDIATE");
     try {
       if (adminCount() >= MAX_ADMINS) throw new AuthError(409, "admin_limit_reached");
       const id = randomUUID();
-      db.prepare("INSERT INTO admins (id, username, password_hash, created_at, created_by) VALUES (?, ?, ?, ?, ?)").run(id, username, hashPassword(password), new Date(clock()).toISOString(), actor.adminId);
+      db.prepare(
+        "INSERT INTO admins (id, username, password_hash, created_at, created_by) VALUES (?, ?, ?, ?, ?)",
+      ).run(id, username, hashPassword(password), new Date(clock()).toISOString(), actor.adminId);
       db.exec("COMMIT");
       audit("auth.admin_created", { by: actor.adminId, admin: id, username });
       return { id, username };
@@ -174,9 +247,15 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
   function removeAdmin(actor, id) {
     try {
       db.exec("BEGIN IMMEDIATE");
-      db.prepare("UPDATE sessions SET revoked_at = ? WHERE admin_id = ? AND revoked_at IS NULL").run(clock(), id);
-      db.prepare("UPDATE service_tokens SET revoked_at = ? WHERE admin_id = ? AND revoked_at IS NULL").run(clock(), id);
-      db.prepare("UPDATE admins SET active = 0, username = username || '#off-' || ? WHERE id = ? AND active = 1").run(String(clock()), id);
+      db.prepare(
+        "UPDATE sessions SET revoked_at = ? WHERE admin_id = ? AND revoked_at IS NULL",
+      ).run(clock(), id);
+      db.prepare(
+        "UPDATE service_tokens SET revoked_at = ? WHERE admin_id = ? AND revoked_at IS NULL",
+      ).run(clock(), id);
+      db.prepare(
+        "UPDATE admins SET active = 0, username = username || '#off-' || ? WHERE id = ? AND active = 1",
+      ).run(String(clock()), id);
       db.exec("COMMIT");
     } catch (e) {
       db.exec("ROLLBACK");
@@ -186,7 +265,12 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
     audit("auth.admin_disabled", { by: actor.adminId, admin: id });
     return { ok: true };
   }
-  const listAdmins = () => db.prepare("SELECT id, username, active, created_at, created_by FROM admins ORDER BY created_at").all();
+  const listAdmins = () =>
+    db
+      .prepare(
+        "SELECT id, username, active, created_at, created_by FROM admins ORDER BY created_at",
+      )
+      .all();
 
   // ---------- login throttling ----------
   // (ip+account) gets progressive delay & 5-min lockout after 5 failures; the account alone only
@@ -194,7 +278,8 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
   // ONLY for non-loopback sources: locally every process shares 127.0.0.1, so a shared counter
   // would let failures on one account block every other local login. A successful login clears
   // all counters it touched (pair, account and ip).
-  const delayFor = (n) => (n <= 0 ? 0 : n >= 5 ? 5 * 60_000 : Math.min(15_000, 1000 * 2 ** (n - 1)));
+  const delayFor = (n) =>
+    n <= 0 ? 0 : n >= 5 ? 5 * 60_000 : Math.min(15_000, 1000 * 2 ** (n - 1));
   const rules = [
     { k: (ip, u) => `pair:${ip}|${u}`, delay: delayFor },
     { k: (ip) => `ip:${ip}`, delay: (n) => (n >= 20 ? 5 * 60_000 : 0), remoteOnly: true },
@@ -205,7 +290,9 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
     const t = clock();
     let wait = 0;
     for (const r of rules.filter((x) => applies(x, ip))) {
-      const row = db.prepare("SELECT locked_until FROM login_attempts WHERE key = ?").get(r.k(ip, user));
+      const row = db
+        .prepare("SELECT locked_until FROM login_attempts WHERE key = ?")
+        .get(r.k(ip, user));
       if (row && row.locked_until > t) wait = Math.max(wait, row.locked_until - t);
     }
     return wait;
@@ -216,54 +303,108 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
       const key = r.k(ip, user);
       const row = db.prepare("SELECT failures FROM login_attempts WHERE key = ?").get(key);
       const n = (row?.failures || 0) + 1;
-      db.prepare("INSERT INTO login_attempts (key, failures, locked_until, last_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET failures=excluded.failures, locked_until=excluded.locked_until, last_at=excluded.last_at")
-        .run(key, n, t + r.delay(n), t);
+      db.prepare(
+        "INSERT INTO login_attempts (key, failures, locked_until, last_at) VALUES (?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET failures=excluded.failures, locked_until=excluded.locked_until, last_at=excluded.last_at",
+      ).run(key, n, t + r.delay(n), t);
     }
   }
   function clearFailures(ip, user) {
-    db.prepare("DELETE FROM login_attempts WHERE key IN (?, ?, ?)").run(`pair:${ip}|${user}`, `acct:${user}`, `ip:${ip}`);
+    db.prepare("DELETE FROM login_attempts WHERE key IN (?, ?, ?)").run(
+      `pair:${ip}|${user}`,
+      `acct:${user}`,
+      `ip:${ip}`,
+    );
   }
   /** Drop throttling rows older than 24 h (retention). */
-  const purgeAttempts = () => db.prepare("DELETE FROM login_attempts WHERE last_at < ? AND locked_until < ?").run(clock() - 86_400_000, clock());
+  const purgeAttempts = () =>
+    db
+      .prepare("DELETE FROM login_attempts WHERE last_at < ? AND locked_until < ?")
+      .run(clock() - 86_400_000, clock());
 
   // ---------- sessions ----------
   function login({ username, password, ip = "?", userAgent = "", previousSid }) {
-    const user = String(username || "").toLowerCase().slice(0, 64);
+    const user = String(username || "")
+      .toLowerCase()
+      .slice(0, 64);
     const wait = lockedFor(ip, user);
-    if (wait > 0) { audit("auth.login_throttled", { username: user }); throw new AuthError(429, "too_many_attempts", { retryAfter: Math.ceil(wait / 1000) }); }
-    const row = db.prepare("SELECT id, username, password_hash FROM admins WHERE username = ? AND active = 1").get(user);
-    const ok = verifyPassword(String(password || ""), row ? row.password_hash : DUMMY_HASH) && !!row;
-    if (!ok) { recordFailure(ip, user); audit("auth.login_failed", { username: user }); throw new AuthError(401, "invalid_credentials"); }
+    if (wait > 0) {
+      audit("auth.login_throttled", { username: user });
+      throw new AuthError(429, "too_many_attempts", { retryAfter: Math.ceil(wait / 1000) });
+    }
+    const row = db
+      .prepare("SELECT id, username, password_hash FROM admins WHERE username = ? AND active = 1")
+      .get(user);
+    const ok =
+      verifyPassword(String(password || ""), row ? row.password_hash : DUMMY_HASH) && !!row;
+    if (!ok) {
+      recordFailure(ip, user);
+      audit("auth.login_failed", { username: user });
+      throw new AuthError(401, "invalid_credentials");
+    }
     clearFailures(ip, user);
     if (previousSid) revokeSession(previousSid); // rotation: never reuse a pre-login id
     const sid = randomToken("jss_");
     const csrf = randomBytes(32).toString("base64url");
     const t = clock();
-    db.prepare("INSERT INTO sessions (id_hash, admin_id, csrf, created_at, last_seen, expires_at, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(sha(sid), row.id, csrf, t, t, t + ABSOLUTE_MS, String(userAgent).slice(0, 200));
+    db.prepare(
+      "INSERT INTO sessions (id_hash, admin_id, csrf, created_at, last_seen, expires_at, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).run(sha(sid), row.id, csrf, t, t, t + ABSOLUTE_MS, String(userAgent).slice(0, 200));
     audit("auth.login", { admin: row.id });
     return { sid, csrf, admin: { id: row.id, username: row.username } };
   }
   /** Returns the principal for a session id, sliding the idle window; null when invalid. */
   function validateSession(sid) {
     if (!sid) return null;
-    const s = db.prepare("SELECT s.*, a.username, a.active FROM sessions s JOIN admins a ON a.id = s.admin_id WHERE s.id_hash = ?").get(sha(sid));
+    const s = db
+      .prepare(
+        "SELECT s.*, a.username, a.active FROM sessions s JOIN admins a ON a.id = s.admin_id WHERE s.id_hash = ?",
+      )
+      .get(sha(sid));
     const t = clock();
-    if (!s || s.revoked_at || !s.active || t > s.expires_at || t - s.last_seen > IDLE_MS) return null;
+    if (!s || s.revoked_at || !s.active || t > s.expires_at || t - s.last_seen > IDLE_MS)
+      return null;
     db.prepare("UPDATE sessions SET last_seen = ? WHERE id_hash = ?").run(t, s.id_hash);
-    const principal = Object.freeze({ type: "admin", adminId: s.admin_id, username: s.username, csrf: s.csrf, sessionHash: s.id_hash, scopes: Object.freeze(["*"]) });
-    const idHash = s.id_hash, adminId = s.admin_id;
+    const principal = Object.freeze({
+      type: "admin",
+      adminId: s.admin_id,
+      username: s.username,
+      csrf: s.csrf,
+      sessionHash: s.id_hash,
+      scopes: Object.freeze(["*"]),
+    });
+    const idHash = s.id_hash,
+      adminId = s.admin_id;
     VERIFIED.set(principal, () => {
-      const r = db.prepare("SELECT s.revoked_at, s.expires_at, s.last_seen, a.active FROM sessions s JOIN admins a ON a.id = s.admin_id WHERE s.id_hash = ? AND s.admin_id = ?").get(idHash, adminId);
+      const r = db
+        .prepare(
+          "SELECT s.revoked_at, s.expires_at, s.last_seen, a.active FROM sessions s JOIN admins a ON a.id = s.admin_id WHERE s.id_hash = ? AND s.admin_id = ?",
+        )
+        .get(idHash, adminId);
       const now = clock();
-      return !!r && !r.revoked_at && !!r.active && now <= r.expires_at && now - r.last_seen <= IDLE_MS;
+      return (
+        !!r && !r.revoked_at && !!r.active && now <= r.expires_at && now - r.last_seen <= IDLE_MS
+      );
     });
     return principal;
   }
-  function revokeSession(sid) { db.prepare("UPDATE sessions SET revoked_at = ? WHERE id_hash = ? AND revoked_at IS NULL").run(clock(), sha(sid)); }
-  const listSessions = (adminId) => db.prepare("SELECT substr(id_hash,1,12) AS id, created_at, last_seen, expires_at, user_agent FROM sessions WHERE admin_id = ? AND revoked_at IS NULL AND expires_at > ? AND last_seen > ? ORDER BY last_seen DESC").all(adminId, clock(), clock() - IDLE_MS);
+  function revokeSession(sid) {
+    db.prepare("UPDATE sessions SET revoked_at = ? WHERE id_hash = ? AND revoked_at IS NULL").run(
+      clock(),
+      sha(sid),
+    );
+  }
+  const listSessions = (adminId) =>
+    db
+      .prepare(
+        "SELECT substr(id_hash,1,12) AS id, created_at, last_seen, expires_at, user_agent FROM sessions WHERE admin_id = ? AND revoked_at IS NULL AND expires_at > ? AND last_seen > ? ORDER BY last_seen DESC",
+      )
+      .all(adminId, clock(), clock() - IDLE_MS);
   function revokeSessionById(adminId, shortId) {
-    const r = db.prepare("UPDATE sessions SET revoked_at = ? WHERE admin_id = ? AND substr(id_hash,1,12) = ? AND revoked_at IS NULL").run(clock(), adminId, String(shortId));
+    const r = db
+      .prepare(
+        "UPDATE sessions SET revoked_at = ? WHERE admin_id = ? AND substr(id_hash,1,12) = ? AND revoked_at IS NULL",
+      )
+      .run(clock(), adminId, String(shortId));
     audit("auth.session_revoked", { admin: adminId });
     return { ok: r.changes > 0 };
   }
@@ -271,28 +412,50 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
   // ---------- service tokens (MCP / scripts) ----------
   function createServiceToken(actor, { name, scopes } = {}) {
     if (!isVerifiedAdmin(actor)) throw new AuthError(403, "admin_session_required");
-    if (!Array.isArray(scopes) || !scopes.length || scopes.some((s) => typeof s !== "string")) throw new AuthError(400, "invalid_scopes");
+    if (!Array.isArray(scopes) || !scopes.length || scopes.some((s) => typeof s !== "string"))
+      throw new AuthError(400, "invalid_scopes");
     if (scopes.includes("*")) throw new AuthError(400, "wildcard_scope_forbidden");
-    if (scopes.some((s) => ADMIN_ONLY.includes(s))) throw new AuthError(400, "admin_scope_forbidden");
+    if (scopes.some((s) => ADMIN_ONLY.includes(s)))
+      throw new AuthError(400, "admin_scope_forbidden");
     const list = [...new Set(scopes)];
     if (list.some((s) => !SCOPES.includes(s))) throw new AuthError(400, "unknown_scope");
     const token = randomToken("jst_");
     const id = randomUUID();
-    db.prepare("INSERT INTO service_tokens (id, name, token_hash, scopes, admin_id, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(id, String(name || "token").slice(0, 60), sha(token), list.join(" "), actor.adminId, clock());
+    db.prepare(
+      "INSERT INTO service_tokens (id, name, token_hash, scopes, admin_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(
+      id,
+      String(name || "token").slice(0, 60),
+      sha(token),
+      list.join(" "),
+      actor.adminId,
+      clock(),
+    );
     audit("auth.token_created", { by: actor.adminId, token: id, scopes: list });
     return { id, token, scopes: list }; // token shown once
   }
   function validateServiceToken(token) {
     if (!token || !String(token).startsWith("jst_")) return null;
-    const r = db.prepare("SELECT t.*, a.active FROM service_tokens t JOIN admins a ON a.id = t.admin_id WHERE token_hash = ?").get(sha(token));
+    const r = db
+      .prepare(
+        "SELECT t.*, a.active FROM service_tokens t JOIN admins a ON a.id = t.admin_id WHERE token_hash = ?",
+      )
+      .get(sha(token));
     if (!r || r.revoked_at || !r.active) return null;
     db.prepare("UPDATE service_tokens SET last_used = ? WHERE id = ?").run(clock(), r.id);
     return { type: "service", tokenId: r.id, adminId: r.admin_id, scopes: r.scopes.split(" ") };
   }
-  const listServiceTokens = () => db.prepare("SELECT id, name, scopes, admin_id, created_at, last_used FROM service_tokens WHERE revoked_at IS NULL ORDER BY created_at DESC").all();
+  const listServiceTokens = () =>
+    db
+      .prepare(
+        "SELECT id, name, scopes, admin_id, created_at, last_used FROM service_tokens WHERE revoked_at IS NULL ORDER BY created_at DESC",
+      )
+      .all();
   function revokeServiceToken(actor, id) {
-    db.prepare("UPDATE service_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL").run(clock(), id);
+    db.prepare("UPDATE service_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL").run(
+      clock(),
+      id,
+    );
     audit("auth.token_revoked", { by: actor.adminId, token: id });
     return { ok: true };
   }
@@ -300,21 +463,29 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
   // ---------- reauthentication (D_REC-3) ----------
   // Sensitive operations require a FRESH reauth bound to the session row, not a client flag.
   function reauth(principal, password) {
-    if (!principal?.sessionHash || !principal.adminId) throw new AuthError(403, "admin_session_required");
-    const me = db.prepare("SELECT password_hash FROM admins WHERE id = ? AND active = 1").get(principal.adminId);
+    if (!principal?.sessionHash || !principal.adminId)
+      throw new AuthError(403, "admin_session_required");
+    const me = db
+      .prepare("SELECT password_hash FROM admins WHERE id = ? AND active = 1")
+      .get(principal.adminId);
     if (!me || !verifyPassword(String(password || ""), me.password_hash)) {
       audit("auth.reauth_failed", { admin: principal.adminId, reason: "reauth_failed" });
       throw new AuthError(403, "reauth_failed");
     }
-    db.prepare("UPDATE sessions SET reauth_at = ? WHERE id_hash = ? AND revoked_at IS NULL").run(clock(), principal.sessionHash);
+    db.prepare("UPDATE sessions SET reauth_at = ? WHERE id_hash = ? AND revoked_at IS NULL").run(
+      clock(),
+      principal.sessionHash,
+    );
     audit("auth.reauth", { admin: principal.adminId });
     return { ok: true };
   }
   /** True only when THIS session was reauthenticated within maxMs (re-read from the DB). */
   function hasRecentReauth(principal, maxMs = REAUTH_MS) {
     if (!principal?.sessionHash) return false;
-    const r = db.prepare("SELECT reauth_at, revoked_at FROM sessions WHERE id_hash = ?").get(principal.sessionHash);
-    return !!r && !r.revoked_at && !!r.reauth_at && (clock() - r.reauth_at) <= maxMs;
+    const r = db
+      .prepare("SELECT reauth_at, revoked_at FROM sessions WHERE id_hash = ?")
+      .get(principal.sessionHash);
+    return !!r && !r.revoked_at && !!r.reauth_at && clock() - r.reauth_at <= maxMs;
   }
 
   // ---------- self-service password change (Fase G) ----------
@@ -324,22 +495,41 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
   // validateSession/VERIFIED e nunca voltam a valer. Nada de senha/hash em log ou auditoria.
   // Sem recuperação por e-mail, sem reset público, sem bypass.
   function changePassword(principal, { currentPassword, newPassword, confirmPassword } = {}) {
-    if (!isVerifiedAdmin(principal) || !principal.sessionHash) throw new AuthError(403, "admin_session_required");
-    if (typeof newPassword !== "string" || newPassword.length < MIN_PASSWORD || newPassword.length > 256) {
+    if (!isVerifiedAdmin(principal) || !principal.sessionHash)
+      throw new AuthError(403, "admin_session_required");
+    if (
+      typeof newPassword !== "string" ||
+      newPassword.length < MIN_PASSWORD ||
+      newPassword.length > 256
+    ) {
       audit("auth.password_change_denied", { admin: principal.adminId, reason: "weak_password" });
       throw new AuthError(400, "weak_password");
     }
-    if (typeof confirmPassword !== "string" || confirmPassword !== newPassword) throw new AuthError(400, "password_mismatch");
-    const acc = db.prepare("SELECT password_hash FROM admins WHERE id = ? AND active = 1").get(principal.adminId);
-    if (!acc || typeof currentPassword !== "string" || !verifyPassword(currentPassword, acc.password_hash)) {
+    if (typeof confirmPassword !== "string" || confirmPassword !== newPassword)
+      throw new AuthError(400, "password_mismatch");
+    const acc = db
+      .prepare("SELECT password_hash FROM admins WHERE id = ? AND active = 1")
+      .get(principal.adminId);
+    if (
+      !acc ||
+      typeof currentPassword !== "string" ||
+      !verifyPassword(currentPassword, acc.password_hash)
+    ) {
       audit("auth.password_change_denied", { admin: principal.adminId, reason: "reauth_failed" });
       throw new AuthError(403, "reauth_failed");
     }
     db.exec("BEGIN IMMEDIATE");
     let revoked;
     try {
-      db.prepare("UPDATE admins SET password_hash = ? WHERE id = ? AND active = 1").run(hashPassword(newPassword), principal.adminId);
-      revoked = db.prepare("UPDATE sessions SET revoked_at = ? WHERE admin_id = ? AND id_hash != ? AND revoked_at IS NULL").run(clock(), principal.adminId, principal.sessionHash).changes;
+      db.prepare("UPDATE admins SET password_hash = ? WHERE id = ? AND active = 1").run(
+        hashPassword(newPassword),
+        principal.adminId,
+      );
+      revoked = db
+        .prepare(
+          "UPDATE sessions SET revoked_at = ? WHERE admin_id = ? AND id_hash != ? AND revoked_at IS NULL",
+        )
+        .run(clock(), principal.adminId, principal.sessionHash).changes;
       db.exec("COMMIT");
     } catch (e) {
       db.exec("ROLLBACK");
@@ -350,10 +540,25 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
   }
 
   return {
-    ensureBootstrap, setupRequired, setupFirstAdmin, createAdmin, removeAdmin, listAdmins,
-    login, validateSession, revokeSession, listSessions, revokeSessionById, purgeAttempts,
-    createServiceToken, validateServiceToken, listServiceTokens, revokeServiceToken,
-    reauth, hasRecentReauth, changePassword,
+    ensureBootstrap,
+    setupRequired,
+    setupFirstAdmin,
+    createAdmin,
+    removeAdmin,
+    listAdmins,
+    login,
+    validateSession,
+    revokeSession,
+    listSessions,
+    revokeSessionById,
+    purgeAttempts,
+    createServiceToken,
+    validateServiceToken,
+    listServiceTokens,
+    revokeServiceToken,
+    reauth,
+    hasRecentReauth,
+    changePassword,
   };
 }
 
@@ -363,8 +568,10 @@ export function createAuth(db, { clock = () => Date.now(), dataDir, audit = () =
 // object with type "admin" / adminId / "*" gets nothing; an unverified "admin" gets nothing at all.
 // Non-admin principals (service tokens, bots, channels) get exactly their explicit scopes.
 export function can(principal, scope) {
-  if (!principal || typeof principal !== "object" || typeof scope !== "string" || !scope) return false;
-  if (!Array.isArray(principal.scopes) || principal.scopes.some((s) => typeof s !== "string")) return false;
+  if (!principal || typeof principal !== "object" || typeof scope !== "string" || !scope)
+    return false;
+  if (!Array.isArray(principal.scopes) || principal.scopes.some((s) => typeof s !== "string"))
+    return false;
   if (isVerifiedAdmin(principal)) return true;
   if (principal.type === "admin") return false; // claims admin but was not issued by a live session
   if (!["service", "bot", "channel"].includes(principal.type)) return false;

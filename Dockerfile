@@ -120,7 +120,7 @@ LABEL org.opencontainers.image.revision="$BUILD_COMMIT" \
 # Painel já construído.
 COPY --from=build /app/.output ./.output
 # Entrada do container + ponte de voz + helper de diagnóstico de saída dos componentes.
-COPY scripts/container-entrypoint.sh scripts/voice-adapter.mjs scripts/setup-global-skills.mjs ./scripts/
+COPY scripts/container-entrypoint.sh scripts/voice-adapter.mjs scripts/voice-adapter-core.mjs scripts/setup-global-skills.mjs ./scripts/
 # Skills vendorizadas (Markdown fixado por commit + manifesto/SHA256SUMS). Apenas conteúdo:
 # o entrypoint sincroniza no hub e nunca executa nada deste diretório.
 COPY skills/ ./skills/

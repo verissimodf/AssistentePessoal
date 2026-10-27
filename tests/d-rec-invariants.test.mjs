@@ -18,7 +18,8 @@ const PW = "senha-muito-forte-1";
 const ORIGIN = "http://localhost:8080";
 const SECRET = "CONTEUDO_PRIVADO_SONDA_42";
 let server, base;
-const A = {}, B = {};
+const A = {},
+  B = {};
 
 const req = (path, { method = "GET", body, s } = {}) =>
   fetch(base + path, {
@@ -35,7 +36,11 @@ async function login(u, target) {
   const r = await req("/api/auth/login", { method: "POST", body: { username: u, password: PW } });
   assert.equal(r.status, 200);
   const j = await r.json();
-  Object.assign(target, { cookie: r.headers.get("set-cookie").split(";")[0], csrf: j.csrf, id: j.admin.id });
+  Object.assign(target, {
+    cookie: r.headers.get("set-cookie").split(";")[0],
+    csrf: j.csrf,
+    id: j.admin.id,
+  });
 }
 
 let aAgentId, aMemId;
@@ -47,23 +52,64 @@ before(async () => {
   auth.setupFirstAdmin({ token: auth.ensureBootstrap().token, username: "ana", password: PW });
   await login("ana", A);
   // A owns an agent and a memory BEFORE a second admin exists.
-  aAgentId = (await json(await req("/api/agents", { method: "POST", body: { name: "da ana", provider: "ollama", tools: [] }, s: A }))).body.id;
-  aMemId = (await json(await req("/api/memories", { method: "POST", body: { content: `${SECRET} da ana`, tags: "p" }, s: A }))).body.id;
+  aAgentId = (
+    await json(
+      await req("/api/agents", {
+        method: "POST",
+        body: { name: "da ana", provider: "ollama", tools: [] },
+        s: A,
+      }),
+    )
+  ).body.id;
+  aMemId = (
+    await json(
+      await req("/api/memories", {
+        method: "POST",
+        body: { content: `${SECRET} da ana`, tags: "p" },
+        s: A,
+      }),
+    )
+  ).body.id;
   // Create a second admin — this must NOT transfer A's resources.
-  assert.equal((await req("/api/auth/admins", { method: "POST", body: { username: "bia", password: PW, currentPassword: PW }, s: A })).status, 200);
+  assert.equal(
+    (
+      await req("/api/auth/admins", {
+        method: "POST",
+        body: { username: "bia", password: PW, currentPassword: PW },
+        s: A,
+      })
+    ).status,
+    200,
+  );
   await login("bia", B);
   // Synthetic legacy (unowned) rows + a legacy settings block, as a pre-Phase-2 install would have.
-  db.prepare("INSERT INTO memories (id, content, tags, created_at) VALUES ('lmX', ?, 'legado', '2025-01-01')").run(SECRET);
-  db.prepare("INSERT INTO legacy_settings (id, data) VALUES (1, ?)").run(JSON.stringify({ providers: { openai: { apiKey: encrypt("sk-legado-secreto") } } }));
+  db.prepare(
+    "INSERT INTO memories (id, content, tags, created_at) VALUES ('lmX', ?, 'legado', '2025-01-01')",
+  ).run(SECRET);
+  db.prepare("INSERT INTO legacy_settings (id, data) VALUES (1, ?)").run(
+    JSON.stringify({ providers: { openai: { apiKey: encrypt("sk-legado-secreto") } } }),
+  );
 });
 after(() => server.close());
 
 test("D_REC: creating a new admin does not transfer existing resources", async () => {
   assert.equal(ownerOf("agent", aAgentId), A.id, "agent stays with A");
   assert.equal(ownerOf("memory", aMemId), A.id, "memory stays with A");
-  assert.equal((await json(await req("/api/agents", { s: B }))).body.some((x) => x.id === aAgentId), false, "B sees none of A's agents");
-  assert.equal((await json(await req("/api/memories", { s: B }))).body.some((x) => x.id === aMemId), false, "B sees none of A's memories");
-  assert.equal((await req(`/api/agents/${aAgentId}`, { method: "DELETE", s: B })).status, 404, "B cannot delete A's agent");
+  assert.equal(
+    (await json(await req("/api/agents", { s: B }))).body.some((x) => x.id === aAgentId),
+    false,
+    "B sees none of A's agents",
+  );
+  assert.equal(
+    (await json(await req("/api/memories", { s: B }))).body.some((x) => x.id === aMemId),
+    false,
+    "B sees none of A's memories",
+  );
+  assert.equal(
+    (await req(`/api/agents/${aAgentId}`, { method: "DELETE", s: B })).status,
+    404,
+    "B cannot delete A's agent",
+  );
 });
 
 test("D_REC: triage exposes metadata only — never content or secret values", async () => {
@@ -76,6 +122,11 @@ test("D_REC: triage exposes metadata only — never content or secret values", a
   assert.equal(JSON.stringify(inv).includes(SECRET), false, "no resource content");
   // Legacy settings expose key names/classification only, never values.
   assert.equal(inv.settings.present, true);
-  assert.equal(JSON.stringify(inv.settings).includes("sk-legado-secreto"), false, "no secret value");
-  for (const k of inv.settings.keys || []) assert.deepEqual(Object.keys(k).sort(), ["class", "key", "secret"], "key metadata only");
+  assert.equal(
+    JSON.stringify(inv.settings).includes("sk-legado-secreto"),
+    false,
+    "no secret value",
+  );
+  for (const k of inv.settings.keys || [])
+    assert.deepEqual(Object.keys(k).sort(), ["class", "key", "secret"], "key metadata only");
 });

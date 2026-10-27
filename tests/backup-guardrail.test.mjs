@@ -22,11 +22,13 @@ test("deploy/backup-data.sh está versionado com modo Git 100755", () => {
     // Sem git disponível (arquivo empacotado sem repositório): nada a verificar aqui.
     return;
   }
-  const row = out
-    .split("\n")
-    .find((l) => l.trim().endsWith("deploy/backup-data.sh"));
+  const row = out.split("\n").find((l) => l.trim().endsWith("deploy/backup-data.sh"));
   assert.ok(row, "backup-data.sh deve estar versionado");
-  assert.equal(row.trim().split(/\s+/)[0], "100755", "modo Git deve ser 100755 (sem isso o timer systemd falha com 203/EXEC)");
+  assert.equal(
+    row.trim().split(/\s+/)[0],
+    "100755",
+    "modo Git deve ser 100755 (sem isso o timer systemd falha com 203/EXEC)",
+  );
 });
 
 test("backup-data.sh é bash estrito", () => {

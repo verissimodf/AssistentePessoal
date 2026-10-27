@@ -52,7 +52,12 @@ const SIGN_SECRET = SECRET.replace(/^whsec_/, "");
 const sign = (id, ts, payload) =>
   `v1,${createHmac("sha256", Buffer.from(SIGN_SECRET, "base64")).update(`${id}.${ts}.${payload}`, "utf8").digest("base64")}`;
 const envelope = (id, ts, payload, extra = {}) => ({
-  headers: { "svix-id": id, "svix-timestamp": ts, "svix-signature": sign(id, ts, payload), ...extra },
+  headers: {
+    "svix-id": id,
+    "svix-timestamp": ts,
+    "svix-signature": sign(id, ts, payload),
+    ...extra,
+  },
 });
 const eventPayload = (inboxId = "kayra@agentmail.to", body = "corpo-que-NUNCA-pode-ir-ao-banco") =>
   JSON.stringify({
@@ -76,11 +81,16 @@ before(async () => {
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${server.address().port}`;
   auth.setupFirstAdmin({ token: auth.ensureBootstrap().token, username: "ana", password: PW });
-  const r = await req("/api/auth/login", { method: "POST", body: { username: "ana", password: PW } });
+  const r = await req("/api/auth/login", {
+    method: "POST",
+    body: { username: "ana", password: PW },
+  });
   const j = await r.json();
   S = { cookie: r.headers.get("set-cookie").split(";")[0], csrf: j.csrf };
   const me = await req("/api/auth/me", { cookie: S.cookie });
-  principal = (await me.json()).admin ? await (async () => auth.validateSession(S.cookie.split("=")[1]))() : null;
+  principal = (await me.json()).admin
+    ? await (async () => auth.validateSession(S.cookie.split("=")[1]))()
+    : null;
   assert.ok(principal, "sessão viva");
 });
 after(async () => {
@@ -90,32 +100,78 @@ after(async () => {
 
 const setAgentMail = (cfg = {}) =>
   updateSettings(
-    { integrations: { agentmail: { enabled: true, apiKey: "am_test_key", webhookSecret: SECRET, inboxId: "kayra@agentmail.to", ...cfg } } },
+    {
+      integrations: {
+        agentmail: {
+          enabled: true,
+          apiKey: "am_test_key",
+          webhookSecret: SECRET,
+          inboxId: "kayra@agentmail.to",
+          ...cfg,
+        },
+      },
+    },
     { adminId: principal.adminId, allowGlobal: true },
   );
 
 test("migração v13: tabela agentmail_events existe e o hook de rota raw é registrado", () => {
-  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agentmail_events'").get());
-  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agentmail_inboxes'").get());
+  assert.ok(
+    db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agentmail_events'").get(),
+  );
+  assert.ok(
+    db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agentmail_inboxes'").get(),
+  );
   const table = routeTable();
-  assert.ok(table.some((r) => r.pattern === "/api/integrations/agentmail/webhook" && r.access === "public"));
-  assert.ok(table.some((r) => r.pattern === "/api/integrations/agentmail/status" && r.access === "session"));
+  assert.ok(
+    table.some((r) => r.pattern === "/api/integrations/agentmail/webhook" && r.access === "public"),
+  );
+  assert.ok(
+    table.some((r) => r.pattern === "/api/integrations/agentmail/status" && r.access === "session"),
+  );
 });
 
 test("verifySvixSignature: matriz", () => {
   const payload = eventPayload();
   const ts = String(Math.floor(Date.now() / 1000));
   const good = envelope("msg_1", ts, payload);
-  assert.equal(verifySvixSignature(Buffer.from(payload), good.headers, SECRET), true, "assinatura válida");
-  assert.equal(verifySvixSignature(Buffer.from(payload + "x"), good.headers, SECRET), false, "corpo alterado");
-  assert.equal(verifySvixSignature(Buffer.from(payload), { ...good.headers, "svix-signature": "v1,zzz" }, SECRET), false, "assinatura lixo");
-  assert.equal(verifySvixSignature(Buffer.from(payload), good.headers, "whsec_chave_errada"), false, "segredo errado");
+  assert.equal(
+    verifySvixSignature(Buffer.from(payload), good.headers, SECRET),
+    true,
+    "assinatura válida",
+  );
+  assert.equal(
+    verifySvixSignature(Buffer.from(payload + "x"), good.headers, SECRET),
+    false,
+    "corpo alterado",
+  );
+  assert.equal(
+    verifySvixSignature(
+      Buffer.from(payload),
+      { ...good.headers, "svix-signature": "v1,zzz" },
+      SECRET,
+    ),
+    false,
+    "assinatura lixo",
+  );
+  assert.equal(
+    verifySvixSignature(Buffer.from(payload), good.headers, "whsec_chave_errada"),
+    false,
+    "segredo errado",
+  );
   const old = String(Math.floor(Date.now() / 1000) - 3600);
   const stale = envelope("msg_1", old, payload);
-  assert.equal(verifySvixSignature(Buffer.from(payload), stale.headers, SECRET), false, "timestamp atrasado");
+  assert.equal(
+    verifySvixSignature(Buffer.from(payload), stale.headers, SECRET),
+    false,
+    "timestamp atrasado",
+  );
   const future = String(Math.floor(Date.now() / 1000) + 3600);
   const early = envelope("msg_1", future, payload);
-  assert.equal(verifySvixSignature(Buffer.from(payload), early.headers, SECRET), false, "timestamp futuro");
+  assert.equal(
+    verifySvixSignature(Buffer.from(payload), early.headers, SECRET),
+    false,
+    "timestamp futuro",
+  );
   assert.equal(verifySvixSignature(Buffer.from(payload), {}, SECRET), false, "headers ausentes");
 });
 
@@ -160,10 +216,17 @@ test("webhook: assinatura inválida → 400; válida → 200 + metadados; corpo 
   assert.equal(row.message_id, "msg_test_1");
   assert.equal(row.subject, "Chegada de teste");
   assert.equal(row.event_type, "message.received");
-  const cols = db.prepare("PRAGMA table_info(agentmail_events)").all().map((c) => c.name);
+  const cols = db
+    .prepare("PRAGMA table_info(agentmail_events)")
+    .all()
+    .map((c) => c.name);
   const dump = JSON.stringify(row).toLowerCase();
   assert.equal(dump.includes("corpo-que-nunca"), false, "corpo do e-mail jamais no banco");
-  assert.equal(cols.some((c) => /body|text|content|html/i.test(c)), false, "nenhuma coluna de conteúdo");
+  assert.equal(
+    cols.some((c) => /body|text|content|html/i.test(c)),
+    false,
+    "nenhuma coluna de conteúdo",
+  );
 });
 
 test("webhook: dedupe pelo svix-id (retry do provider não reprocessa)", async () => {
@@ -176,7 +239,9 @@ test("webhook: dedupe pelo svix-id (retry do provider não reprocessa)", async (
   });
   assert.equal(r.status, 200);
   assert.equal((await r.json()).duplicated, true);
-  const n = db.prepare("SELECT COUNT(*) AS n FROM agentmail_events WHERE svix_id = 'msg_100'").get().n;
+  const n = db
+    .prepare("SELECT COUNT(*) AS n FROM agentmail_events WHERE svix_id = 'msg_100'")
+    .get().n;
   assert.equal(n, 1);
 });
 
@@ -186,7 +251,12 @@ test("inbox: reivindicação exige confirmação; eventos são visíveis só pel
   let r = await req(path, { method: "POST", body: {}, cookie: S.cookie, csrf: S.csrf });
   assert.equal(r.status, 400);
   assert.equal((await r.json()).error, "confirmation_required");
-  r = await req(path, { method: "POST", body: { confirm: "ASSUMIR" }, cookie: S.cookie, csrf: S.csrf });
+  r = await req(path, {
+    method: "POST",
+    body: { confirm: "ASSUMIR" },
+    cookie: S.cookie,
+    csrf: S.csrf,
+  });
   assert.equal(r.status, 200);
   assert.equal((await r.json()).alreadyOwned, false);
   assert.equal(ownerOf("agentmail_inbox", "kayra@agentmail.to"), principal.adminId);
@@ -219,9 +289,16 @@ test("ferramentas: escopos declarados; leitura exige integração habilitada", a
     listInboxes: async () => ({ count: 1, inboxes: [{ inbox_id: "kayra@agentmail.to" }] }),
     listMessages: async (inboxId, { limit }) => {
       calls.push({ inboxId, limit });
-      return { count: 1, messages: [
-        { timestamp: "2026-10-27T10:00:00Z", from: "Alguém <alguem@exemplo.test>", subject: "Assunto injetado" },
-      ] };
+      return {
+        count: 1,
+        messages: [
+          {
+            timestamp: "2026-10-27T10:00:00Z",
+            from: "Alguém <alguem@exemplo.test>",
+            subject: "Assunto injetado",
+          },
+        ],
+      };
     },
   }));
   const out2 = await callTool("agentmail_read_email", { limit: 5 }, ctx());
@@ -267,18 +344,36 @@ test("envio por agente: D9 — enfileira aprovação; resolveApproval envia com 
   assert.equal(sent[0].outgoing.subject, "Teste server-side");
 
   // Aprovação com config posterior diferente → denegada (fail-closed), nada enviado.
-  const outDeny = await callTool("agentmail_send_email", { to: "x@y.test", subject: "Porta", body: "b" }, ctx());
-  const pending = db.prepare("SELECT id FROM approvals WHERE status='pending' AND command LIKE '%x@y.test%'").get();
-  updateSettings({ integrations: { agentmail: { enabled: false } } }, { adminId: principal.adminId, allowGlobal: true });
+  const outDeny = await callTool(
+    "agentmail_send_email",
+    { to: "x@y.test", subject: "Porta", body: "b" },
+    ctx(),
+  );
+  const pending = db
+    .prepare("SELECT id FROM approvals WHERE status='pending' AND command LIKE '%x@y.test%'")
+    .get();
+  updateSettings(
+    { integrations: { agentmail: { enabled: false } } },
+    { adminId: principal.adminId, allowGlobal: true },
+  );
   const res2 = await resolveApproval(pending.id, true, principal);
   assert.equal(res2.status, "denied");
   assert.equal(sent.length, 1);
 
   setAgentMail();
-  const outInbox = await callTool("agentmail_send_email", { to: "x@y.test", subject: "Inbox", body: "b" }, ctx());
+  const outInbox = await callTool(
+    "agentmail_send_email",
+    { to: "x@y.test", subject: "Inbox", body: "b" },
+    ctx(),
+  );
   assert.match(outInbox, /Nada foi enviado/);
-  const pendingInbox = db.prepare("SELECT id FROM approvals WHERE status='pending' AND command LIKE '%x@y.test%'").get();
-  updateSettings({ integrations: { agentmail: { inboxId: "outra@agentmail.to" } } }, { adminId: principal.adminId, allowGlobal: true });
+  const pendingInbox = db
+    .prepare("SELECT id FROM approvals WHERE status='pending' AND command LIKE '%x@y.test%'")
+    .get();
+  updateSettings(
+    { integrations: { agentmail: { inboxId: "outra@agentmail.to" } } },
+    { adminId: principal.adminId, allowGlobal: true },
+  );
   const resInbox = await resolveApproval(pendingInbox.id, true, principal);
   assert.equal(resInbox.status, "denied");
   assert.equal(sent.length, 1, "troca da inbox invalida aprovação antiga");
@@ -287,7 +382,9 @@ test("envio por agente: D9 — enfileira aprovação; resolveApproval envia com 
 test("describeAgentMailSend/agentMailConfig: precedência settings > env; sem key desabilita", () => {
   const prev = process.env.AGENTMAIL_API_KEY;
   process.env.AGENTMAIL_API_KEY = "am_do_ambiente";
-  const cfg = agentMailConfig(process.env, { integrations: { agentmail: { enabled: true, apiKey: "am_do_settings" } } });
+  const cfg = agentMailConfig(process.env, {
+    integrations: { agentmail: { enabled: true, apiKey: "am_do_settings" } },
+  });
   assert.equal(cfg.apiKey, "am_do_settings");
   const envcfg = agentMailConfig(process.env, { integrations: { agentmail: { enabled: true } } });
   assert.equal(envcfg.apiKey, "am_do_ambiente");

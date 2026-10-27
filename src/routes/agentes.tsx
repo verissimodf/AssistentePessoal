@@ -78,7 +78,10 @@ export function getOriginBadge(skill: SkillSummary): { label: string; className:
     return { label: "gsap", className: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" };
   }
   if (cat.includes("design-dna") || id.includes("design-dna")) {
-    return { label: "design-dna", className: "bg-purple-500/20 text-purple-400 border-purple-500/30" };
+    return {
+      label: "design-dna",
+      className: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    };
   }
   if (
     cat.includes("google") ||
@@ -94,7 +97,10 @@ export function getOriginBadge(skill: SkillSummary): { label: string; className:
   if (cat.includes("agent-skills") || skill.tags?.includes("addyosmani")) {
     return { label: "addyosmani", className: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30" };
   }
-  return { label: skill.category || "comunidade", className: "bg-muted text-muted-foreground border-border" };
+  return {
+    label: skill.category || "comunidade",
+    className: "bg-muted text-muted-foreground border-border",
+  };
 }
 
 export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = {}) {
@@ -130,7 +136,7 @@ export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = 
       },
     },
     null,
-    2
+    2,
   );
 
   const handleCopyMcp = async () => {
@@ -247,7 +253,10 @@ export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = 
         <TabsContent value="skills" className="space-y-6 focus-visible:outline-none">
           {/* Card de Status do Multi-Provider Router */}
           {routerStatus && (
-            <div data-testid="card-router-status" className="hud-panel p-5 bg-gradient-to-r from-secondary/40 via-background to-secondary/20 border border-primary/20 space-y-4">
+            <div
+              data-testid="card-router-status"
+              className="hud-panel p-5 bg-gradient-to-r from-secondary/40 via-background to-secondary/20 border border-primary/20 space-y-4"
+            >
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
@@ -260,8 +269,8 @@ export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = 
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Cadeia autônoma de execução que redireciona automaticamente requisições se o provedor
-                    primário oscilar.
+                    Cadeia autônoma de execução que redireciona automaticamente requisições se o
+                    provedor primário oscilar.
                   </p>
                 </div>
 
@@ -294,7 +303,9 @@ export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = 
 
                   <div className="text-muted-foreground">
                     Agente ativo:{" "}
-                    <span className="font-semibold text-foreground">{routerStatus.activeAgent}</span>
+                    <span className="font-semibold text-foreground">
+                      {routerStatus.activeAgent}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -307,28 +318,48 @@ export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = 
                     <Cpu className="h-3.5 w-3.5 text-primary" />
                     Perfis Ativos:
                   </span>
-                  <Badge variant="outline" className="bg-cyan-500/10 text-cyan-400 border-cyan-500/30 gap-1 text-[11px]">
+                  <Badge
+                    variant="outline"
+                    className="bg-cyan-500/10 text-cyan-400 border-cyan-500/30 gap-1 text-[11px]"
+                  >
                     <span>Voz Tempo Real</span>
                     {routerStatus.telemetry?.profiles?.realtime_voice !== undefined && (
-                      <span className="opacity-70 font-mono">({routerStatus.telemetry.profiles.realtime_voice})</span>
+                      <span className="opacity-70 font-mono">
+                        ({routerStatus.telemetry.profiles.realtime_voice})
+                      </span>
                     )}
                   </Badge>
-                  <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/30 gap-1 text-[11px]">
+                  <Badge
+                    variant="outline"
+                    className="bg-purple-500/10 text-purple-400 border-purple-500/30 gap-1 text-[11px]"
+                  >
                     <span>Engenharia de Código</span>
                     {routerStatus.telemetry?.profiles?.code_engineering !== undefined && (
-                      <span className="opacity-70 font-mono">({routerStatus.telemetry.profiles.code_engineering})</span>
+                      <span className="opacity-70 font-mono">
+                        ({routerStatus.telemetry.profiles.code_engineering})
+                      </span>
                     )}
                   </Badge>
-                  <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30 gap-1 text-[11px]">
+                  <Badge
+                    variant="outline"
+                    className="bg-amber-500/10 text-amber-400 border-amber-500/30 gap-1 text-[11px]"
+                  >
                     <span>RAG Documental</span>
                     {routerStatus.telemetry?.profiles?.rag_knowledge !== undefined && (
-                      <span className="opacity-70 font-mono">({routerStatus.telemetry.profiles.rag_knowledge})</span>
+                      <span className="opacity-70 font-mono">
+                        ({routerStatus.telemetry.profiles.rag_knowledge})
+                      </span>
                     )}
                   </Badge>
-                  <Badge variant="outline" className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 gap-1 text-[11px]">
+                  <Badge
+                    variant="outline"
+                    className="bg-emerald-500/10 text-emerald-400 border-emerald-500/30 gap-1 text-[11px]"
+                  >
                     <span>Geral</span>
                     {routerStatus.telemetry?.profiles?.general !== undefined && (
-                      <span className="opacity-70 font-mono">({routerStatus.telemetry.profiles.general})</span>
+                      <span className="opacity-70 font-mono">
+                        ({routerStatus.telemetry.profiles.general})
+                      </span>
                     )}
                   </Badge>
                 </div>
@@ -357,7 +388,9 @@ export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = 
                     <span className="text-muted-foreground">Fallbacks:</span>
                     <span
                       className={`font-mono font-semibold ${
-                        (routerStatus.telemetry?.totalFallbacks ?? 0) > 0 ? "text-amber-400" : "text-emerald-400"
+                        (routerStatus.telemetry?.totalFallbacks ?? 0) > 0
+                          ? "text-amber-400"
+                          : "text-emerald-400"
                       }`}
                     >
                       {(routerStatus.telemetry?.totalFallbacks ?? 0) === 0
@@ -507,7 +540,8 @@ export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = 
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Integre o Claude Desktop, Claude Code, Goose, OpenCode ou IDEs diretamente à memória, RAG e ferramentas do J.A.R.V.I.S.
+                  Integre o Claude Desktop, Claude Code, Goose, OpenCode ou IDEs diretamente à
+                  memória, RAG e ferramentas do J.A.R.V.I.S.
                 </p>
               </div>
 
@@ -538,7 +572,9 @@ export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = 
               </pre>
             </div>
             <p className="mt-2 text-[11px] text-muted-foreground/80">
-              * Gere seu Service Token em <strong>Configurações → Segurança</strong> com os escopos mínimos necessários (<code>skills:read</code>, <code>documents:read</code>, <code>documents:write</code>, <code>memories:read</code>).
+              * Gere seu Service Token em <strong>Configurações → Segurança</strong> com os escopos
+              mínimos necessários (<code>skills:read</code>, <code>documents:read</code>,{" "}
+              <code>documents:write</code>, <code>memories:read</code>).
             </p>
           </div>
 
@@ -683,9 +719,7 @@ export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = 
           <DialogHeader className="space-y-1">
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />
-              <DialogTitle className="font-display text-lg">
-                {selectedSkill?.name}
-              </DialogTitle>
+              <DialogTitle className="font-display text-lg">{selectedSkill?.name}</DialogTitle>
             </div>
             <DialogDescription className="text-xs font-mono text-muted-foreground flex items-center gap-2">
               <span>ID: {selectedSkill?.id}</span>
@@ -715,12 +749,7 @@ export function AgentsPage({ defaultTab = "skills" }: { defaultTab?: string } = 
             </div>
 
             <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleCopy}
-                className="gap-1.5 text-xs"
-              >
+              <Button variant="outline" size="sm" onClick={handleCopy} className="gap-1.5 text-xs">
                 {copied ? (
                   <>
                     <Check className="h-3.5 w-3.5 text-emerald-400" />

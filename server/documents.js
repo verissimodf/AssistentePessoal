@@ -31,10 +31,18 @@ export const SUPPORTED = {
 const DOCS_DIR = join(DATA_DIR, "documents");
 
 export class DocError extends Error {
-  constructor(status, code) { super(code); this.status = status; this.code = code; }
+  constructor(status, code) {
+    super(code);
+    this.status = status;
+    this.code = code;
+  }
 }
 
-const dirFor = (adminId) => { const d = join(DOCS_DIR, String(adminId)); mkdirSync(d, { recursive: true }); return d; };
+const dirFor = (adminId) => {
+  const d = join(DOCS_DIR, String(adminId));
+  mkdirSync(d, { recursive: true });
+  return d;
+};
 
 // ============================================================================
 // PDF & DOCX Native Extractors (Zero external compilation / Zero native deps)
@@ -170,9 +178,10 @@ export function extractDocxText(buffer) {
 
       if (filename === "word/document.xml") {
         const compressedData = buffer.subarray(dataStart, dataStart + compSize);
-        documentXml = compMethod === 8
-          ? zlib.inflateRawSync(compressedData).toString("utf8")
-          : compressedData.toString("utf8");
+        documentXml =
+          compMethod === 8
+            ? zlib.inflateRawSync(compressedData).toString("utf8")
+            : compressedData.toString("utf8");
         break;
       }
 
@@ -202,9 +211,10 @@ export function extractDocxText(buffer) {
             const lExtraLen = buffer.readUInt16LE(localOffset + 28);
             const dataStart = localOffset + 30 + lFnLen + lExtraLen;
             const compressedData = buffer.subarray(dataStart, dataStart + compSize);
-            documentXml = compMethod === 8
-              ? zlib.inflateRawSync(compressedData).toString("utf8")
-              : compressedData.toString("utf8");
+            documentXml =
+              compMethod === 8
+                ? zlib.inflateRawSync(compressedData).toString("utf8")
+                : compressedData.toString("utf8");
             break;
           }
           cdPos += 46 + fnLen + extraLen + commentLen;
@@ -246,16 +256,23 @@ export function extractDocxText(buffer) {
 // Chunking Engine with Overlap and Natural Boundary Preservation
 // ============================================================================
 
-export function chunkDocumentText(text, { targetSize = CHUNK_TARGET_SIZE, overlap = CHUNK_OVERLAP, maxChunks = MAX_CHUNKS_PER_DOC } = {}) {
-  const clean = String(text || "").replace(/\r\n/g, "\n").trim();
+export function chunkDocumentText(
+  text,
+  { targetSize = CHUNK_TARGET_SIZE, overlap = CHUNK_OVERLAP, maxChunks = MAX_CHUNKS_PER_DOC } = {},
+) {
+  const clean = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .trim();
   if (!clean) return [];
 
   if (clean.length <= targetSize) {
-    return [{
-      chunk_index: 0,
-      content: clean,
-      token_estimate: Math.max(1, Math.ceil(clean.length / 4)),
-    }];
+    return [
+      {
+        chunk_index: 0,
+        content: clean,
+        token_estimate: Math.max(1, Math.ceil(clean.length / 4)),
+      },
+    ];
   }
 
   const rawParagraphs = clean.split(/\n{2,}/);
@@ -322,7 +339,8 @@ export function chunkDocumentText(text, { targetSize = CHUNK_TARGET_SIZE, overla
 // ============================================================================
 
 export function validateDocument({ name, mime, buffer }) {
-  if (typeof name !== "string" || !name.trim() || name.length > 200) throw new DocError(400, "invalid_name");
+  if (typeof name !== "string" || !name.trim() || name.length > 200)
+    throw new DocError(400, "invalid_name");
   if (typeof mime !== "string" || !SUPPORTED[mime]) throw new DocError(415, "unsupported_type");
   if (!buffer || buffer.length === 0) throw new DocError(400, "empty_document");
 
@@ -394,20 +412,34 @@ export async function saveDocument(ownerId, { name, mime, buffer }, { embedFn = 
   try {
     tx(() => {
       db.prepare(
-        "INSERT INTO documents (id, name, mime, size, path, content_text, created_at, chunk_count, rag_status) VALUES (?,?,?,?,?,?,?,?,?)"
+        "INSERT INTO documents (id, name, mime, size, path, content_text, created_at, chunk_count, rag_status) VALUES (?,?,?,?,?,?,?,?,?)",
       ).run(id, name.trim(), mime, buffer.length, path, text, at, chunks.length, ragStatus);
 
       assignNew("document", id, ownerId);
 
       const insChunk = db.prepare(
-        "INSERT INTO document_chunks (id, document_id, admin_id, chunk_index, content, token_estimate, embedding_json, embedding_model, created_at) VALUES (?,?,?,?,?,?,?,?,?)"
+        "INSERT INTO document_chunks (id, document_id, admin_id, chunk_index, content, token_estimate, embedding_json, embedding_model, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
       );
       for (const c of chunkRows) {
-        insChunk.run(c.id, c.document_id, c.admin_id, c.chunk_index, c.content, c.token_estimate, c.embedding_json, c.embedding_model, at);
+        insChunk.run(
+          c.id,
+          c.document_id,
+          c.admin_id,
+          c.chunk_index,
+          c.content,
+          c.token_estimate,
+          c.embedding_json,
+          c.embedding_model,
+          at,
+        );
       }
     });
   } catch (e) {
-    try { unlinkSync(path); } catch { /* best effort */ }
+    try {
+      unlinkSync(path);
+    } catch {
+      /* best effort */
+    }
     throw e;
   }
 
@@ -431,26 +463,42 @@ export const listDocuments = (ownerId) =>
 
 export function getDocument(ownerId, id) {
   if (!ownerId || !owns(ownerId, "document", id)) return null;
-  return db.prepare("SELECT id, name, mime, size, path, content_text, created_at, chunk_count, rag_status FROM documents WHERE id = ?").get(id) || null;
+  return (
+    db
+      .prepare(
+        "SELECT id, name, mime, size, path, content_text, created_at, chunk_count, rag_status FROM documents WHERE id = ?",
+      )
+      .get(id) || null
+  );
 }
 
 export function listDocumentChunks(ownerId, documentId) {
   if (!ownerId || !owns(ownerId, "document", documentId)) return [];
-  return db.prepare(
-    "SELECT id, document_id, chunk_index, content, token_estimate, (embedding_json IS NOT NULL) AS has_embedding, embedding_model, created_at FROM document_chunks WHERE document_id = ? AND admin_id = ? ORDER BY chunk_index ASC"
-  ).all(documentId, ownerId);
+  return db
+    .prepare(
+      "SELECT id, document_id, chunk_index, content, token_estimate, (embedding_json IS NOT NULL) AS has_embedding, embedding_model, created_at FROM document_chunks WHERE document_id = ? AND admin_id = ? ORDER BY chunk_index ASC",
+    )
+    .all(documentId, ownerId);
 }
 
 // ============================================================================
 // Hybrid Semantic & Lexical RAG Search
 // ============================================================================
 
-export async function searchDocuments(ownerId, query, limit = 10, { embedFn = embed, cosineFn = cosine } = {}) {
+export async function searchDocuments(
+  ownerId,
+  query,
+  limit = 10,
+  { embedFn = embed, cosineFn = cosine } = {},
+) {
   if (!ownerId) return [];
   const qClean = String(query || "").trim();
   if (!qClean) return [];
 
-  const words = qClean.toLowerCase().split(/\W+/).filter((w) => w.length > 2);
+  const words = qClean
+    .toLowerCase()
+    .split(/\W+/)
+    .filter((w) => w.length > 2);
 
   let queryEmbedding = null;
   let embeddingFailure = null;
@@ -464,20 +512,28 @@ export async function searchDocuments(ownerId, query, limit = 10, { embedFn = em
   }
 
   // Retrieve chunks scoped strictly to the owner admin
-  const chunks = db.prepare(`
+  const chunks = db
+    .prepare(
+      `
     SELECT c.id, c.document_id, c.chunk_index, c.content, c.embedding_json, c.embedding_model, d.name AS document_name
     FROM document_chunks c
     JOIN documents d ON d.id = c.document_id
     JOIN ownership o ON o.resource_type = 'document' AND o.resource_id = d.id AND o.owner_admin_id = ?
     WHERE c.admin_id = ?
-  `).all(ownerId, ownerId);
+  `,
+    )
+    .all(ownerId, ownerId);
 
   // Fallback to documents content_text if no chunks exist (e.g. legacy documents prior to v12)
   if (!chunks.length) {
-    const legacy = db.prepare(`
+    const legacy = db
+      .prepare(
+        `
       SELECT d.id, d.name, d.content_text FROM documents d
       JOIN ownership o ON o.resource_type = 'document' AND o.resource_id = d.id AND o.owner_admin_id = ?
-    `).all(ownerId);
+    `,
+      )
+      .all(ownerId);
 
     return legacy
       .map((r) => {
@@ -527,7 +583,7 @@ export async function searchDocuments(ownerId, query, limit = 10, { embedFn = em
 
     if (semanticScore !== null) {
       // Hybrid Formula: 70% Semantic + 30% Lexical
-      finalScore = (0.70 * semanticScore) + (0.30 * lexicalScore);
+      finalScore = 0.7 * semanticScore + 0.3 * lexicalScore;
       mode = lexicalScore > 0 ? "hybrid" : "semantic";
     } else {
       // Graceful fallback to 100% Lexical
@@ -545,16 +601,20 @@ export async function searchDocuments(ownerId, query, limit = 10, { embedFn = em
         chunk_index: c.chunk_index,
         score: Number(finalScore.toFixed(4)),
         search_mode: mode,
-        ...(mode === "lexical" ? { fallback_reason: embeddingFailure || (c.embedding_json ? "invalid_embedding" : "document_without_embedding") } : {}),
+        ...(mode === "lexical"
+          ? {
+              fallback_reason:
+                embeddingFailure ||
+                (c.embedding_json ? "invalid_embedding" : "document_without_embedding"),
+            }
+          : {}),
         snippet: c.content.slice(0, 300),
         content: c.content,
       });
     }
   }
 
-  return scored
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  return scored.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
 export function deleteDocument(ownerId, id) {
@@ -565,15 +625,25 @@ export function deleteDocument(ownerId, id) {
     db.prepare("DELETE FROM documents WHERE id = ?").run(id);
     dropOwnership("document", id);
   });
-  if (row?.path) { try { unlinkSync(row.path); } catch { /* already gone */ } }
+  if (row?.path) {
+    try {
+      unlinkSync(row.path);
+    } catch {
+      /* already gone */
+    }
+  }
   audit("document.deleted", { admin: ownerId, id });
   return { ok: true };
 }
 
 export const documentCount = (ownerId) =>
   ownerId
-    ? db.prepare(`SELECT COUNT(*) n FROM documents d
-        JOIN ownership o ON o.resource_type = 'document' AND o.resource_id = d.id AND o.owner_admin_id = ?`).get(ownerId).n
+    ? db
+        .prepare(
+          `SELECT COUNT(*) n FROM documents d
+        JOIN ownership o ON o.resource_type = 'document' AND o.resource_id = d.id AND o.owner_admin_id = ?`,
+        )
+        .get(ownerId).n
     : 0;
 
 /**
@@ -587,12 +657,20 @@ export async function reindexDocument(ownerId, id, { embedFn = embed } = {}) {
   const doc = db.prepare("SELECT id, name, rag_status FROM documents WHERE id = ?").get(id);
   if (!doc) return null;
 
-  const chunks = db.prepare(
-    "SELECT id, content, embedding_json FROM document_chunks WHERE document_id = ? AND admin_id = ? ORDER BY chunk_index ASC"
-  ).all(id, ownerId);
+  const chunks = db
+    .prepare(
+      "SELECT id, content, embedding_json FROM document_chunks WHERE document_id = ? AND admin_id = ? ORDER BY chunk_index ASC",
+    )
+    .all(id, ownerId);
 
   if (!chunks.length) {
-    return { ok: false, reason: "no_chunks_found", id, rag_status: doc.rag_status, vectorizedChunks: 0 };
+    return {
+      ok: false,
+      reason: "no_chunks_found",
+      id,
+      rag_status: doc.rag_status,
+      vectorizedChunks: 0,
+    };
   }
 
   let vectorizedCount = 0;
@@ -632,7 +710,7 @@ export async function reindexDocument(ownerId, id, { embedFn = embed } = {}) {
 
   tx(() => {
     const updChunk = db.prepare(
-      "UPDATE document_chunks SET embedding_json = ?, embedding_model = ? WHERE id = ?"
+      "UPDATE document_chunks SET embedding_json = ?, embedding_model = ? WHERE id = ?",
     );
     for (const u of updates) {
       updChunk.run(u.embedding_json, u.embedding_model, u.id);
@@ -659,14 +737,18 @@ export async function reindexPendingDocuments(adminId, { limit = 5, embedFn } = 
   if (!adminId) return { ok: false, reason: "unauthorized", processed: 0, upgraded: 0, ids: [] };
 
   const maxLimit = Math.max(1, Number(limit) || 5);
-  const pendingDocs = db.prepare(`
+  const pendingDocs = db
+    .prepare(
+      `
     SELECT d.id, d.name, d.rag_status
     FROM documents d
     JOIN ownership o ON o.resource_type = 'document' AND o.resource_id = d.id AND o.owner_admin_id = ?
     WHERE d.rag_status IN ('lexical_only', 'lexical')
     ORDER BY d.created_at ASC
     LIMIT ?
-  `).all(adminId, maxLimit);
+  `,
+    )
+    .all(adminId, maxLimit);
 
   if (!pendingDocs.length) {
     return { ok: true, processed: 0, upgraded: 0, ids: [] };
@@ -716,5 +798,3 @@ export async function reindexPendingDocuments(adminId, { limit = 5, embedFn } = 
     ids: upgradedIds,
   };
 }
-
-

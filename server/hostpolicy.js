@@ -1,10 +1,22 @@
 // Pure rules deciding whether a host command may run. Kept separate so it is unit-tested.
 const DANGEROUS = [
-  /\brm\s+-rf?\s+\/(\s|$)/i, /\bformat\s+[a-z]:/i, /\bmkfs\b/i, /\bdd\s+if=/i, /\bshutdown\b/i,
-  /\breboot\b/i, /:\(\)\s*\{\s*:\|:&\s*\};:/, /\bdel\s+\/[sq]/i, /\brd\s+\/s/i, /\bdiskpart\b/i,
+  /\brm\s+-rf?\s+\/(\s|$)/i,
+  /\bformat\s+[a-z]:/i,
+  /\bmkfs\b/i,
+  /\bdd\s+if=/i,
+  /\bshutdown\b/i,
+  /\breboot\b/i,
+  /:\(\)\s*\{\s*:\|:&\s*\};:/,
+  /\bdel\s+\/[sq]/i,
+  /\brd\s+\/s/i,
+  /\bdiskpart\b/i,
 ];
 
-export const parseAllowlist = (s = "") => s.split(",").map((x) => x.trim()).filter(Boolean);
+export const parseAllowlist = (s = "") =>
+  s
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
 
 export function isDangerous(cmd) {
   return DANGEROUS.some((r) => r.test(cmd));

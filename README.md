@@ -1,8 +1,8 @@
-# 🤖 AssistentePessoal (J.A.R.V.I.S.) — v1.9.0
+# 🤖 AssistentePessoal (J.A.R.V.I.S.) — v1.9.1
 
-[![Version](https://img.shields.io/badge/version-1.9.0-blue.svg?style=flat-square)](package.json)
+[![Version](https://img.shields.io/badge/version-1.9.1-blue.svg?style=flat-square)](package.json)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg?style=flat-square&logo=node.js)](https://nodejs.org/)
-[![Test Suite](https://img.shields.io/badge/tests-652%20backend%20%2B%20109%20frontend-success.svg?style=flat-square)](tests/)
+[![Test Suite](https://img.shields.io/badge/tests-657%20backend%20%2B%20109%20frontend-success.svg?style=flat-square)](tests/)
 [![Schema](https://img.shields.io/badge/schema-18-informational.svg?style=flat-square)](server/migrations.js)
 [![Privacy](https://img.shields.io/badge/privacy-local--first-blueviolet.svg?style=flat-square)](#-segurança-e-privacidade)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
@@ -12,9 +12,10 @@ memória, agentes e integrações com serviços da máquina. O desenho padrão �
 dados, banco, documentos, memórias e segredos ficam na máquina do operador; chamadas externas só
 acontecem quando o provedor/integração correspondente está configurado e habilitado.
 
-> **Release 1.9.0 implantada:** fila durável, retenção de memória, OAuth Gmail/Microsoft e STT local;
-> migrações v16–v18 aplicadas com backup verificado. OAuth com provedores reais depende de cadastro
-> e credenciais do operador. Evidências em [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
+> **Release 1.9.1:** integração TTS com o container `xtts-service` existente; a ponte local usa vozes
+> pré-cadastradas, encaminha amostras clonadas e não expõe erros internos do serviço. A versão 1.9.0
+> já entregou fila durável, retenção opt-in, OAuth PKCE e STT local. Evidências em
+> [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
 > Ver [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md) e
 > [`reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md`](reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md).
 
@@ -298,9 +299,9 @@ npm run build
 (cd skills/vendor/addyosmani-agent-skills && sha256sum -c SHA256SUMS)
 ```
 
-Última validação local registrada em 2026-10-27: backend **632/632**, frontend **109/109**,
-TypeScript sem erros e build Vite/Nitro de produção OK. O lint continua com dívida de formatação e
-algumas regras em arquivos existentes; evidência e status do container em
+Última validação local registrada em 2026-10-27: backend **657/657**, frontend **109/109**,
+TypeScript sem erros e build Vite/Nitro de produção OK. Os arquivos rastreados com violações Prettier
+foram formatados; veja as regras de lint restantes e o status do container em
 [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md).
 O CI do GitHub Actions executa Ubuntu, Windows e build/inicialização do container; o job Windows
 depende de `.gitattributes` para preservar LF nas skills.

@@ -1,11 +1,21 @@
 // Fase H — regras da lista de conversas na interface: qual conversa fica selecionada após
 // recarregar a página (regra pura, sem servidor) e formatação de datas da lista.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { formatConversationDate, getStoredActive, newClientMsgId, pickActiveConversation, storeActive } from "@/lib/conversations";
+import {
+  formatConversationDate,
+  getStoredActive,
+  newClientMsgId,
+  pickActiveConversation,
+  storeActive,
+} from "@/lib/conversations";
 import type { ConversationSummary } from "@/lib/bridge";
 
-const conv = (id: string, updated_at = "2026-01-01T10:00:00.000Z"): ConversationSummary =>
-  ({ id, title: `conversa ${id}`, created_at: updated_at, updated_at });
+const conv = (id: string, updated_at = "2026-01-01T10:00:00.000Z"): ConversationSummary => ({
+  id,
+  title: `conversa ${id}`,
+  created_at: updated_at,
+  updated_at,
+});
 
 describe("seleção da conversa após recarregar (regra adotada)", () => {
   beforeEach(() => localStorage.clear());
@@ -47,7 +57,9 @@ describe("data da lista de conversas", () => {
   it("hoje aparece como hora; datas antigas como dia/mês", () => {
     const today = new Date(Date.now() - 60_000).toISOString();
     expect(formatConversationDate(today, "pt")).toMatch(/\d{2}:\d{2}/);
-    expect(formatConversationDate("2020-03-05T12:00:00.000Z", "pt")).toMatch(/05[.\s]*(de\s*)?mar/i);
+    expect(formatConversationDate("2020-03-05T12:00:00.000Z", "pt")).toMatch(
+      /05[.\s]*(de\s*)?mar/i,
+    );
   });
 
   it("data inválida → string vazia (nunca texto quebrado na lista)", () => {

@@ -14,9 +14,11 @@ const dir = mkdtempSync(join(tmpdir(), "jarvis-verif-"));
 process.env.JARVIS_DATA_DIR = dir;
 process.env.JARVIS_NO_LISTEN = "1";
 
-const { auth, db, listEvidence, EVIDENCE_VERIFICATIONS, EVIDENCE_STATES } = await import("../server/db.js");
+const { auth, db, listEvidence, EVIDENCE_VERIFICATIONS, EVIDENCE_STATES } =
+  await import("../server/db.js");
 const { createApp } = await import("../server/index.js");
-const { callTool, resolveApproval, evidenceFor, classifyOutcome } = await import("../server/tools.js");
+const { callTool, resolveApproval, evidenceFor, classifyOutcome } =
+  await import("../server/tools.js");
 const { updateSettings, getSettings } = await import("../server/settings.js");
 const { sendMessage } = await import("../server/comms.js");
 
@@ -41,7 +43,11 @@ const ctx = () => ({ autonomy: "confirm", pending: [], principal: A.principal, c
 // provedor no globalThis.fetch e devolvem status sintéticos).
 const setHost = async (allowlist) => {
   globalThis.fetch = realFetch;
-  const r = await req("/api/settings", { method: "PUT", body: { host: { enabled: true, allowlist } }, s: A });
+  const r = await req("/api/settings", {
+    method: "PUT",
+    body: { host: { enabled: true, allowlist } },
+    s: A,
+  });
   assert.equal(r.status, 200, `PUT de settings falhou: ${r.status} ${await r.text()}`);
   const eff = getSettings(A.adminId).host;
   assert.equal(eff.enabled, true, `host efetivo não aplicado: ${JSON.stringify(eff)}`);
@@ -75,14 +81,22 @@ after(() => {
 
 // ---------- conjuntos fechados ----------
 test("EVIDENCE_VERIFICATIONS cobre verified/unverified/failed/unknown", () => {
-  for (const v of ["verified", "unverified", "failed", "unknown"]) assert.ok(EVIDENCE_VERIFICATIONS.has(v), v);
+  for (const v of ["verified", "unverified", "failed", "unknown"])
+    assert.ok(EVIDENCE_VERIFICATIONS.has(v), v);
   assert.ok(EVIDENCE_STATES.has("failed"));
 });
 
 // ---------- evidenceFor: semântica por operação ----------
 test("shell concluído → unverified/exit_code (exit 0 nunca prova o objetivo)", () => {
-  const ev = evidenceFor("run_command", { state: "completed", exitCode: 0, output: "ok" }, "confirmed");
-  assert.deepEqual([ev.state, ev.verification, ev.verifiedBy], ["completed", "unverified", "exit_code"]);
+  const ev = evidenceFor(
+    "run_command",
+    { state: "completed", exitCode: 0, output: "ok" },
+    "confirmed",
+  );
+  assert.deepEqual(
+    [ev.state, ev.verification, ev.verifiedBy],
+    ["completed", "unverified", "exit_code"],
+  );
 });
 
 test("shell com falha → failed/exit_code (evidência de falha da operação)", () => {
@@ -104,16 +118,27 @@ test("timeout/overflow → unknown (o efeito externo pode ter ocorrido)", () => 
 
 test("não executado (negado) → unknown/not_executed, nunca verificado", () => {
   const ev = evidenceFor("send_message", { output: "Negado pelo usuário." }, "denied");
-  assert.deepEqual([ev.state, ev.verification, ev.verifiedBy], ["denied", "unknown", "not_executed"]);
+  assert.deepEqual(
+    [ev.state, ev.verification, ev.verifiedBy],
+    ["denied", "unknown", "not_executed"],
+  );
 });
 
 test("verificador COMPROVADO (ok:true) → verified", () => {
-  const ev = evidenceFor("send_message", { output: "Enviado no Telegram.", verify: { verifier: "provider_message_id", ok: true } }, "confirmed");
+  const ev = evidenceFor(
+    "send_message",
+    { output: "Enviado no Telegram.", verify: { verifier: "provider_message_id", ok: true } },
+    "confirmed",
+  );
   assert.deepEqual([ev.verification, ev.verifiedBy], ["verified", "provider_message_id"]);
 });
 
 test("verificador INCOMPLETO (ok:false) → unverified, mesmo com 'sucesso' textual", () => {
-  const ev = evidenceFor("send_message", { output: "Enviado no Telegram.", verify: { verifier: "http_status", ok: false } }, "confirmed");
+  const ev = evidenceFor(
+    "send_message",
+    { output: "Enviado no Telegram.", verify: { verifier: "http_status", ok: false } },
+    "confirmed",
+  );
   assert.deepEqual([ev.verification, ev.verifiedBy], ["unverified", "http_status"]);
 });
 
@@ -123,13 +148,20 @@ test("sem verificador declarado → unverified/contract_text, NUNCA verified", (
 });
 
 test("resultado falho com verificador → failed", () => {
-  const ev = evidenceFor("send_message", { output: "Telegram 400", verify: { verifier: "http_status", ok: false } }, "failed");
+  const ev = evidenceFor(
+    "send_message",
+    { output: "Telegram 400", verify: { verifier: "http_status", ok: false } },
+    "failed",
+  );
   assert.deepEqual([ev.state, ev.verification], ["failed", "failed"]);
 });
 
 test("resultado indeterminado → unknown", () => {
   const ev = evidenceFor("send_message", { output: "?" }, "unknown");
-  assert.deepEqual([ev.state, ev.verification, ev.verifiedBy], ["unknown", "unknown", "contract_text"]);
+  assert.deepEqual(
+    [ev.state, ev.verification, ev.verifiedBy],
+    ["unknown", "unknown", "contract_text"],
+  );
 });
 
 // ---------- classifyOutcome: regressão dos contratos textuais ----------
@@ -137,20 +169,43 @@ test("classifyOutcome preserva os contratos documentados", () => {
   assert.equal(classifyOutcome("send_message", "Enviado no Telegram."), "confirmed");
   assert.equal(classifyOutcome("send_message", "Telegram 400: Bad Request"), "failed");
   assert.equal(classifyOutcome("send_message", "Canal signal desabilitado."), "denied");
-  assert.equal(classifyOutcome("openhands_task", "Tarefa enviada ao OpenHands (conversation_id: abc, status: running)."), "confirmed");
+  assert.equal(
+    classifyOutcome(
+      "openhands_task",
+      "Tarefa enviada ao OpenHands (conversation_id: abc, status: running).",
+    ),
+    "confirmed",
+  );
   assert.equal(classifyOutcome("rea_analyze", "Evidence: ev_x"), "confirmed");
-  assert.equal(classifyOutcome("rea_analyze", "REA terminou com exit 1 sem Evidence válida"), "failed");
+  assert.equal(
+    classifyOutcome("rea_analyze", "REA terminou com exit 1 sem Evidence válida"),
+    "failed",
+  );
 });
 
 // ---------- sendMessage: pós-condição real do provedor ----------
 const setTelegram = () =>
-  updateSettings({ comms: { telegram: { enabled: true, botToken: "tok-teste", chatId: "42" } } }, { adminId: A.adminId, allowGlobal: false });
+  updateSettings(
+    { comms: { telegram: { enabled: true, botToken: "tok-teste", chatId: "42" } } },
+    { adminId: A.adminId, allowGlobal: false },
+  );
 const setWhatsapp = () =>
-  updateSettings({ comms: { whatsapp: { enabled: true, token: "tok-wa", phoneNumberId: "p1", to: "5511999999999" } } }, { adminId: A.adminId, allowGlobal: false });
+  updateSettings(
+    {
+      comms: {
+        whatsapp: { enabled: true, token: "tok-wa", phoneNumberId: "p1", to: "5511999999999" },
+      },
+    },
+    { adminId: A.adminId, allowGlobal: false },
+  );
 
 test("telegram: 2xx com message_id → verificador comprovado", async () => {
   setTelegram();
-  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: { message_id: 777 } }) });
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ ok: true, result: { message_id: 777 } }),
+  });
   const r = await sendMessage(A.adminId, "telegram", "olá", undefined);
   assert.equal(r.output, "Enviado no Telegram.");
   assert.deepEqual(r.verify, { verifier: "provider_message_id", ok: true });
@@ -158,10 +213,22 @@ test("telegram: 2xx com message_id → verificador comprovado", async () => {
 
 test("telegram: 2xx SEM identificador (corpo vazio/malformado) → não comprovado", async () => {
   setTelegram();
-  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => "<html>200 OK</html>" });
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => "<html>200 OK</html>",
+  });
   const r = await sendMessage(A.adminId, "telegram", "olá", undefined);
-  assert.deepEqual(r.verify, { verifier: "http_status", ok: false }, "2xx isolado não prova aceitação");
-  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ ok: true }) });
+  assert.deepEqual(
+    r.verify,
+    { verifier: "http_status", ok: false },
+    "2xx isolado não prova aceitação",
+  );
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ ok: true }),
+  });
   const r2 = await sendMessage(A.adminId, "telegram", "olá", undefined);
   assert.deepEqual(r2.verify, { verifier: "http_status", ok: false });
 });
@@ -176,7 +243,11 @@ test("telegram: erro HTTP → sem verificador e mensagem de falha", async () => 
 
 test("whatsapp: 2xx com messages[0].id → comprovado; sem id → não comprovado", async () => {
   setWhatsapp();
-  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ messages: [{ id: "wamid.1" }] }) });
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ messages: [{ id: "wamid.1" }] }),
+  });
   const ok = await sendMessage(A.adminId, "whatsapp", "olá", undefined);
   assert.deepEqual(ok.verify, { verifier: "provider_message_id", ok: true });
   globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({}) });
@@ -210,7 +281,11 @@ test("integração: exit!=0 grava state=failed E verification=failed", async () 
 
 test("integração: envio comprovado pelo provedor grava verification=verified", async () => {
   setTelegram();
-  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ ok: true, result: { message_id: 9001 } }) });
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ ok: true, result: { message_id: 9001 } }),
+  });
   const c = ctx();
   await callTool("send_message", { channel: "telegram", text: "ping de verificação" }, c);
   const id = c.pending[0].id;
@@ -225,7 +300,11 @@ test("integração: envio comprovado pelo provedor grava verification=verified",
 });
 
 test("integração: 2xx SEM identificador fica unverified — nunca verified", async () => {
-  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ ok: true }) });
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () => JSON.stringify({ ok: true }),
+  });
   const c = ctx();
   await callTool("send_message", { channel: "telegram", text: "sem id" }, c);
   const id = c.pending[0].id;
@@ -250,8 +329,15 @@ test("integração: falha HTTP grava verification=failed e status error", async 
 test("ledger: nenhuma linha viola os conjuntos fechados", () => {
   const rows = db.prepare("SELECT verification, verified_by, state FROM execution_evidence").all();
   for (const r of rows) {
-    assert.ok(EVIDENCE_VERIFICATIONS.has(r.verification), `verification inválido: ${r.verification}`);
+    assert.ok(
+      EVIDENCE_VERIFICATIONS.has(r.verification),
+      `verification inválido: ${r.verification}`,
+    );
     assert.ok(EVIDENCE_STATES.has(r.state), `state inválido: ${r.state}`);
-    assert.match(String(r.verified_by), /^[a-zA-Z0-9_.:@-]{1,80}$/, `verifiedBy inválido: ${r.verified_by}`);
+    assert.match(
+      String(r.verified_by),
+      /^[a-zA-Z0-9_.:@-]{1,80}$/,
+      `verifiedBy inválido: ${r.verified_by}`,
+    );
   }
 });

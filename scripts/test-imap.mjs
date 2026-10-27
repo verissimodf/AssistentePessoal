@@ -7,7 +7,12 @@ import net from "node:net";
 
 const DEFAULT_HOSTS = {
   gmail: { imap: "imap.gmail.com", imapPort: 993, smtp: "smtp.gmail.com", smtpPort: 587 },
-  outlook: { imap: "outlook.office365.com", imapPort: 993, smtp: "outlook.office365.com", smtpPort: 587 },
+  outlook: {
+    imap: "outlook.office365.com",
+    imapPort: 993,
+    smtp: "outlook.office365.com",
+    smtpPort: 587,
+  },
 };
 
 function parseArgs() {
@@ -20,9 +25,11 @@ function parseArgs() {
     else if (arg === "--pass" && i + 1 < args.length) options.pass = args[++i];
     else if (arg === "--type" && i + 1 < args.length) options.type = args[++i];
     else if (arg === "--imap-host" && i + 1 < args.length) options.imapHost = args[++i];
-    else if (arg === "--imap-port" && i + 1 < args.length) options.imapPort = parseInt(args[++i], 10);
+    else if (arg === "--imap-port" && i + 1 < args.length)
+      options.imapPort = parseInt(args[++i], 10);
     else if (arg === "--smtp-host" && i + 1 < args.length) options.smtpHost = args[++i];
-    else if (arg === "--smtp-port" && i + 1 < args.length) options.smtpPort = parseInt(args[++i], 10);
+    else if (arg === "--smtp-port" && i + 1 < args.length)
+      options.smtpPort = parseInt(args[++i], 10);
     else if (arg === "--help" || arg === "-h") options.help = true;
   }
   return options;
@@ -65,14 +72,16 @@ console.log("=================================================");
 console.log(`Provedor : ${type}`);
 console.log(`IMAP     : ${hosts.imap}:${hosts.imapPort} (SSL/TLS)`);
 console.log(`SMTP     : ${hosts.smtp}:${hosts.smtpPort} (STARTTLS)`);
-console.log(`Usuário  : ${user ? user.replace(/(.).+(@.+)/, "$1***$2") : "[não informado - executando dry-run]"}`);
+console.log(
+  `Usuário  : ${user ? user.replace(/(.).+(@.+)/, "$1***$2") : "[não informado - executando dry-run]"}`,
+);
 console.log("-------------------------------------------------");
 
 async function checkDns(host) {
   process.stdout.write(`[DNS] Resolvendo ${host}... `);
   try {
     const addresses = await dns.lookup(host, { all: true });
-    console.log(`OK (${addresses.map(a => a.address).join(", ")})`);
+    console.log(`OK (${addresses.map((a) => a.address).join(", ")})`);
     return true;
   } catch (err) {
     console.log(`FALHA (${err.message})`);
@@ -104,11 +113,14 @@ async function checkTcp(host, port, timeoutMs = 5000) {
 async function checkTls(host, port, timeoutMs = 5000) {
   process.stdout.write(`[TLS] Handshake com ${host}:${port}... `);
   return new Promise((resolve) => {
-    const socket = tls.connect({ host, port, servername: host, rejectUnauthorized: true, timeout: timeoutMs }, () => {
-      console.log(`OK (Cifra: ${socket.getCipher()?.name}, Protocolo: ${socket.getProtocol()})`);
-      socket.destroy();
-      resolve(true);
-    });
+    const socket = tls.connect(
+      { host, port, servername: host, rejectUnauthorized: true, timeout: timeoutMs },
+      () => {
+        console.log(`OK (Cifra: ${socket.getCipher()?.name}, Protocolo: ${socket.getProtocol()})`);
+        socket.destroy();
+        resolve(true);
+      },
+    );
     socket.on("timeout", () => {
       console.log(`FALHA (Timeout de ${timeoutMs}ms)`);
       socket.destroy();
@@ -139,7 +151,9 @@ if (!imapTlsOk || !smtpTcpOk) {
 
 if (opts.dryRun || !user || !pass) {
   console.log("\n✅ Teste de infraestrutura e conectividade concluído com sucesso (dry-run).");
-  console.log("Para testar login real, forneça --user <email> e --pass <senha_app> ou preencha as variáveis de ambiente.");
+  console.log(
+    "Para testar login real, forneça --user <email> e --pass <senha_app> ou preencha as variáveis de ambiente.",
+  );
   process.exit(0);
 }
 
@@ -166,7 +180,9 @@ try {
   console.log(`OK (INBOX aberta, ${exists} mensagens encontradas)`);
 } catch (err) {
   console.log(`FALHA (${err.message})`);
-  console.error("Dica: no Gmail, use 'Senha de App' gerada em Minha Conta > Segurança > Verificação em duas etapas > Senhas de app.");
+  console.error(
+    "Dica: no Gmail, use 'Senha de App' gerada em Minha Conta > Segurança > Verificação em duas etapas > Senhas de app.",
+  );
   process.exit(1);
 }
 

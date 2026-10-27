@@ -1,6 +1,6 @@
 # Índice documental
 
-Atualizado em 2026-10-27 (candidato 1.9.0, schema 18). Documentos históricos permanecem identificados como tal.
+Atualizado em 2026-10-27 (release 1.9.1, schema 18). Documentos históricos permanecem identificados como tal.
 
 ## Comece por aqui
 

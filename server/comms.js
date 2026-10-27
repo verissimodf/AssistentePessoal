@@ -18,7 +18,11 @@ const HOSTS = {
 export function describeSend(adminId, channel, text) {
   if (!adminId) return { ok: false, reason: "Sem proprietário válido: canal bloqueado." };
   if (channel === "signal") {
-    return { ok: false, reason: "Canal signal desabilitado: requer execução estruturada e limitada (não usa shell livre)." };
+    return {
+      ok: false,
+      reason:
+        "Canal signal desabilitado: requer execução estruturada e limitada (não usa shell livre).",
+    };
   }
   const c = getSettings(adminId).comms?.[channel];
   if (!c?.enabled) return { ok: false, reason: `Canal ${channel} não habilitado.` };
@@ -31,7 +35,10 @@ export function describeSend(adminId, channel, text) {
 
 /** Impressão digital estável de (canal, destinatário, texto): prende a aprovação ao conteúdo. */
 export function sendFingerprint({ channel, destination, text }) {
-  return createHash("sha256").update(JSON.stringify([channel, destination, text])).digest("hex").slice(0, 32);
+  return createHash("sha256")
+    .update(JSON.stringify([channel, destination, text]))
+    .digest("hex")
+    .slice(0, 32);
 }
 
 /**
@@ -51,24 +58,45 @@ const providerAccepted = (id) =>
 export async function sendMessage(adminId, channel, text, expect) {
   const d = describeSend(adminId, channel, text);
   if (!d.ok) return { output: d.reason };
-  if (expect && sendFingerprint(d) !== expect) return { output: "Envio cancelado: o canal/destinatário mudou desde a aprovação." };
+  if (expect && sendFingerprint(d) !== expect)
+    return { output: "Envio cancelado: o canal/destinatário mudou desde a aprovação." };
   const c = getSettings(adminId).comms[channel];
   audit("send_message", { admin: adminId, channel });
   if (channel === "telegram") {
-    const r = await fetch(`https://api.telegram.org/bot${c.botToken}/sendMessage`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ chat_id: c.chatId, text }) });
+    const r = await fetch(`https://api.telegram.org/bot${c.botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: c.chatId, text }),
+    });
     const raw = await r.text();
     if (!r.ok) return { output: `Telegram ${r.status}: ${raw.slice(0, 500)}` };
-    let body = null; try { body = JSON.parse(raw); } catch { /* corpo malformado → sem comprovação */ }
+    let body = null;
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      /* corpo malformado → sem comprovação */
+    }
     return { output: "Enviado no Telegram.", verify: providerAccepted(body?.result?.message_id) };
   }
   if (channel === "whatsapp") {
     const r = await fetch(`https://graph.facebook.com/v21.0/${c.phoneNumberId}/messages`, {
-      method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${c.token}` },
-      body: JSON.stringify({ messaging_product: "whatsapp", to: c.to, type: "text", text: { body: text } }),
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${c.token}` },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: c.to,
+        type: "text",
+        text: { body: text },
+      }),
     });
     const raw = await r.text();
     if (!r.ok) return { output: `WhatsApp ${r.status}: ${raw.slice(0, 500)}` };
-    let body = null; try { body = JSON.parse(raw); } catch { /* corpo malformado → sem comprovação */ }
+    let body = null;
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      /* corpo malformado → sem comprovação */
+    }
     return { output: "Enviado no WhatsApp.", verify: providerAccepted(body?.messages?.[0]?.id) };
   }
   if (channel === "signal") {
@@ -83,7 +111,12 @@ export async function sendEmail(adminId, account, to, subject, body) {
   const c = getSettings(adminId).comms?.[account];
   if (!c?.enabled) return `Conta ${account} não habilitada.`;
   const nodemailer = (await import("nodemailer")).default;
-  const t = nodemailer.createTransport({ host: HOSTS[account].smtp, port: 587, secure: false, auth: { user: c.user, pass: c.appPassword } });
+  const t = nodemailer.createTransport({
+    host: HOSTS[account].smtp,
+    port: 587,
+    secure: false,
+    auth: { user: c.user, pass: c.appPassword },
+  });
   await t.sendMail({ from: c.user, to, subject, text: body });
   audit("send_email", { admin: adminId, account });
   return "E-mail enviado.";
@@ -94,16 +127,27 @@ export async function readInbox(adminId, account, limit = 10) {
   const c = getSettings(adminId).comms?.[account];
   if (!c?.enabled) return `Conta ${account} não habilitada.`;
   const { ImapFlow } = await import("imapflow");
-  const client = new ImapFlow({ host: HOSTS[account].imap, port: 993, secure: true, auth: { user: c.user, pass: c.appPassword }, logger: false });
+  const client = new ImapFlow({
+    host: HOSTS[account].imap,
+    port: 993,
+    secure: true,
+    auth: { user: c.user, pass: c.appPassword },
+    logger: false,
+  });
   await client.connect();
   const lock = await client.getMailboxLock("INBOX");
   const out = [];
   try {
     const total = client.mailbox.exists;
     for await (const m of client.fetch(`${Math.max(1, total - limit + 1)}:*`, { envelope: true })) {
-      out.push(`- ${m.envelope.date?.toISOString?.().slice(0, 16)} | ${m.envelope.from?.[0]?.address} | ${m.envelope.subject}`);
+      out.push(
+        `- ${m.envelope.date?.toISOString?.().slice(0, 16)} | ${m.envelope.from?.[0]?.address} | ${m.envelope.subject}`,
+      );
     }
-  } finally { lock.release(); await client.logout(); }
+  } finally {
+    lock.release();
+    await client.logout();
+  }
   return out.reverse().join("\n") || "Caixa vazia.";
 }
 
@@ -122,10 +166,21 @@ export async function readCalendar(adminId, days = 7) {
     const get = (k) => block.match(new RegExp(`${k}[^:]*:(.*)`))?.[1]?.trim();
     const start = get("DTSTART");
     if (!start) continue;
-    const d = new Date(start.replace(/^(\d{4})(\d{2})(\d{2})(T(\d{2})(\d{2})(\d{2}))?Z?$/, (_, y, m, dd, _t, h = "00", mi = "00") => `${y}-${m}-${dd}T${h}:${mi}:00`));
-    if (d >= new Date() && d <= new Date(Date.now() + days * 864e5)) events.push({ d, s: get("SUMMARY") });
+    const d = new Date(
+      start.replace(
+        /^(\d{4})(\d{2})(\d{2})(T(\d{2})(\d{2})(\d{2}))?Z?$/,
+        (_, y, m, dd, _t, h = "00", mi = "00") => `${y}-${m}-${dd}T${h}:${mi}:00`,
+      ),
+    );
+    if (d >= new Date() && d <= new Date(Date.now() + days * 864e5))
+      events.push({ d, s: get("SUMMARY") });
   }
-  return events.sort((a, b) => a.d - b.d).map((e) => `- ${e.d.toLocaleString()} — ${e.s}`).join("\n") || "Sem eventos nos próximos dias.";
+  return (
+    events
+      .sort((a, b) => a.d - b.d)
+      .map((e) => `- ${e.d.toLocaleString()} — ${e.s}`)
+      .join("\n") || "Sem eventos nos próximos dias."
+  );
 }
 
 /**
@@ -140,13 +195,18 @@ export function startTelegramPolling(onMessage, listAdmins) {
       const c = getSettings(adminId).comms?.telegram;
       if (!c?.enabled || !c.botToken) continue;
       try {
-        const r = await fetch(`https://api.telegram.org/bot${c.botToken}/getUpdates?timeout=5&offset=${offsets.get(adminId) || 0}`);
+        const r = await fetch(
+          `https://api.telegram.org/bot${c.botToken}/getUpdates?timeout=5&offset=${offsets.get(adminId) || 0}`,
+        );
         const j = await r.json();
         for (const u of j.result || []) {
           offsets.set(adminId, u.update_id + 1);
-          if (u.message?.text && String(u.message.chat.id) === String(c.chatId)) await onMessage(adminId, "telegram", u.message.text);
+          if (u.message?.text && String(u.message.chat.id) === String(c.chatId))
+            await onMessage(adminId, "telegram", u.message.text);
         }
-      } catch { /* network hiccup */ }
+      } catch {
+        /* network hiccup */
+      }
     }
     setTimeout(tick, 3000);
   };

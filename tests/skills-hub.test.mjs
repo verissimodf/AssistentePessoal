@@ -21,7 +21,11 @@ function parseFrontmatterYaml(fm) {
       currentKey = match[1];
       let val = match[2].trim();
       if (val.startsWith("[") && val.endsWith("]")) {
-        result[currentKey] = val.slice(1, -1).split(",").map(s => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+        result[currentKey] = val
+          .slice(1, -1)
+          .split(",")
+          .map((s) => s.trim().replace(/^["']|["']$/g, ""))
+          .filter(Boolean);
       } else {
         result[currentKey] = val.replace(/^["']|["']$/g, "");
       }
@@ -37,17 +41,58 @@ process.env.JARVIS_DATA_DIR = GLOBAL_DATA_DIR;
 process.env.JARVIS_NO_LISTEN = "1";
 mkdirSync(join(GLOBAL_SKILLS_FIXTURE, "skills", "threejs-expert"), { recursive: true });
 mkdirSync(join(GLOBAL_SKILLS_FIXTURE, "skills", "gsap-motion"), { recursive: true });
-writeFileSync(join(GLOBAL_SKILLS_FIXTURE, "skills", "threejs-expert", "SKILL.md"), "---\nname: Three.js 3D Expert\ndescription: Criação de cenas 3D e shaders WebGL\ntags: [threejs, webgl, 3d]\n---\n# Three.js Expert\nDiretrizes de Three.js...", "utf8");
-writeFileSync(join(GLOBAL_SKILLS_FIXTURE, "skills", "gsap-motion", "SKILL.md"), "---\nname: GSAP Animation\ndescription: Animações com ScrollTrigger e timelines\ntags: [gsap, motion, animation]\n---\n# GSAP Motion\nDiretrizes de animação GSAP...", "utf8");
-writeFileSync(join(GLOBAL_SKILLS_FIXTURE, "catalog.json"), JSON.stringify({ version: "1.2.0", totalSkills: 2, skills: [
-  { id: "threejs-expert", name: "Three.js 3D Expert", description: "Criação de cenas 3D e shaders WebGL", tags: ["threejs", "webgl", "3d"], path: "skills/threejs-expert/SKILL.md", category: "graphics" },
-  { id: "gsap-motion", name: "GSAP Animation", description: "Animações com ScrollTrigger e timelines", tags: ["gsap", "motion", "animation"], path: "skills/gsap-motion/SKILL.md", category: "motion" }
-]}), "utf8");
+writeFileSync(
+  join(GLOBAL_SKILLS_FIXTURE, "skills", "threejs-expert", "SKILL.md"),
+  "---\nname: Three.js 3D Expert\ndescription: Criação de cenas 3D e shaders WebGL\ntags: [threejs, webgl, 3d]\n---\n# Three.js Expert\nDiretrizes de Three.js...",
+  "utf8",
+);
+writeFileSync(
+  join(GLOBAL_SKILLS_FIXTURE, "skills", "gsap-motion", "SKILL.md"),
+  "---\nname: GSAP Animation\ndescription: Animações com ScrollTrigger e timelines\ntags: [gsap, motion, animation]\n---\n# GSAP Motion\nDiretrizes de animação GSAP...",
+  "utf8",
+);
+writeFileSync(
+  join(GLOBAL_SKILLS_FIXTURE, "catalog.json"),
+  JSON.stringify({
+    version: "1.2.0",
+    totalSkills: 2,
+    skills: [
+      {
+        id: "threejs-expert",
+        name: "Three.js 3D Expert",
+        description: "Criação de cenas 3D e shaders WebGL",
+        tags: ["threejs", "webgl", "3d"],
+        path: "skills/threejs-expert/SKILL.md",
+        category: "graphics",
+      },
+      {
+        id: "gsap-motion",
+        name: "GSAP Animation",
+        description: "Animações com ScrollTrigger e timelines",
+        tags: ["gsap", "motion", "animation"],
+        path: "skills/gsap-motion/SKILL.md",
+        category: "motion",
+      },
+    ],
+  }),
+  "utf8",
+);
 
 const {
-  listSkills, matchSkillsForPrompt, loadSkill, assertSafePath, getCatalog, GLOBAL_SKILLS_DIR,
-  sanitizeSkillFrontmatter, getRouterStatus, classifyTaskIntent, ROUTING_PROFILES,
-  recordProviderMetric, recordVoiceMetric, getProviderTelemetry, resetProviderTelemetry,
+  listSkills,
+  matchSkillsForPrompt,
+  loadSkill,
+  assertSafePath,
+  getCatalog,
+  GLOBAL_SKILLS_DIR,
+  sanitizeSkillFrontmatter,
+  getRouterStatus,
+  classifyTaskIntent,
+  ROUTING_PROFILES,
+  recordProviderMetric,
+  recordVoiceMetric,
+  getProviderTelemetry,
+  resetProviderTelemetry,
 } = await import("../server/skills.js");
 const { routeTable, createApp } = await import("../server/index.js");
 const { AuthError, TOOL_SCOPES } = await import("../server/auth.js");
@@ -55,7 +100,6 @@ const { callTool, TOOL_DEFS } = await import("../server/tools.js");
 const { runAgent } = await import("../server/llm.js");
 const { db, auth } = await import("../server/db.js");
 const { updateSettings } = await import("../server/settings.js");
-
 
 // Cria fixture temporária isolada para testes herméticos
 function createTempSkillsHub() {
@@ -71,7 +115,7 @@ function createTempSkillsHub() {
   writeFileSync(
     join(threeDir, "SKILL.md"),
     "---\nname: Three.js 3D Expert\ndescription: Criação de cenas 3D e shaders WebGL\ntags: [threejs, webgl, 3d]\n---\n# Three.js Expert\n\nDiretrizes de Three.js...",
-    "utf8"
+    "utf8",
   );
 
   // Cria skill 2: gsap
@@ -80,7 +124,7 @@ function createTempSkillsHub() {
   writeFileSync(
     join(gsapDir, "SKILL.md"),
     "---\nname: GSAP Animation\ndescription: Animações de alto desempenho com ScrollTrigger e timelines\ntags: [gsap, motion, animation]\n---\n# GSAP Motion\n\nDiretrizes de animação GSAP...",
-    "utf8"
+    "utf8",
   );
 
   // Cria catalog.json
@@ -142,11 +186,19 @@ test("skills hub: listSkills lista e filtra por categoria e tag", () => {
 test("skills hub: matchSkillsForPrompt pontua e ranqueia relevância", () => {
   const { tmpDir, cleanup } = createTempSkillsHub();
   try {
-    const matches3D = matchSkillsForPrompt("Como renderizar um cubo 3D usando webgl e shaders?", 5, tmpDir);
+    const matches3D = matchSkillsForPrompt(
+      "Como renderizar um cubo 3D usando webgl e shaders?",
+      5,
+      tmpDir,
+    );
     assert.ok(matches3D.length > 0);
     assert.equal(matches3D[0].id, "threejs-expert");
 
-    const matchesMotion = matchSkillsForPrompt("Crie uma timeline suave com gsap para meu menu", 5, tmpDir);
+    const matchesMotion = matchSkillsForPrompt(
+      "Crie uma timeline suave com gsap para meu menu",
+      5,
+      tmpDir,
+    );
     assert.ok(matchesMotion.length > 0);
     assert.equal(matchesMotion[0].id, "gsap-motion");
 
@@ -161,16 +213,28 @@ test("segurança: assertSafePath bloqueia tentativas de Path Traversal", () => {
   const { tmpDir, cleanup } = createTempSkillsHub();
   try {
     // Tentativa relativa com ..
-    assert.throws(() => assertSafePath("../../../windows/win.ini", tmpDir), /path_traversal_detected/);
+    assert.throws(
+      () => assertSafePath("../../../windows/win.ini", tmpDir),
+      /path_traversal_detected/,
+    );
     assert.throws(() => assertSafePath("..\\..\\etc\\passwd", tmpDir), /path_traversal_detected/);
 
     // Tentativa com bytes NUL
-    assert.throws(() => assertSafePath("skills/threejs\0/secret.txt", tmpDir), /path_traversal_detected/);
+    assert.throws(
+      () => assertSafePath("skills/threejs\0/secret.txt", tmpDir),
+      /path_traversal_detected/,
+    );
 
     // Absolute paths must be rejected consistently on Linux and Windows.
     assert.throws(() => assertSafePath("/etc/shadow", tmpDir), /path_traversal_detected/);
-    assert.throws(() => assertSafePath("C:/Windows/System32/calc.exe", tmpDir), /path_traversal_detected/);
-    assert.throws(() => assertSafePath("//server/share/secret.txt", tmpDir), /path_traversal_detected/);
+    assert.throws(
+      () => assertSafePath("C:/Windows/System32/calc.exe", tmpDir),
+      /path_traversal_detected/,
+    );
+    assert.throws(
+      () => assertSafePath("//server/share/secret.txt", tmpDir),
+      /path_traversal_detected/,
+    );
 
     // Caminho seguro dentro da base
     const safe = assertSafePath("skills/threejs-expert/SKILL.md", tmpDir);
@@ -205,7 +269,11 @@ test("ferramenta load_skill: integração com callTool e auditoria", async () =>
   assert.ok(notFound.includes("não encontrada no Hub Global"));
 
   const traversal = await callTool("load_skill", { skill: "../../../../etc/passwd" }, ctx);
-  assert.ok(traversal.includes("Erro de segurança: tentativa de acesso fora do diretório de skills bloqueada."));
+  assert.ok(
+    traversal.includes(
+      "Erro de segurança: tentativa de acesso fora do diretório de skills bloqueada.",
+    ),
+  );
 });
 
 test("resiliência multi-provider: runAgent realiza fallback transparente e audita eventos", async (t) => {
@@ -219,7 +287,9 @@ test("resiliência multi-provider: runAgent realiza fallback transparente e audi
       chatAttempts++;
       // Simula falha no provedor primário (ex.: erro de rede/timeout/503)
       if (chatAttempts === 1) {
-        throw new Error("Falha temporária de conexão com o provedor primário (503 Service Unavailable)");
+        throw new Error(
+          "Falha temporária de conexão com o provedor primário (503 Service Unavailable)",
+        );
       }
       // Provedor secundário / fallback responde com sucesso
       return {
@@ -250,25 +320,37 @@ test("resiliência multi-provider: runAgent realiza fallback transparente e audi
       adminId = "admin-fb-" + Date.now();
       const uniqueUser = "fb_admin_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6);
       db.prepare(
-        "INSERT INTO admins (id, username, password_hash, created_at, active) VALUES (?,?,?,?,1)"
+        "INSERT INTO admins (id, username, password_hash, created_at, active) VALUES (?,?,?,?,1)",
       ).run(adminId, uniqueUser, "hash", new Date().toISOString());
     }
 
     const principal = { type: "bot", adminId, scopes: ["chat", "web", "memories:read"] };
-    updateSettings({ providers: { openai: { enabled: true, apiKey: "sk-mock-key" } } }, { adminId });
+    updateSettings(
+      { providers: { openai: { enabled: true, apiKey: "sk-mock-key" } } },
+      { adminId },
+    );
     const res = await runAgent({
       messages: [{ role: "user", content: "Olá Jarvis" }],
       principal,
       maxSteps: 2,
     });
 
-    assert.ok(chatAttempts >= 2, "Deveria ter tentado o primário e realizado fallback para o secundário");
+    assert.ok(
+      chatAttempts >= 2,
+      "Deveria ter tentado o primário e realizado fallback para o secundário",
+    );
     assert.equal(res.reply, "Resposta entregue com sucesso pelo provedor secundário de fallback.");
 
     // Verifica que os eventos de telemetria/auditoria foram gravados no banco
     const events = db.prepare("SELECT kind FROM audit WHERE kind LIKE 'provider_fallback%'").all();
-    assert.ok(events.some((e) => e.kind === "provider_fallback_attempt"), "Deve registrar tentativa de fallback");
-    assert.ok(events.some((e) => e.kind === "provider_fallback_success"), "Deve registrar sucesso do fallback");
+    assert.ok(
+      events.some((e) => e.kind === "provider_fallback_attempt"),
+      "Deve registrar tentativa de fallback",
+    );
+    assert.ok(
+      events.some((e) => e.kind === "provider_fallback_success"),
+      "Deve registrar sucesso do fallback",
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -289,7 +371,10 @@ Instruções aqui...`;
   const fm1 = sanitized1.split(/---\r?\n/)[1];
   const parsed1 = parseFrontmatterYaml(fm1);
   assert.equal(parsed1.name, "google-ads-api-account-diagnostics");
-  assert.equal(parsed1.description, "Diagnostic tool for account: issues, recommendations and metrics");
+  assert.equal(
+    parsed1.description,
+    "Diagnostic tool for account: issues, recommendations and metrics",
+  );
   assert.equal(parsed1.compatibility, "Google Ads MCP Server (tools: search, list)");
 
   // Caso 2: Linha de continuação em escalar plain com dois pontos
@@ -333,7 +418,12 @@ test("multi-provider router: getRouterStatus reporta primário e contingências 
   assert.equal(typeof status.totalProviders, "number");
   assert.equal(status.resilientFallbackEnabled, true);
   assert.ok(Array.isArray(status.profiles), "Deve incluir os perfis de roteamento suportados");
-  assert.deepEqual(status.profiles, ["realtime_voice", "code_engineering", "rag_knowledge", "general"]);
+  assert.deepEqual(status.profiles, [
+    "realtime_voice",
+    "code_engineering",
+    "rag_knowledge",
+    "general",
+  ]);
 });
 
 test("task-aware routing: classifyTaskIntent categoriza deterministicamente os 4 perfis de tarefa", () => {
@@ -341,54 +431,50 @@ test("task-aware routing: classifyTaskIntent categoriza deterministicamente os 4
   assert.equal(
     classifyTaskIntent("Qual é o status da missão?", { isVoice: true }),
     "realtime_voice",
-    "Flag isVoice deve priorizar realtime_voice"
+    "Flag isVoice deve priorizar realtime_voice",
   );
   assert.equal(
     classifyTaskIntent("Oi, tudo bem?"),
     "realtime_voice",
-    "Saudação curta sem código deve classificar como realtime_voice"
+    "Saudação curta sem código deve classificar como realtime_voice",
   );
-  assert.equal(
-    classifyTaskIntent("Bom dia!"),
-    "realtime_voice"
-  );
+  assert.equal(classifyTaskIntent("Bom dia!"), "realtime_voice");
 
   // 2. code_engineering (código, frameworks, sql, debug)
   assert.equal(
     classifyTaskIntent("Crie um componente React com Three.js e shaders GLSL"),
-    "code_engineering"
+    "code_engineering",
   );
   assert.equal(
     classifyTaskIntent("Escreva uma query SQL com join para buscar usuários"),
-    "code_engineering"
+    "code_engineering",
   );
-  assert.equal(
-    classifyTaskIntent("Como fazer debug deste bug no dockerfile?"),
-    "code_engineering"
-  );
+  assert.equal(classifyTaskIntent("Como fazer debug deste bug no dockerfile?"), "code_engineering");
   assert.equal(
     classifyTaskIntent("Analise este trecho:\n```js\nconst x = 10;\n```"),
-    "code_engineering"
+    "code_engineering",
   );
 
   // 3. rag_knowledge (documentos, pdf, docx, contratos, resumos de arquivos)
   assert.equal(
     classifyTaskIntent("Faça um resumo dos documentos PDF e contratos anexados"),
-    "rag_knowledge"
+    "rag_knowledge",
   );
   assert.equal(
     classifyTaskIntent("Extrair texto dos relatórios da base de conhecimento RAG"),
-    "rag_knowledge"
+    "rag_knowledge",
   );
 
   // 4. general (perguntas conceituais amplas, conhecimentos gerais)
   assert.equal(
-    classifyTaskIntent("Explique a teoria da relatividade geral de Einstein com metáforas do cotidiano"),
-    "general"
+    classifyTaskIntent(
+      "Explique a teoria da relatividade geral de Einstein com metáforas do cotidiano",
+    ),
+    "general",
   );
   assert.equal(
     classifyTaskIntent("Quais são as principais capitais históricas da Europa Central?"),
-    "general"
+    "general",
   );
 });
 
@@ -407,12 +493,9 @@ test("rotas de api /api/skills: inventário, buscas, filtros e proteção de cam
   if (!adminRow) {
     const adminId = "admin-skills-" + Date.now();
     const uname = "skills_adm_" + Date.now();
-    db.prepare("INSERT INTO admins (id, username, password_hash, created_at, active) VALUES (?,?,?,?,1)").run(
-      adminId,
-      uname,
-      "dummyhash",
-      new Date().toISOString()
-    );
+    db.prepare(
+      "INSERT INTO admins (id, username, password_hash, created_at, active) VALUES (?,?,?,?,1)",
+    ).run(adminId, uname, "dummyhash", new Date().toISOString());
     adminRow = { id: adminId };
   }
 
@@ -420,7 +503,7 @@ test("rotas de api /api/skills: inventário, buscas, filtros e proteção de cam
   const sidHash = (await import("node:crypto")).createHash("sha256").update(sid).digest("hex");
   const now = Date.now();
   db.prepare(
-    "INSERT INTO sessions (id_hash, admin_id, csrf, created_at, last_seen, expires_at, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO sessions (id_hash, admin_id, csrf, created_at, last_seen, expires_at, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)",
   ).run(sidHash, adminRow.id, "csrf-test", now, now, now + 12 * 3600 * 1000, "test-runner");
 
   const server = createApp();
@@ -433,7 +516,6 @@ test("rotas de api /api/skills: inventário, buscas, filtros e proteção de cam
         cookie: `jarvis_sid=${sid}`,
       },
     });
-
 
   try {
     // 1. Listagem completa
@@ -480,7 +562,12 @@ test("rotas de api /api/skills: inventário, buscas, filtros e proteção de cam
     const classifyJson = await classifyResp.json();
     assert.equal(classifyJson.profile, "code_engineering");
     assert.ok(Array.isArray(classifyJson.profiles));
-    assert.deepEqual(classifyJson.profiles, ["realtime_voice", "code_engineering", "rag_knowledge", "general"]);
+    assert.deepEqual(classifyJson.profiles, [
+      "realtime_voice",
+      "code_engineering",
+      "rag_knowledge",
+      "general",
+    ]);
 
     // 7. Rota GET /api/router/telemetry retorna telemetria operacional
     const telemResp = await apiReq("/api/router/telemetry");
@@ -589,5 +676,3 @@ test("telemetria de provedores: recordProviderMetric e getProviderTelemetry calc
   assert.equal(status.telemetry.totalCalls, 3);
   assert.equal(status.telemetry.voice.bargeInCount, 1);
 });
-
-

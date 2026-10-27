@@ -1,4 +1,4 @@
-# Validação — release 1.9.0
+# Validação — release 1.9.1
 
 Atualizado em 2026-10-27 após deploy. Distingue testes automatizados, smoke da imagem implantada e
 validação pendente contra provedores externos.
@@ -7,7 +7,7 @@ validação pendente contra provedores externos.
 
 | Área | Verificação | Resultado |
 | --- | --- | --- |
-| Backend | `node --test tests/*.test.mjs` | **652/652 PASS** |
+| Backend | `node --test tests/*.test.mjs` | **657/657 PASS** |
 | Migrações v16–v18 | backup, preservação de linhas, ownership, constraints e rollback | **PASS** |
 | Fila/scheduler | idempotência, concorrência, atraso em disputa e recovery conservador | **PASS** |
 | Retenção | desativada por padrão, isolamento por dono, quarentena, restore e purga | **PASS** |
@@ -17,13 +17,15 @@ validação pendente contra provedores externos.
 | Frontend | `npm test` | **109/109 PASS** (21 arquivos) |
 | Avaliação agêntica | `npm run eval:agents` | **86/86 PASS** em seis cenários offline |
 | Tipos | `npx tsc --noEmit` | **sem erros** |
-| ESLint | Execução global e dirigida | **não verde**: dívida de formatação em arquivos legados/minimamente tocados; módulos novos e componentes novos passaram na execução focada; não foi aplicada formatação em massa |
+| ESLint/Prettier | ESLint global + Prettier dirigido | **88/88 arquivos rastreados formatados**; lint ainda tem 12 erros não relacionados à formatação (9 `no-explicit-any`, 3 `no-empty`) e 16 avisos (15 `react-refresh`, 1 diretiva de lint não utilizada). `.remember/**` está excluído do lint por ser estado local ignorado pelo Git |
 | Build frontend/SSR | `npm run build` | **PASS**; aviso existente de chunk >500 kB e avisos de Vite |
 | Docker STT | `docker compose --profile stt build stt` e inicialização | **PASS**, não-root, sem porta publicada, zero reinícios no smoke |
 | Compose | `docker compose --profile stt config --quiet` | **PASS** |
 | Modelo STT | revisão `5359861c739e955e79d9a303bcbc70fb988958b1` | SHA-256 `1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b` |
 
 ## Evidência do deploy 1.9.0
+
+> Estado operacional e SHA da imagem 1.9.1 serão registrados após rebuild/recriação do serviço principal.
 
 | Item | Resultado observado |
 | --- | --- |
@@ -49,9 +51,12 @@ com `BUILD_VERSION=1.9.0`, SHA publicado, `SCHEMA_VERSION=18` e `RELEASE_BUILD=1
 - O teste STT usou amostra pública em inglês do repositório whisper.cpp, não uma gravação pessoal.
   Qualidade de português, latência em hardware de menor capacidade e experiência real pelo browser
   ficam para validação opt-in do operador.
-- `npm run lint` global não está verde devido a milhares de problemas de formatação/legado em
-  arquivos alheios a esta entrega, incluindo `.remember/tmp/last-ndc.ts`; o lint focado nos arquivos
-  alterados passou. Não foi feita formatação em massa do repositório.
+- `npm run lint` global ainda falha em regras fora do formato: nove usos explícitos de `any` em
+  `src/lib/bridge.ts`, `src/routes/documentos.tsx` e `src/test/documents-page.test.tsx`, além de três
+  blocos `catch` vazios em `src/lib/handsfree.ts`. Os avisos `react-refresh` são preservados. Os
+  arquivos Prettier rastreados foram formatados sem mudança intencional de lógica.
+- `.remember/**` é estado local ignorado pelo Git e excluído explicitamente do ESLint; seu conteúdo
+  não foi editado nem adicionado ao repositório.
 - O build aponta chunk JavaScript acima de 500 kB. Otimizar divisão de bundles requer medição de
   carregamento e fica fora da conclusão funcional desta release.
 

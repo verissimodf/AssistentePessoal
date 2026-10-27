@@ -15,7 +15,12 @@ import { DiagnosticoPanel } from "@/components/DiagnosticoPanel";
 const INVENTARIO = {
   generatedAt: "2026-10-17T05:00:00.000Z",
   versao: { app: "1.2.0", banco: 8, node: "v22.22.3", uptimeSegundos: 3600 },
-  resumo: { saude: "atencao", total: 2, porEstado: { OPERACIONAL: 1, "INDISPONÍVEL": 1 }, pendencias: 1 },
+  resumo: {
+    saude: "atencao",
+    total: 2,
+    porEstado: { OPERACIONAL: 1, INDISPONÍVEL: 1 },
+    pendencias: 1,
+  },
   itens: [
     {
       id: "servico:api",
@@ -23,7 +28,13 @@ const INVENTARIO = {
       nome: "Serviço J.A.R.V.I.S. (API)",
       estado: "OPERACIONAL",
       flags: { implementado: true, habilitado: true, testado: true },
-      evidencias: [{ metodo: "execucao", ref: "processo em execução (uptime lido do runtime)", data: "2026-10-17T05:00:00.000Z" }],
+      evidencias: [
+        {
+          metodo: "execucao",
+          ref: "processo em execução (uptime lido do runtime)",
+          data: "2026-10-17T05:00:00.000Z",
+        },
+      ],
       limitacoes: [],
       confianca: "alta",
     },
@@ -33,7 +44,9 @@ const INVENTARIO = {
       nome: "OmniRoute (provedor)",
       estado: "INDISPONÍVEL",
       flags: { implementado: true, habilitado: false, testado: false },
-      evidencias: [{ metodo: "codigo", ref: "server/llm.js (DEFAULT_URLS/providerConfig)", data: null }],
+      evidencias: [
+        { metodo: "codigo", ref: "server/llm.js (DEFAULT_URLS/providerConfig)", data: null },
+      ],
       limitacoes: ["Sem chave configurada — limitação conhecida mantida por decisão."],
       confianca: "media",
     },
@@ -63,7 +76,9 @@ describe("Diagnóstico Operacional (aba somente leitura)", () => {
   it("não oferece nenhuma ação de mutação (apenas recarregar a leitura)", async () => {
     loadDiagnostics.mockResolvedValue(INVENTARIO);
     render(<DiagnosticoPanel />);
-    await waitFor(() => expect(screen.getByRole("button", { name: "Atualizar" })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Atualizar" })).toBeInTheDocument(),
+    );
     const botoes = screen.getAllByRole("button").map((b) => b.textContent);
     expect(botoes).toEqual(["Atualizar"]);
   });
@@ -72,7 +87,9 @@ describe("Diagnóstico Operacional (aba somente leitura)", () => {
     loadDiagnostics.mockResolvedValue(null);
     render(<DiagnosticoPanel />);
     await waitFor(() =>
-      expect(screen.getByText(/Disponível apenas com o Jarvis local conectado/)).toBeInTheDocument(),
+      expect(
+        screen.getByText(/Disponível apenas com o Jarvis local conectado/),
+      ).toBeInTheDocument(),
     );
     expect(screen.queryByText("OPERACIONAL")).not.toBeInTheDocument();
   });

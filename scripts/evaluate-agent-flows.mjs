@@ -6,18 +6,24 @@ import { fileURLToPath } from "node:url";
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const manifest = JSON.parse(readFileSync(resolve(root, "tests/evals/agent-flows.json"), "utf8"));
 const startedAt = new Date().toISOString();
-const commit = process.env.GIT_SHA || execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+const commit =
+  process.env.GIT_SHA ||
+  execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
 const version = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")).version;
 const results = [];
 
 for (const scenario of manifest.scenarios) {
   const start = performance.now();
-  const run = spawnSync(process.execPath, ["--no-warnings", "--test", "--test-reporter=tap", ...scenario.suites], {
-    cwd: root,
-    encoding: "utf8",
-    timeout: 180_000,
-    env: { ...process.env, JARVIS_NO_LISTEN: "1" },
-  });
+  const run = spawnSync(
+    process.execPath,
+    ["--no-warnings", "--test", "--test-reporter=tap", ...scenario.suites],
+    {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 180_000,
+      env: { ...process.env, JARVIS_NO_LISTEN: "1" },
+    },
+  );
   const reportText = `${run.stdout || ""}\n${run.stderr || ""}`;
   const count = (name) => Number(reportText.match(new RegExp(`^# ${name} (\\d+)$`, "m"))?.[1] || 0);
   results.push({

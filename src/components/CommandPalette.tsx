@@ -199,13 +199,13 @@ export function CommandPalette() {
             const res = await reindexAllPendingDocuments();
             if (res && res.ok) {
               toast.success(
-                `Sincronização concluída: ${res.upgraded || 0} documento(s) promovido(s) para RAG Semântico.`
+                `Sincronização concluída: ${res.upgraded || 0} documento(s) promovido(s) para RAG Semântico.`,
               );
             } else {
               toast.error(
                 res?.reason === "embedding_provider_unavailable"
                   ? "Provedor de embeddings indisponível no momento."
-                  : "Falha ao sincronizar vetores pendentes."
+                  : "Falha ao sincronizar vetores pendentes.",
               );
             }
           } catch {
@@ -225,7 +225,7 @@ export function CommandPalette() {
         },
       },
     ],
-    [navigate]
+    [navigate],
   );
 
   // Combina e filtra itens com base na busca
@@ -238,7 +238,7 @@ export function CommandPalette() {
         (i) =>
           i.label.toLowerCase().includes(q) ||
           (i.sublabel && i.sublabel.toLowerCase().includes(q)) ||
-          i.category.toLowerCase().includes(q)
+          i.category.toLowerCase().includes(q),
       );
     }
 
@@ -271,7 +271,7 @@ export function CommandPalette() {
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setSelectedIndex((prev) =>
-        filteredItems.length ? (prev - 1 + filteredItems.length) % filteredItems.length : 0
+        filteredItems.length ? (prev - 1 + filteredItems.length) % filteredItems.length : 0,
       );
     } else if (e.key === "Enter") {
       e.preventDefault();
@@ -352,7 +352,9 @@ export function CommandPalette() {
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <Icon className={`h-4 w-4 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`} />
+                          <Icon
+                            className={`h-4 w-4 shrink-0 ${isSelected ? "text-primary" : "text-muted-foreground"}`}
+                          />
                           <div className="truncate">
                             <div className="text-xs font-medium truncate">{item.label}</div>
                             {item.sublabel && (
@@ -382,15 +384,21 @@ export function CommandPalette() {
         <div className="flex items-center justify-between border-t border-border/80 px-4 py-2 bg-secondary/20 text-[11px] text-muted-foreground">
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1">
-              <kbd className="rounded border border-border bg-background px-1 py-0.5 text-[9px] font-mono">↑↓</kbd>
+              <kbd className="rounded border border-border bg-background px-1 py-0.5 text-[9px] font-mono">
+                ↑↓
+              </kbd>
               <span>Navegar</span>
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="rounded border border-border bg-background px-1 py-0.5 text-[9px] font-mono">Enter</kbd>
+              <kbd className="rounded border border-border bg-background px-1 py-0.5 text-[9px] font-mono">
+                Enter
+              </kbd>
               <span>Selecionar</span>
             </span>
             <span className="flex items-center gap-1">
-              <kbd className="rounded border border-border bg-background px-1 py-0.5 text-[9px] font-mono">Esc</kbd>
+              <kbd className="rounded border border-border bg-background px-1 py-0.5 text-[9px] font-mono">
+                Esc
+              </kbd>
               <span>Fechar</span>
             </span>
           </div>

@@ -5,8 +5,17 @@
 
 import { execSync, spawnSync } from "node:child_process";
 import {
-  existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, statSync, lstatSync,
-  copyFileSync, chmodSync, renameSync, rmSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  readdirSync,
+  statSync,
+  lstatSync,
+  copyFileSync,
+  chmodSync,
+  renameSync,
+  rmSync,
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, resolve, relative, basename, dirname } from "node:path";
@@ -19,11 +28,11 @@ const SKILLS_CONSOLIDATED = join(BASE_DIR, "skills");
 const MCP_CATALOG = join(BASE_DIR, "mcp-catalog");
 const CATALOG_PATH = join(BASE_DIR, "catalog.json");
 
-const GIT_EXECUTABLE = process.env.GIT_BIN || (
-  existsSync("C:\\Users\\layte\\.antigravity\\tools\\git\\cmd\\git.exe")
+const GIT_EXECUTABLE =
+  process.env.GIT_BIN ||
+  (existsSync("C:\\Users\\layte\\.antigravity\\tools\\git\\cmd\\git.exe")
     ? "C:\\Users\\layte\\.antigravity\\tools\\git\\cmd\\git.exe"
-    : "git"
-);
+    : "git");
 
 /**
  * Sanitiza e normaliza o frontmatter YAML de um arquivo SKILL.md.
@@ -35,7 +44,7 @@ export function sanitizeSkillFrontmatter(rawMarkdown) {
   if (typeof rawMarkdown !== "string") return rawMarkdown;
 
   // Remove UTF-8 BOM se presente
-  if (rawMarkdown.charCodeAt(0) === 0xFEFF) {
+  if (rawMarkdown.charCodeAt(0) === 0xfeff) {
     rawMarkdown = rawMarkdown.slice(1);
   }
 
@@ -43,7 +52,11 @@ export function sanitizeSkillFrontmatter(rawMarkdown) {
   if (!fmMatch) {
     const titleMatch = rawMarkdown.match(/^#\s+(.+)$/m);
     const title = titleMatch ? titleMatch[1].trim() : "custom-skill";
-    const name = title.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "") || "custom-skill";
+    const name =
+      title
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, "-")
+        .replace(/^-|-$/g, "") || "custom-skill";
 
     const lines = rawMarkdown
       .split(/\r?\n/)
@@ -131,7 +144,10 @@ export function sanitizeSkillFrontmatter(rawMarkdown) {
 
       if (nextIdx > i + 1) {
         i = nextIdx - 1;
-        const cleanVal = fullVal.replace(/^["']+|["']+$/g, "").trim().replace(/\s+/g, " ");
+        const cleanVal = fullVal
+          .replace(/^["']+|["']+$/g, "")
+          .trim()
+          .replace(/\s+/g, " ");
         sanitizedLines.push(`${indent}${key}: ${JSON.stringify(cleanVal)}`);
         continue;
       }
@@ -188,28 +204,32 @@ export const ESSENTIAL_SKILLS = [
   {
     id: "threejs-expert",
     name: "Three.js & WebGL 3D Expert",
-    description: "Construção de cenas 3D, WebGL/WebGPU, shaders TSL/GLSL, controle de ciclo de vida e descarte de recursos de GPU.",
+    description:
+      "Construção de cenas 3D, WebGL/WebGPU, shaders TSL/GLSL, controle de ciclo de vida e descarte de recursos de GPU.",
     tags: ["threejs", "webgl", "webgpu", "3d", "r3f"],
     category: "graphics",
   },
   {
     id: "gsap-motion",
     name: "GSAP High-Performance Animation",
-    description: "Animações fluidas de interface com GSAP Timeline, ScrollTrigger, interpolações SVG e otimização de composite layers.",
+    description:
+      "Animações fluidas de interface com GSAP Timeline, ScrollTrigger, interpolações SVG e otimização de composite layers.",
     tags: ["gsap", "animation", "motion", "frontend"],
     category: "motion",
   },
   {
     id: "design-dna",
     name: "Design DNA & Interface Polish",
-    description: "Padrões de design visual refinado, tipografia proporcional, paletas HUD ciano/âmbar, espaçamentos consistentes e UX moderna.",
+    description:
+      "Padrões de design visual refinado, tipografia proporcional, paletas HUD ciano/âmbar, espaçamentos consistentes e UX moderna.",
     tags: ["design", "ui", "ux", "tailwind", "hud"],
     category: "design",
   },
   {
     id: "karpathy-engineering",
     name: "Karpathy Lean Engineering",
-    description: "Engenharia ágil com foco em simplicidade radical, inspeção de dados brutos antes de abstrações e modificações cirúrgicas.",
+    description:
+      "Engenharia ágil com foco em simplicidade radical, inspeção de dados brutos antes de abstrações e modificações cirúrgicas.",
     tags: ["engineering", "architecture", "clean-code"],
     category: "engineering",
   },
@@ -222,7 +242,11 @@ export const ESSENTIAL_SKILLS = [
  * - NUNCA lança: devolve `{ ok, reason }` para que a falha seja explícita e diagnosticável.
  * `bridges: true` é opt-in e cria pontes em ~/.claude|.gemini|.antigravity (fora do container por padrão).
  */
-export function runEssentialsSetup({ baseDir = BASE_DIR, bridges = false, log = console.log } = {}) {
+export function runEssentialsSetup({
+  baseDir = BASE_DIR,
+  bridges = false,
+  log = console.log,
+} = {}) {
   try {
     const consolidated = join(baseDir, "skills");
     const catalogPath = join(baseDir, "catalog.json");
@@ -254,7 +278,9 @@ export function runEssentialsSetup({ baseDir = BASE_DIR, bridges = false, log = 
       skills,
     };
     writeFileSync(catalogPath, JSON.stringify(catalog, null, 2) + "\n", "utf8");
-    log(`assistente-pessoal: skills hub (builtin) provisionado em ${baseDir} (${skills.length} skills)`);
+    log(
+      `assistente-pessoal: skills hub (builtin) provisionado em ${baseDir} (${skills.length} skills)`,
+    );
 
     if (bridges) {
       for (const bridgeDir of [
@@ -277,9 +303,21 @@ export function runEssentialsSetup({ baseDir = BASE_DIR, bridges = false, log = 
         }
       }
     }
-    return { ok: true, reason: null, baseDir, catalogPath, totalSkills: skills.length, source: "builtin" };
+    return {
+      ok: true,
+      reason: null,
+      baseDir,
+      catalogPath,
+      totalSkills: skills.length,
+      source: "builtin",
+    };
   } catch (e) {
-    return { ok: false, reason: `provision_failed: ${e?.code ?? e?.message ?? "erro"}`, baseDir, totalSkills: 0 };
+    return {
+      ok: false,
+      reason: `provision_failed: ${e?.code ?? e?.message ?? "erro"}`,
+      baseDir,
+      totalSkills: 0,
+    };
   }
 }
 
@@ -427,7 +465,11 @@ function readSkillDescription(content, id) {
  * - não usa rede, não executa scripts do upstream e nunca apaga skill de terceiros.
  * Falha com `{ ok: false, reason }`; o catálogo anterior permanece intacto.
  */
-export function syncBundledSkills({ baseDir = BASE_DIR, sourceDir = BUNDLED_SKILLS_SOURCE, log = console.log } = {}) {
+export function syncBundledSkills({
+  baseDir = BASE_DIR,
+  sourceDir = BUNDLED_SKILLS_SOURCE,
+  log = console.log,
+} = {}) {
   const staging = [];
   try {
     // 0. Recusa hub com symlink nas raízes graváveis: evita escrever fora do diretório do hub.
@@ -457,13 +499,15 @@ export function syncBundledSkills({ baseDir = BASE_DIR, sourceDir = BUNDLED_SKIL
     } catch {
       return { ok: false, reason: "catalog_invalid", baseDir };
     }
-    if (!catalog || !Array.isArray(catalog.skills)) return { ok: false, reason: "catalog_invalid", baseDir };
+    if (!catalog || !Array.isArray(catalog.skills))
+      return { ok: false, reason: "catalog_invalid", baseDir };
 
     // 2. Validação completa (manifesto, cobertura e checksums) antes de qualquer escrita.
     const manifest = readBundledManifest(sourceDir);
     const verified = verifyBundledChecksums(sourceDir);
     const requiredFiles = ["manifest.json"];
-    if (manifest.upstream.licenseFile) requiredFiles.push(String(manifest.upstream.licenseFile).replace(/^\.\//, ""));
+    if (manifest.upstream.licenseFile)
+      requiredFiles.push(String(manifest.upstream.licenseFile).replace(/^\.\//, ""));
     for (const skill of manifest.skills) {
       requiredFiles.push(skill.path);
       for (const ref of skill.references ?? []) requiredFiles.push(`${skill.id}/${ref}`);
@@ -473,8 +517,10 @@ export function syncBundledSkills({ baseDir = BASE_DIR, sourceDir = BUNDLED_SKIL
     }
 
     // 3. Conflitos: nunca sobrescrever skill local/terceira nem diretório sem catálogo.
-    const managed = (s) => typeof s.source === "string" && s.source.startsWith(BUNDLED_SOURCE_PREFIX);
-    const legacyUpstream = (s) => !s.source && typeof s.path === "string" && s.path.startsWith("repos/");
+    const managed = (s) =>
+      typeof s.source === "string" && s.source.startsWith(BUNDLED_SOURCE_PREFIX);
+    const legacyUpstream = (s) =>
+      !s.source && typeof s.path === "string" && s.path.startsWith("repos/");
     const existingById = new Map(catalog.skills.map((s) => [s.id, s]));
     for (const skill of manifest.skills) {
       const entry = existingById.get(skill.id);
@@ -508,7 +554,10 @@ export function syncBundledSkills({ baseDir = BASE_DIR, sourceDir = BUNDLED_SKIL
         },
         files: [
           { sourceRel: skill.path, destSub: "SKILL.md" },
-          ...(skill.references ?? []).map((ref) => ({ sourceRel: `${skill.id}/${ref}`, destSub: ref })),
+          ...(skill.references ?? []).map((ref) => ({
+            sourceRel: `${skill.id}/${ref}`,
+            destSub: ref,
+          })),
         ],
       };
     });
@@ -520,7 +569,8 @@ export function syncBundledSkills({ baseDir = BASE_DIR, sourceDir = BUNDLED_SKIL
         rmSync(stageDir, { recursive: true, force: true });
         staging.push(stageDir);
         for (const file of item.files) {
-          if (!isSafeRelativeFile(file.destSub)) throw new Error(`skill_path_invalid:${item.skill.id}`);
+          if (!isSafeRelativeFile(file.destSub))
+            throw new Error(`skill_path_invalid:${item.skill.id}`);
           const dest = join(stageDir, file.destSub);
           mkdirSync(dirname(dest), { recursive: true });
           copyFileSync(join(sourceDir, file.sourceRel), dest);
@@ -595,20 +645,49 @@ export function runSetup() {
 
   // Repositórios de Skills a clonar
   const SKILL_REPOS = [
-    { name: "agent-skills", url: "https://github.com/addyosmani/agent-skills.git", defaultBranch: "main" },
+    {
+      name: "agent-skills",
+      url: "https://github.com/addyosmani/agent-skills.git",
+      defaultBranch: "main",
+    },
     { name: "google-skills", url: "https://github.com/google/skills.git", defaultBranch: "main" },
-    { name: "threejs-skills", url: "https://github.com/CloudAI-X/threejs-skills.git", defaultBranch: "main" },
-    { name: "gsap-skills", url: "https://github.com/greensock/gsap-skills.git", defaultBranch: "main" },
+    {
+      name: "threejs-skills",
+      url: "https://github.com/CloudAI-X/threejs-skills.git",
+      defaultBranch: "main",
+    },
+    {
+      name: "gsap-skills",
+      url: "https://github.com/greensock/gsap-skills.git",
+      defaultBranch: "main",
+    },
     { name: "design-dna", url: "https://github.com/zanwei/design-dna.git", defaultBranch: "main" },
-    { name: "motion-design-skill", url: "https://github.com/LottieFiles/motion-design-skill.git", defaultBranch: "main" },
+    {
+      name: "motion-design-skill",
+      url: "https://github.com/LottieFiles/motion-design-skill.git",
+      defaultBranch: "main",
+    },
     { name: "genjutsu", url: "https://github.com/AThevon/genjutsu.git", defaultBranch: "main" },
-    { name: "emilkowalski-skills", url: "https://github.com/emilkowalski/skills.git", defaultBranch: "main" },
-    { name: "hyperframes", url: "https://github.com/heygen-com/hyperframes.git", defaultBranch: "main" },
+    {
+      name: "emilkowalski-skills",
+      url: "https://github.com/emilkowalski/skills.git",
+      defaultBranch: "main",
+    },
+    {
+      name: "hyperframes",
+      url: "https://github.com/heygen-com/hyperframes.git",
+      defaultBranch: "main",
+    },
   ];
 
   function runGit(args, cwd = process.cwd()) {
     try {
-      const res = spawnSync(GIT_EXECUTABLE, args, { cwd, encoding: "utf8", timeout: 60000, shell: true });
+      const res = spawnSync(GIT_EXECUTABLE, args, {
+        cwd,
+        encoding: "utf8",
+        timeout: 60000,
+        shell: true,
+      });
       return { ok: res.status === 0, out: res.stdout, err: res.stderr };
     } catch (e) {
       return { ok: false, out: "", err: e.message };
@@ -624,7 +703,9 @@ export function runSetup() {
       console.log(`  -> Já existe em ${dest}. Atualizando via git pull...`);
       const pull = runGit(["pull", "--ff-only"], dest);
       if (!pull.ok) {
-        console.warn(`  [aviso] Falha ao atualizar ${repo.name}: ${pull.err || "erro desconhecido"}. Mantendo cópia local.`);
+        console.warn(
+          `  [aviso] Falha ao atualizar ${repo.name}: ${pull.err || "erro desconhecido"}. Mantendo cópia local.`,
+        );
       } else {
         console.log(`  -> Atualizado com sucesso.`);
       }
@@ -632,7 +713,9 @@ export function runSetup() {
       console.log(`  -> Clonando shallow (--depth 1)...`);
       const clone = runGit(["clone", "--depth", "1", repo.url, dest]);
       if (!clone.ok) {
-        console.warn(`  [aviso] Falha ao clonar ${repo.name}: ${clone.err || "repositório inacessível"}. Continuando...`);
+        console.warn(
+          `  [aviso] Falha ao clonar ${repo.name}: ${clone.err || "repositório inacessível"}. Continuando...`,
+        );
       } else {
         console.log(`  -> Clonado com sucesso em ${dest}.`);
       }
@@ -644,26 +727,46 @@ export function runSetup() {
 
   const gooseCatalog = {
     name: "goose",
-    description: "Block Goose open-source extensible agent framework with Model Context Protocol (MCP) tool support.",
+    description:
+      "Block Goose open-source extensible agent framework with Model Context Protocol (MCP) tool support.",
     repo: "https://github.com/block/goose",
     protocols: ["mcp", "acp", "stdio", "sse"],
     skills: [
-      { name: "developer-workflows", description: "Automated test execution, git operations, shell task execution." },
-      { name: "memory-learning", description: "Continuous learning and persistent state management." },
-      { name: "mcp-extensions", description: "Dynamic plugin and extension loading via MCP configuration." },
+      {
+        name: "developer-workflows",
+        description: "Automated test execution, git operations, shell task execution.",
+      },
+      {
+        name: "memory-learning",
+        description: "Continuous learning and persistent state management.",
+      },
+      {
+        name: "mcp-extensions",
+        description: "Dynamic plugin and extension loading via MCP configuration.",
+      },
     ],
   };
   writeFileSync(join(MCP_CATALOG, "goose-mcp.json"), JSON.stringify(gooseCatalog, null, 2) + "\n");
 
   const dyadCatalog = {
     name: "dyad",
-    description: "Dyad local AI development environment with IPC bridge, git worktree isolation, and code synthesis.",
+    description:
+      "Dyad local AI development environment with IPC bridge, git worktree isolation, and code synthesis.",
     repo: "https://github.com/dyad-sh/dyad",
     protocols: ["ipc", "mcp"],
     skills: [
-      { name: "worktree-sandbox", description: "Isolated git worktree sandbox creation for safe code refactoring." },
-      { name: "chat-stream-protocol", description: "State machine streaming protocol with live progress updates." },
-      { name: "playwright-e2e-runner", description: "Automated browser validation and verification harness." },
+      {
+        name: "worktree-sandbox",
+        description: "Isolated git worktree sandbox creation for safe code refactoring.",
+      },
+      {
+        name: "chat-stream-protocol",
+        description: "State machine streaming protocol with live progress updates.",
+      },
+      {
+        name: "playwright-e2e-runner",
+        description: "Automated browser validation and verification harness.",
+      },
     ],
   };
   writeFileSync(join(MCP_CATALOG, "dyad-mcp.json"), JSON.stringify(dyadCatalog, null, 2) + "\n");
@@ -705,18 +808,26 @@ export function runSetup() {
       }
 
       if (!description) {
-        const lines = raw.split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith("#") && !l.startsWith("---"));
+        const lines = raw
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => l && !l.startsWith("#") && !l.startsWith("---"));
         if (lines.length) description = lines[0].slice(0, 300);
         else description = `Especialização em ${name}`;
       }
 
       if (!tags.length) {
         const parts = relativeBase.toLowerCase().split(/[/\\]/);
-        tags = [...new Set(parts.filter((p) => p && p !== "repos" && p !== "skills" && p !== "skill.md"))];
+        tags = [
+          ...new Set(parts.filter((p) => p && p !== "repos" && p !== "skills" && p !== "skill.md")),
+        ];
       }
 
       const relPath = relative(BASE_DIR, filePath).replace(/\\/g, "/");
-      const id = name.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "");
+      const id = name
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, "-")
+        .replace(/^-|-$/g, "");
 
       return {
         id,
@@ -778,7 +889,9 @@ export function runSetup() {
 
   // Se nenhum repo foi clonado ainda ou para garantir catálogo mínimo robusto:
   if (skills.length === 0) {
-    console.log("  [aviso] Nenhum SKILL.md externo encontrado; gerando catálogo essencial local...");
+    console.log(
+      "  [aviso] Nenhum SKILL.md externo encontrado; gerando catálogo essencial local...",
+    );
     const essentials = ESSENTIAL_SKILLS;
 
     for (const item of essentials) {

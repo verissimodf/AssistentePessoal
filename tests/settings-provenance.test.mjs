@@ -21,7 +21,8 @@ process.env.JARVIS_MASTER_KEY = "segredo-do-mestre-que-nunca-aparece";
 
 const { auth } = await import("../server/db.js");
 const { createApp } = await import("../server/index.js");
-const { settingsProvenance, ENV_REPORTED, ENV_PRESENCE_ONLY } = await import("../server/settings.js");
+const { settingsProvenance, ENV_REPORTED, ENV_PRESENCE_ONLY } =
+  await import("../server/settings.js");
 
 const PW = "senha-muito-forte-1";
 const ORIGIN = "http://localhost:8080";
@@ -65,14 +66,25 @@ test("sem valor gravado → origem padrão (nada é apresentado como pessoal)", 
     assert.ok(["default", "personal", "global"].includes(k.origin));
     assert.equal(typeof k.secret, "boolean");
   }
-  assert.ok(env.reported.length >= 1 && env.presenceOnly.length >= 1, "blocos de ambiente presentes");
+  assert.ok(
+    env.reported.length >= 1 && env.presenceOnly.length >= 1,
+    "blocos de ambiente presentes",
+  );
 });
 
 test("valor pessoal gravado muda a origem para personal", async () => {
   const w = await fetch(`${base}/api/settings`, {
     method: "PUT",
-    headers: { origin: ORIGIN, "content-type": "application/json", cookie: A.cookie, "x-jarvis-csrf": A.principal.csrf },
-    body: JSON.stringify({ general: { agentName: "Jarvis Prime" }, providers: { ollama: { model: "llama3.2" } } }),
+    headers: {
+      origin: ORIGIN,
+      "content-type": "application/json",
+      cookie: A.cookie,
+      "x-jarvis-csrf": A.principal.csrf,
+    },
+    body: JSON.stringify({
+      general: { agentName: "Jarvis Prime" },
+      providers: { ollama: { model: "llama3.2" } },
+    }),
   });
   assert.equal(w.status, 200);
   const { keys } = await (await getProvenance(A)).json();
@@ -88,8 +100,16 @@ test("valor pessoal gravado muda a origem para personal", async () => {
 test("política global (host/integrações/voz local) tem origem global", async () => {
   const w = await fetch(`${base}/api/settings`, {
     method: "PUT",
-    headers: { origin: ORIGIN, "content-type": "application/json", cookie: A.cookie, "x-jarvis-csrf": A.principal.csrf },
-    body: JSON.stringify({ host: { enabled: true, allowlist: "ls, git status" }, voice: { localVoiceUrl: "http://voz:7778" } }),
+    headers: {
+      origin: ORIGIN,
+      "content-type": "application/json",
+      cookie: A.cookie,
+      "x-jarvis-csrf": A.principal.csrf,
+    },
+    body: JSON.stringify({
+      host: { enabled: true, allowlist: "ls, git status" },
+      voice: { localVoiceUrl: "http://voz:7778" },
+    }),
   });
   assert.equal(w.status, 200);
   const { keys } = await (await getProvenance(A)).json();
@@ -112,7 +132,8 @@ test("segredos: apenas a marca `secret`, nunca o valor (no inventário nem nas v
   const master = env.presenceOnly.find((e) => e.name === "JARVIS_MASTER_KEY");
   assert.deepEqual(Object.keys(master).sort(), ["name", "set"], "só presença");
   assert.equal(master.set, true);
-  for (const name of ENV_PRESENCE_ONLY) assert.ok(!raw.includes(`"${name}":"`), `${name} não expõe valor`);
+  for (const name of ENV_PRESENCE_ONLY)
+    assert.ok(!raw.includes(`"${name}":"`), `${name} não expõe valor`);
   for (const name of ENV_REPORTED) assert.ok(ENV_PRESENCE_ONLY.includes(name) === false);
 });
 

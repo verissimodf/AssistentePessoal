@@ -33,7 +33,9 @@ before(async () => {
   principal = auth.validateSession(r.headers.get("set-cookie").split(";")[0].split("=")[1]);
   admin = db.prepare("SELECT id FROM admins WHERE active=1").get();
 });
-after(async () => { await new Promise((r) => server.close(r)); });
+after(async () => {
+  await new Promise((r) => server.close(r));
+});
 
 const realFetch = globalThis.fetch;
 /** Stub do provedor: só intercepta /chat/completions; o resto passa adiante. */
@@ -44,18 +46,48 @@ function stubModel(handler) {
     toolCallCount++;
     if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
     const body = handler(toolCallCount);
-    return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) };
+    return {
+      ok: true,
+      status: 200,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    };
   };
 }
 const toolCall = (name, args) => ({
-  choices: [{ message: { content: "", tool_calls: [{ id: `t${toolCallCount}`, type: "function", function: { name, arguments: JSON.stringify(args) } }] } }],
+  choices: [
+    {
+      message: {
+        content: "",
+        tool_calls: [
+          {
+            id: `t${toolCallCount}`,
+            type: "function",
+            function: { name, arguments: JSON.stringify(args) },
+          },
+        ],
+      },
+    },
+  ],
 });
 const finalAnswer = (text) => ({ choices: [{ message: { content: text } }] });
 
-const run = (opts = {}) => runAgent({ messages: [{ role: "user", content: "tarefa" }], autonomy: "confirm", principal, ...opts });
+const run = (opts = {}) =>
+  runAgent({
+    messages: [{ role: "user", content: "tarefa" }],
+    autonomy: "confirm",
+    principal,
+    ...opts,
+  });
 
-before(() => { toolCallCount = 0; delayMs = 0; cancelOnNth = 0; });
-after(() => { globalThis.fetch = realFetch; });
+before(() => {
+  toolCallCount = 0;
+  delayMs = 0;
+  cancelOnNth = 0;
+});
+after(() => {
+  globalThis.fetch = realFetch;
+});
 
 test("anti-ciclo: chamada idêntica repetida interrompe a execução", async () => {
   toolCallCount = 0;
@@ -77,18 +109,23 @@ test("teto de chamadas de ferramenta interrompe a execução", async () => {
 });
 
 test("teto de tempo interrompe a execução", async () => {
-  toolCallCount = 0; delayMs = 40;
+  toolCallCount = 0;
+  delayMs = 40;
   let i = 0;
   stubModel(() => toolCall("recall", { query: `t-${++i}` }));
   const r = await run({ maxSteps: 50, deadlineMs: 60 });
-  globalThis.fetch = realFetch; delayMs = 0;
+  globalThis.fetch = realFetch;
+  delayMs = 0;
   assert.match(r.reply, /Limite de tempo/);
 });
 
 test("cancelamento cooperativo interrompe entre passos", async () => {
   toolCallCount = 0;
   let i = 0;
-  stubModel(() => { if (toolCallCount === 2) cancelRun("run-teste"); return toolCall("recall", { query: `c-${++i}` }); });
+  stubModel(() => {
+    if (toolCallCount === 2) cancelRun("run-teste");
+    return toolCall("recall", { query: `c-${++i}` });
+  });
   const r = await run({ runId: "run-teste", maxSteps: 20 });
   globalThis.fetch = realFetch;
   assert.match(r.reply, /cancelada/i);
