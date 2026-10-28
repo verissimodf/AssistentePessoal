@@ -1,6 +1,5 @@
 // Navegador (browser_action) — testes NOVOS e estritamente da capacidade.
-// Sem navegador real, sem rede externa: driver remoto é um worker falso em loopback (endereço de
-// configuração do operador) e o destino navegado é sempre um nome público.
+// Sem navegador real, sem rede externa: worker falso atende somente por socket Unix temporário.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -11,6 +10,8 @@ import { join } from "node:path";
 const dir = mkdtempSync(join(tmpdir(), "jarvis-browser-"));
 process.env.JARVIS_DATA_DIR = dir;
 process.env.JARVIS_NO_LISTEN = "1";
+const workerSocket = join(dir, "worker.sock");
+process.env.JARVIS_BROWSER_WORKER_SOCKET = workerSocket;
 
 const {
   BROWSER_OPS,
@@ -25,7 +26,8 @@ const {
   redact,
 } = await import("../server/browser.js");
 const { normalizeBrowserHosts } = await import("../server/browser-approval.js");
-const { installBrowserRequestPolicy } = await import("../server/browser-network.js");
+const { assertBrowserDestination, installBrowserRequestPolicy } =
+  await import("../server/browser-network.js");
 const { createApp } = await import("../server/index.js");
 const { callTool, resolveApproval } = await import("../server/tools.js");
 const { auth, db } = await import("../server/db.js");
@@ -61,21 +63,15 @@ async function loginSession(username) {
   return { principal, cookie: `jarvis_sid=${sid}`, csrf: (await r.json()).csrf };
 }
 
-// ---- worker falso (contrato remoto) — loopback é o ENDEREÇO configurado, não o destino ----
+// ---- worker falso pelo mesmo transporte Unix usado pelo serviço gerenciado ----
 const worker = { hits: [], mode: "ok" };
-let workerBase = "";
 const wserver = createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
   req.on("end", () => {
     if (req.url === "/health") {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ ok: true, engine: "fake", mode: "remote" }));
-      return;
-    }
-    if (req.headers.authorization !== `Bearer ${TOKEN}`) {
-      res.writeHead(401, { "content-type": "application/json" });
-      res.end(JSON.stringify({ error: "unauthorized" }));
+      res.end(JSON.stringify({ ok: true, engine: "fake", mode: "managed" }));
       return;
     }
     if (req.url === "/cancel") {
@@ -103,9 +99,7 @@ const wserver = createServer((req, res) => {
 });
 
 before(async () => {
-  workerBase = await new Promise((r) => {
-    wserver.listen(0, "127.0.0.1", () => r(`http://127.0.0.1:${wserver.address().port}`));
-  });
+  await new Promise((r) => wserver.listen(workerSocket, r));
   app = createApp();
   await new Promise((r) => app.listen(0, "127.0.0.1", r));
   base = `http://127.0.0.1:${app.address().port}`;
@@ -249,6 +243,26 @@ test("navegador: cada navegação, subrecurso e redirect passa pela mesma polít
   );
 });
 
+test("worker isolado valida URL/allowlist sem DNS local e delega pinning ao broker", async () => {
+  let resolverCalls = 0;
+  const result = await assertBrowserDestination(PUBLIC, {
+    checkDns: false,
+    resolveHost: async () => {
+      resolverCalls++;
+      throw new Error("worker sem rede/DNS");
+    },
+  });
+  assert.equal(result.hostname, "example.com");
+  assert.equal(resolverCalls, 0);
+  await assert.rejects(
+    () =>
+      assertBrowserDestination("http://127.0.0.1/", {
+        checkDns: false,
+      }),
+    /blocked_destination/,
+  );
+});
+
 test("navegador: redaction remove ANSI, credenciais conhecidas e limita strings", () => {
   const clean = redact(
     'texto normal \u001b[31mBearer abc.def-123 api_key=sk-secret password: \'senha forte\' Authorization: Bearer auth-secret {"api_key":"json-secret"}\u001b[0m',
@@ -360,7 +374,7 @@ test("navegador: allowlist aceita hosts exatos, rejeita hosts externos e sintaxe
   assert.equal(response.status, 403, "token não modifica a política global do navegador");
 });
 
-test("navegador: resolução de modo por CONFIGURAÇÃO (off · local · remote) sem expor token", () => {
+test("navegador: resolução de modo por configuração (off · managed · remote legado) sem token", () => {
   updateSettings(
     {
       integrations: {
@@ -386,7 +400,7 @@ test("navegador: resolução de modo por CONFIGURAÇÃO (off · local · remote)
     { integrations: { browser: { enabled: true, command: "", apiKey: "" } } },
     { adminId: null, allowGlobal: true },
   );
-  assert.equal(resolveBrowserConfig(null).mode, "local");
+  assert.equal(resolveBrowserConfig(null).mode, "managed");
 
   updateSettings(
     {
@@ -408,6 +422,24 @@ test("navegador: resolução de modo por CONFIGURAÇÃO (off · local · remote)
   );
 });
 
+test("navegador habilitado sem socket gerenciado falha sem fallback in-process", async () => {
+  const workerSocket = process.env.JARVIS_BROWSER_WORKER_SOCKET;
+  delete process.env.JARVIS_BROWSER_WORKER_SOCKET;
+  try {
+    updateSettings(
+      { integrations: { browser: { enabled: true, command: "", apiKey: "" } } },
+      { adminId: null, allowGlobal: true },
+    );
+    assert.equal(resolveBrowserConfig(null).mode, "unavailable");
+    const result = await runBrowserAction(null, { op: "navigate", url: PUBLIC });
+    assert.equal(result.state, "error");
+    assert.equal(result.error.code, "browser_worker_required");
+  } finally {
+    if (workerSocket === undefined) delete process.env.JARVIS_BROWSER_WORKER_SOCKET;
+    else process.env.JARVIS_BROWSER_WORKER_SOCKET = workerSocket;
+  }
+});
+
 test("navegador: desligado responde browser_disabled com resultado estruturado", async () => {
   updateSettings(
     { integrations: { browser: { enabled: false } } },
@@ -419,13 +451,12 @@ test("navegador: desligado responde browser_disabled com resultado estruturado",
   assert.equal(r.exitCode, null);
 });
 
-// ---------- driver remoto (contrato) ----------
+// ---------- worker gerenciado (contrato pelo socket Unix) ----------
 
-test("navegador remoto: sucesso estruturado + redação de cookie/token", async () => {
+test("navegador gerenciado: sucesso estruturado + redação de cookie/token", async () => {
   const cfg = {
-    mode: "remote",
-    endpoint: workerBase,
-    token: TOKEN,
+    mode: "managed",
+    workerSocket,
     timeoutMs: 5_000,
     executablePath: null,
     allowedHosts: ["example.com"],
@@ -440,29 +471,26 @@ test("navegador remoto: sucesso estruturado + redação de cookie/token", async 
   assert.equal(raw.includes(TOKEN), false, "token do worker nunca propagado");
 });
 
-test("navegador remoto: 401, host inacessível e resposta fora do contrato são classificados", async () => {
-  const bad = {
+test("navegador externo HTTP é recusado; socket inacessível e resposta inválida falham fechados", async () => {
+  const remote = {
     mode: "remote",
-    endpoint: workerBase,
+    endpoint: "http://worker-fora-da-maquina:7788",
     token: "token-errado-mas-longo-123456",
     timeoutMs: 5_000,
     executablePath: null,
   };
-  const unauthorized = await runBrowserAction(
+  const disabledExternal = await runBrowserAction(
     null,
     { op: "navigate", url: PUBLIC },
-    { config: bad },
+    { config: remote },
   );
-  assert.equal(unauthorized.error.code, "browser_unauthorized");
+  assert.equal(disabledExternal.error.code, "browser_untrusted_transport");
 
   const unreachable = await runBrowserAction(
     null,
     { op: "navigate", url: PUBLIC },
     {
-      config: { ...bad, endpoint: "http://127.0.0.1:1", token: TOKEN },
-      fetchFn: async () => {
-        throw Object.assign(new Error("fetch failed"), { cause: { code: "ECONNREFUSED" } });
-      },
+      config: { mode: "managed", workerSocket: `${workerSocket}.missing`, timeoutMs: 5_000 },
     },
   );
   assert.equal(unreachable.error.code, "browser_unreachable");
@@ -471,17 +499,17 @@ test("navegador remoto: 401, host inacessível e resposta fora do contrato são 
     null,
     { op: "navigate", url: PUBLIC },
     {
-      config: { ...bad, token: TOKEN },
-      fetchFn: async () => ({ ok: true, status: 200, json: async () => ({ nada: true }) }),
+      config: { mode: "managed", workerSocket, timeoutMs: 5_000 },
+      workerRequest: async () => ({ nada: true }),
     },
   );
   assert.equal(offContract.error.code, "browser_protocol_error");
 });
 
-test("navegador remoto: tempo limite é respeitado (sem espera ilimitada)", async () => {
-  const hanging = async (_url, init) =>
+test("navegador gerenciado: tempo limite é respeitado (sem espera ilimitada)", async () => {
+  const hanging = async (_payload, { signal }) =>
     await new Promise((_res, rej) => {
-      init?.signal?.addEventListener("abort", () =>
+      signal?.addEventListener("abort", () =>
         rej(Object.assign(new Error("aborted"), { name: "AbortError" })),
       );
     });
@@ -490,13 +518,12 @@ test("navegador remoto: tempo limite é respeitado (sem espera ilimitada)", asyn
     { op: "navigate", url: PUBLIC, timeoutMs: BROWSER_LIMITS.minTimeoutMs },
     {
       config: {
-        mode: "remote",
-        endpoint: workerBase,
-        token: TOKEN,
+        mode: "managed",
+        workerSocket,
         timeoutMs: 60_000,
         executablePath: null,
       },
-      fetchFn: hanging,
+      workerRequest: hanging,
     },
   );
   assert.equal(r.state, "timeout");
@@ -591,7 +618,7 @@ test("navegador local: protege requisições e redirects com DNS injetado sem re
 
 test("aprovação: integração desligada recusa antes de criar aprovação", async () => {
   updateSettings(
-    { integrations: { browser: { enabled: false, command: workerBase, apiKey: TOKEN } } },
+    { integrations: { browser: { enabled: false, command: "", apiKey: TOKEN } } },
     { adminId: null, allowGlobal: true },
   );
   const before = db.prepare("SELECT COUNT(*) n FROM approvals").get().n;
@@ -612,7 +639,7 @@ test("aprovação: integração desligada recusa antes de criar aprovação", as
 
 test("aprovação: pedido válido vira aprovação PENDENTE e nada executa antes da decisão", async () => {
   updateSettings(
-    { integrations: { browser: { enabled: true, command: workerBase, apiKey: TOKEN } } },
+    { integrations: { browser: { enabled: true, command: "", apiKey: TOKEN } } },
     { adminId: null, allowGlobal: true },
   );
   const hitsBefore = worker.hits.length;
@@ -643,7 +670,7 @@ test("aprovação: pedido válido vira aprovação PENDENTE e nada executa antes
 
 test("aprovação: aprovado executa UMA vez, com evidência; replay e terceiros são recusados", async () => {
   updateSettings(
-    { integrations: { browser: { enabled: true, command: workerBase, apiKey: TOKEN } } },
+    { integrations: { browser: { enabled: true, command: "", apiKey: TOKEN } } },
     { adminId: null, allowGlobal: true },
   );
   const ctx = agentCtx(principalA);
@@ -706,7 +733,7 @@ test("aprovação: aprovado executa UMA vez, com evidência; replay e terceiros 
 
 test("aprovação: portão reavaliado — integração desligada após o pedido impede a execução", async () => {
   updateSettings(
-    { integrations: { browser: { enabled: true, command: workerBase, apiKey: TOKEN } } },
+    { integrations: { browser: { enabled: true, command: "", apiKey: TOKEN } } },
     { adminId: null, allowGlobal: true },
   );
   const ctx = agentCtx(principalA);
@@ -728,7 +755,7 @@ test("aprovação: portão reavaliado — integração desligada após o pedido 
 
 test("aprovação: pedido inválido não chega a virar aprovação (destino recusado)", async () => {
   updateSettings(
-    { integrations: { browser: { enabled: true, command: workerBase, apiKey: TOKEN } } },
+    { integrations: { browser: { enabled: true, command: "", apiKey: TOKEN } } },
     { adminId: null, allowGlobal: true },
   );
   const before = db.prepare("SELECT COUNT(*) n FROM approvals").get().n;
@@ -754,7 +781,7 @@ test("aprovação: pedido inválido não chega a virar aprovação (destino recu
 
 test("browser fill stores ciphertext and executes only with the reviewed fingerprint and confirmation", async () => {
   updateSettings(
-    { integrations: { browser: { enabled: true, command: workerBase, apiKey: TOKEN } } },
+    { integrations: { browser: { enabled: true, command: "", apiKey: TOKEN } } },
     { adminId: null, allowGlobal: true },
   );
   const secretText = "valor confidencial do formulario";
@@ -810,7 +837,7 @@ test("browser fill stores ciphertext and executes only with the reviewed fingerp
 
 test("browser click e fill não são autorizados pelo escopo web somente leitura", async () => {
   updateSettings(
-    { integrations: { browser: { enabled: true, command: workerBase, apiKey: TOKEN } } },
+    { integrations: { browser: { enabled: true, command: "", apiKey: TOKEN } } },
     { adminId: null, allowGlobal: true },
   );
   const service = { type: "service", adminId: adminA, tokenId: "test-token", scopes: ["web"] };
@@ -829,7 +856,7 @@ test("browser click e fill não são autorizados pelo escopo web somente leitura
 
 test("review/reveal é owner-scoped, pendente, exige reauth e não expõe payload em respostas comuns", async () => {
   updateSettings(
-    { integrations: { browser: { enabled: true, command: workerBase, apiKey: TOKEN } } },
+    { integrations: { browser: { enabled: true, command: "", apiKey: TOKEN } } },
     { adminId: null, allowGlobal: true },
   );
   const owner = await loginSession("ana");

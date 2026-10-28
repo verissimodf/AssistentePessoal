@@ -1,14 +1,13 @@
 // Navegador — driver de automação com DOIS MODOS por configuração, contrato explícito e nenhuma
 // shell arbitrária.
 //
-//  - modo `local`  : Chromium (Playwright) DENTRO do próprio processo/container do JARVIS;
-//  - modo `remote` : worker externo, alcançado por contrato HTTP autenticado (bearer);
-//  - modo `off`    : padrão — capacidade desligada, nada é inicializado.
+//  - modo `managed` : worker isolado chamado somente pelo socket Unix privado;
+//  - modo `remote`  : configuração HTTP legada recusada em execução;
+//  - modo `off`     : padrão — capacidade desligada;
+//  - modo `unavailable`: worker não configurado; execução local direta é recusada.
 //
-// O endereço do navegador NUNCA é fixo no código: vem de `integrations.browser` (configuração do
-// operador). O alvo que o agente navega é sempre validado por `urlpolicy` (bloqueio de loopback,
-// redes privadas, link-local/metadados de cloud e esquemas não-HTTP) — limites de destino e
-// isolamento ficam no mesmo lugar que o resto do produto já usa.
+// O worker vem do socket Unix do runtime; endpoint HTTP legado é recusado. O alvo navegado é
+// validado no app, worker e broker (o último fixa o IP no dial), com allowlist e bloqueio SSRF.
 //
 // Este módulo NÃO decide autorização: quem chama (tools.js → aprovação humana → resolveApproval)
 // é quem possui o portão. Aqui ficam apenas: validação do pedido, driver, timeout, cancelamento e
@@ -18,6 +17,7 @@ import { assertSafeUrl } from "./urlpolicy.js";
 import { getSettings } from "./settings.js";
 import { browserHostAllowed, normalizeBrowserHosts } from "./browser-approval.js";
 import { assertBrowserDestination, installBrowserRequestPolicy } from "./browser-network.js";
+import { requestBrowserWorker } from "./browser-worker-client.js";
 
 /** Operações suportadas — lista FECHADA (não existe eval/shell/download arbitrário). */
 export const BROWSER_OPS = ["navigate", "extract", "click", "fill", "wait_for", "screenshot"];
@@ -42,11 +42,13 @@ export function resolveBrowserConfig(adminId = null) {
   const cfg = getSettings(adminId)?.integrations?.browser || {};
   const enabled = !!cfg.enabled;
   const endpoint = typeof cfg.command === "string" ? cfg.command.trim() : "";
-  // `off` (desligado) · `remote` (worker externo por URL) · `local` (navegador no container).
-  const mode = !enabled ? "off" : endpoint ? "remote" : "local";
+  // URL configurada = transporte externo legado, recusado em execução; managed usa somente UDS.
+  const workerSocket = process.env.JARVIS_BROWSER_WORKER_SOCKET || "";
+  const mode = !enabled ? "off" : endpoint ? "remote" : workerSocket ? "managed" : "unavailable";
   return {
     mode,
     endpoint,
+    workerSocket,
     token: typeof cfg.apiKey === "string" ? cfg.apiKey : "",
     executablePath:
       typeof cfg.executablePath === "string" && cfg.executablePath ? cfg.executablePath : null,
@@ -182,7 +184,7 @@ export function redact(value, depth = 0) {
 }
 
 // ---------------------------------------------------------------------------
-// Modo local (Playwright dentro do container). Nenhum navegador é iniciado antes do primeiro uso.
+// Driver local mantido somente para testes determinísticos; resolveBrowserConfig não o seleciona.
 // ---------------------------------------------------------------------------
 let localBrowser = null;
 const inflight = new Map(); // runId → { abort }
@@ -197,7 +199,7 @@ async function loadPlaywright() {
   }
   throw new BrowserError(
     "browser_unavailable",
-    "Navegador local indisponível: instale o Playwright no container (`npm i playwright-core && npx playwright-core install --with-deps chromium`) ou use o modo remoto (worker externo).",
+    "Navegador local indisponível; configure o worker Playwright isolado pelo socket Unix.",
   );
 }
 
@@ -256,24 +258,16 @@ async function localRun(
 }
 
 // ---------------------------------------------------------------------------
-// Modo remoto (worker externo). Contrato explícito; a URL vem da configuração do operador.
+// Worker gerenciado: o único transporte aceito é o socket Unix privado.
 // ---------------------------------------------------------------------------
-const REMOTE_CONTRACT = { path: "/run", cancelPath: "/cancel", method: "POST" };
-
-async function remoteRun(
+async function managedRun(
   request,
-  { endpoint, token, timeoutMs, runId, fetchFn, signal, allowedHosts },
+  { socketPath, timeoutMs, runId, signal, allowedHosts, workerRequest },
 ) {
-  const base = String(endpoint).replace(/\/+$/, "");
-  let res;
+  let body;
   try {
-    res = await fetchFn(`${base}${REMOTE_CONTRACT.path}`, {
-      method: REMOTE_CONTRACT.method,
-      headers: {
-        "content-type": "application/json",
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({
+    body = await (workerRequest || requestBrowserWorker)(
+      {
         runId,
         op: request.op,
         url: request.url || null,
@@ -281,38 +275,16 @@ async function remoteRun(
         text: request.text || null,
         timeoutMs,
         allowedHosts,
-      }),
-      signal,
-    });
-  } catch (e) {
-    if (e?.name === "AbortError" || e?.name === "TimeoutError")
-      throw new BrowserError("browser_timeout", "Navegador remoto excedeu o tempo limite.");
-    throw new BrowserError(
-      "browser_unreachable",
-      "Navegador remoto inacessível (verifique o endereço do worker e a rede).",
+      },
+      { socketPath, path: "/run", signal },
     );
+  } catch (error) {
+    if (error?.name === "AbortError" || signal?.aborted)
+      throw new BrowserError("browser_timeout", "Navegador gerenciado excedeu o tempo limite.");
+    throw new BrowserError("browser_unreachable", "Worker local indisponível pelo socket privado.");
   }
-  if (res.status === 401 || res.status === 403)
-    throw new BrowserError(
-      "browser_unauthorized",
-      "Navegador remoto recusou a credencial do worker.",
-    );
-  if (!res.ok) throw new BrowserError("browser_error", `Navegador remoto respondeu ${res.status}.`);
-  let body;
-  try {
-    body = await res.json();
-  } catch {
-    throw new BrowserError(
-      "browser_protocol_error",
-      "Resposta do navegador remoto fora do contrato.",
-    );
-  }
-  if (!body || typeof body !== "object" || typeof body.state !== "string") {
-    throw new BrowserError(
-      "browser_protocol_error",
-      "Resposta do navegador remoto fora do contrato.",
-    );
-  }
+  if (!body || typeof body !== "object" || typeof body.state !== "string")
+    throw new BrowserError("browser_protocol_error", "Resposta do worker local fora do contrato.");
   return redact(body);
 }
 
@@ -347,6 +319,21 @@ export async function runBrowserAction(adminId, params = {}, options = {}) {
         message: "Navegador desabilitado em Configurações (integração browser).",
       },
     });
+  if (cfg.mode === "remote")
+    return done("error", {
+      error: {
+        code: "browser_untrusted_transport",
+        message: "Worker externo HTTP desativado; configure o socket Unix do worker gerenciado.",
+      },
+    });
+  if (cfg.mode === "unavailable")
+    return done("error", {
+      error: {
+        code: "browser_worker_required",
+        message:
+          "Configure o worker Playwright isolado pelo socket Unix antes de habilitar o navegador.",
+      },
+    });
   const v = validateBrowserRequest(params, { allowedHosts: cfg.allowedHosts || [] });
   if (!v.ok) return done("failed", { error: { code: v.code, message: v.reason } });
   const request = v.request;
@@ -358,19 +345,17 @@ export async function runBrowserAction(adminId, params = {}, options = {}) {
   const external = options.signal;
   const signal = external ? AbortSignal.any([external, ctl.signal]) : ctl.signal;
   inflight.set(runId, { abort: () => ctl.abort() });
-  const fetchFn = options.fetchFn ?? ((...a) => globalThis.fetch(...a));
   const loadPlaywrightFn = options.loadPlaywright ?? loadPlaywright;
   try {
     const result =
-      cfg.mode === "remote"
-        ? await remoteRun(request, {
-            endpoint: cfg.endpoint,
-            token: cfg.token,
+      cfg.mode === "managed"
+        ? await managedRun(request, {
+            socketPath: cfg.workerSocket,
             timeoutMs,
             runId,
-            fetchFn,
             signal,
             allowedHosts: cfg.allowedHosts || [],
+            workerRequest: options.workerRequest,
           })
         : await localRun(request, {
             timeoutMs,
@@ -380,7 +365,7 @@ export async function runBrowserAction(adminId, params = {}, options = {}) {
             resolveHost: options.resolveHost,
             allowedHosts: cfg.allowedHosts || [],
           });
-    const state = cfg.mode === "remote" ? result.state : "completed";
+    const state = cfg.mode === "managed" ? result.state : "completed";
     const error =
       result.error && typeof result.error === "object"
         ? {
@@ -430,22 +415,21 @@ export async function runBrowserAction(adminId, params = {}, options = {}) {
 /** Cancelamento cooperativo: aborta a execução local e avisa o worker remoto (best-effort). */
 export async function cancelBrowserRun(
   runId,
-  { config, fetchFn = (...a) => globalThis.fetch(...a) } = {},
+  { config, workerRequest = requestBrowserWorker } = {},
 ) {
   const entry = inflight.get(runId);
   if (entry) entry.abort();
   const cfg = config ?? null;
-  if (cfg?.mode === "remote" && cfg.endpoint) {
+  if (cfg?.mode === "managed" && cfg.workerSocket) {
     try {
-      await fetchFn(`${String(cfg.endpoint).replace(/\/+$/, "")}${REMOTE_CONTRACT.cancelPath}`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(cfg.token ? { authorization: `Bearer ${cfg.token}` } : {}),
+      await workerRequest(
+        { runId },
+        {
+          socketPath: cfg.workerSocket,
+          path: "/cancel",
+          signal: AbortSignal.timeout(3000),
         },
-        body: JSON.stringify({ runId }),
-        signal: AbortSignal.timeout(3000),
-      });
+      );
     } catch {
       /* best-effort: o worker tem o próprio teto de tempo */
     }

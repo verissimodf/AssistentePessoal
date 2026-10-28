@@ -246,13 +246,44 @@ function SettingsPage() {
                     onCheckedChange={(c) => setNested("integrations", a.id, "enabled", c)}
                   />
                 </div>
-                <Field label={a.kind === "http" ? t("base_url") : t("command")}>
-                  <Input
-                    className="font-mono"
-                    value={v.command ?? a.command}
-                    onChange={(e) => setNested("integrations", a.id, "command", e.target.value)}
-                  />
-                </Field>
+                {a.id === "browser" ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      O navegador usa o worker local isolado via socket Unix. Endpoint HTTP e token
+                      antigos não são usados; configure o serviço gerenciado no ambiente do
+                      servidor.
+                    </p>
+                    {(v.command || v.hasKey) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          setS({
+                            ...s,
+                            integrations: {
+                              ...s.integrations,
+                              ["browser"]: {
+                                ...s.integrations?.["browser"],
+                                command: "",
+                                apiKey: "",
+                              },
+                            },
+                          })
+                        }
+                      >
+                        Limpar endpoint/token HTTP legado
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <Field label={a.kind === "http" ? t("base_url") : t("command")}>
+                    <Input
+                      className="font-mono"
+                      value={v.command ?? a.command}
+                      onChange={(e) => setNested("integrations", a.id, "command", e.target.value)}
+                    />
+                  </Field>
+                )}
                 {a.id === "browser" && (
                   <Field label="Hosts permitidos (vírgula; vazio = qualquer host público)">
                     <Input
@@ -269,7 +300,7 @@ function SettingsPage() {
                     />
                   </Field>
                 )}
-                {a.kind === "http" && (
+                {a.kind === "http" && a.id !== "browser" && (
                   <Field label={t("api_key")}>
                     <Input
                       type="password"

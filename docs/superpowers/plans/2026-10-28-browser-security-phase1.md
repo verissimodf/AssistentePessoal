@@ -107,12 +107,12 @@
 
 **Interfaces:** app and worker exchange JSON over `/run/jarvis-browser/worker.sock`; worker browser uses `127.0.0.1:<proxy-port>`; local bridge forwards raw HTTP proxy requests over `/run/jarvis-browser/egress.sock`; broker validates protocol/port/hostname, resolves all addresses once, rejects if any is non-public, and connects to the selected validated IP.
 
-- [ ] Add tests for proxy request parsing, malformed/oversized headers, blocked IPs, mixed DNS answers, DNS rebinding simulation, CONNECT tunneling, and bounded connection cleanup.
-- [ ] Implement the broker and worker-local TCP-to-UDS bridge; do not resolve destination again after validation and preserve TLS SNI/Host using the original hostname.
-- [ ] Change app remote transport to support only the local Unix socket for the managed worker; keep any operator-defined external worker disabled unless a separate explicitly trusted transport is configured.
-- [ ] Set Chromium's proxy explicitly and disable proxy bypass for all non-loopback destinations; continue blocking non-HTTP protocols through Playwright routes.
-- [ ] Run `rtk node --test tests/browser-egress-proxy.test.mjs`; use loopback-controlled fixtures through an injected dialer, with no real website contacted.
-- [ ] Commit Task 5 as `feat: add pinned browser egress proxy`.
+- [x] Add tests for proxy request parsing, malformed/oversized headers, blocked IPs, mixed DNS answers, DNS rebinding simulation, CONNECT tunneling, and bounded connection cleanup.
+- [x] Implement the broker and worker-local TCP-to-UDS bridge; do not resolve destination again after validation and preserve TLS SNI/Host using the original hostname.
+- [x] Change app remote transport to support only the local Unix socket for the managed worker; keep any operator-defined external worker disabled unless a separate explicitly trusted transport is configured.
+- [x] Set Chromium's proxy explicitly and disable proxy bypass for all non-loopback destinations; continue blocking non-HTTP protocols through Playwright routes.
+- [x] Run `rtk node --test tests/browser-egress-proxy.test.mjs` (5/5) and `rtk node --test tests/browser-tool.test.mjs` (24/24); use loopback-controlled fixtures through an injected dialer, with no real website contacted.
+- [x] Commit Task 5 as `feat: add pinned browser egress proxy` (`37d325c`, amended for the network-none DNS handoff).
 
 ## Task 6: Build and deploy the opt-in isolated browser services
 

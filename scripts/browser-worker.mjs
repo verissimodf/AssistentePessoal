@@ -17,20 +17,24 @@
 //  - teto de tempo por execução e cancelamento cooperativo.
 import { createServer } from "node:http";
 import { timingSafeEqual, randomUUID } from "node:crypto";
+import { mkdirSync, chmodSync } from "node:fs";
+import { dirname } from "node:path";
 import {
   assertBrowserDestination,
   installBrowserRequestPolicy,
 } from "../server/browser-network.js";
+import { removeStaleUnixSocket } from "../server/unix-socket.js";
 
 const PORT = Number(process.env.JARVIS_BROWSER_PORT || 7788);
 const BIND = process.env.JARVIS_BROWSER_BIND || "127.0.0.1";
+const WORKER_SOCKET = process.env.JARVIS_BROWSER_WORKER_SOCKET || "";
 const TOKEN = process.env.JARVIS_BROWSER_TOKEN || "";
 const MAX_BODY = 64 * 1024;
 const OPS = ["navigate", "extract", "click", "fill", "wait_for", "screenshot"];
 const MAX_TIMEOUT = 60_000;
 const MAX_TEXT = 4_000;
 
-if (!TOKEN || TOKEN.length < 16) {
+if (!WORKER_SOCKET && (!TOKEN || TOKEN.length < 16)) {
   console.error(
     "browser-worker: JARVIS_BROWSER_TOKEN ausente/curto — recusando iniciar (fail-closed).",
   );
@@ -100,7 +104,7 @@ async function runOp({ op, url, selector, text, timeoutMs, allowedHosts = [] }, 
     };
   if (url) {
     try {
-      await assertBrowserDestination(url, { allowedHosts });
+      await assertBrowserDestination(url, { allowedHosts, checkDns: false });
     } catch (e) {
       return {
         state: "failed",
@@ -113,12 +117,16 @@ async function runOp({ op, url, selector, text, timeoutMs, allowedHosts = [] }, 
   if (!browser)
     browser = await chromium.launch({
       headless: true,
-      args: ["--disable-dev-shm-usage", "--no-sandbox"],
+      args: ["--disable-dev-shm-usage"],
+      proxy: {
+        server: `http://127.0.0.1:${process.env.JARVIS_BROWSER_PROXY_PORT || 8899}`,
+        bypass: "localhost,127.0.0.1,::1",
+      },
     });
   const context = await browser.newContext({ acceptDownloads: false, ignoreHTTPSErrors: false });
   try {
     const page = await context.newPage();
-    await installBrowserRequestPolicy(page, { signal, allowedHosts });
+    await installBrowserRequestPolicy(page, { signal, allowedHosts, checkDns: false });
     if (url) await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     if (op === "click") await page.click(selector, { timeout: timeoutMs });
     if (op === "fill") await page.fill(selector, text, { timeout: timeoutMs });
@@ -154,8 +162,9 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url || "/", `http://${BIND}`);
   if (url.pathname === "/health")
     return send(res, 200, { ok: true, engine: "playwright", mode: "remote" });
-  // Autenticação em TODAS as demais rotas (inclusive /cancel): sem token válido, nada acontece.
-  if (!eq(req.headers.authorization || "", `Bearer ${TOKEN}`)) {
+  // O managed worker não publica TCP: o socket Unix privado substitui bearer-token; no modo
+  // legado TCP, a autenticação continua obrigatória e o bind permanece loopback.
+  if (!WORKER_SOCKET && !eq(req.headers.authorization || "", `Bearer ${TOKEN}`)) {
     if (url.pathname !== "/health") return send(res, 401, { error: "unauthorized" });
   }
   if (req.method !== "POST") return send(res, 405, { error: "method_not_allowed" });
@@ -227,6 +236,15 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, BIND, () => {
-  console.log(`browser-worker: http://${BIND}:${PORT} (contrato /run · /cancel · /health)`);
-});
+if (WORKER_SOCKET) {
+  mkdirSync(dirname(WORKER_SOCKET), { recursive: true, mode: 0o700 });
+  await removeStaleUnixSocket(WORKER_SOCKET);
+  server.listen(WORKER_SOCKET, () => {
+    chmodSync(WORKER_SOCKET, 0o600);
+    console.log("browser-worker: private Unix socket ready");
+  });
+} else {
+  server.listen(PORT, BIND, () => {
+    console.log(`browser-worker: http://${BIND}:${PORT} (contrato /run · /cancel · /health)`);
+  });
+}

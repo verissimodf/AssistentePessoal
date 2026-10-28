@@ -9,6 +9,7 @@ export async function assertBrowserDestination(
   {
     resolveHost = (host) => dnsResolve(host, { all: true, verbatim: true }),
     allowedHosts = [],
+    checkDns = true,
   } = {},
 ) {
   const url = assertSafeUrl(rawUrl);
@@ -18,6 +19,9 @@ export async function assertBrowserDestination(
     if (isBlockedAddress(host)) throw new Error("blocked_destination");
     return url;
   }
+  // O worker isolado (network_mode:none) não pode fazer DNS. Nesse modo, o broker egress
+  // realiza a resolução e fixa o IP usado no socket de saída; o worker ainda valida URL e host.
+  if (!checkDns) return url;
   let records;
   try {
     records = await resolveHost(host);
@@ -34,12 +38,16 @@ export async function assertBrowserDestination(
 /** Shared by the in-process browser and managed worker for every request, redirect and resource. */
 export async function installBrowserRequestPolicy(
   page,
-  { signal, resolveHost, allowedHosts = [] } = {},
+  { signal, resolveHost, allowedHosts = [], checkDns = true } = {},
 ) {
   await page.route("**/*", async (route) => {
     try {
       if (signal?.aborted) throw new Error("browser_cancelled");
-      await assertBrowserDestination(route.request().url(), { resolveHost, allowedHosts });
+      await assertBrowserDestination(route.request().url(), {
+        resolveHost,
+        allowedHosts,
+        checkDns,
+      });
       if (signal?.aborted) throw new Error("browser_cancelled");
       await route.continue();
     } catch {
