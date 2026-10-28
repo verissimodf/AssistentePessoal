@@ -219,7 +219,7 @@ export async function handleProxySocket(
 }
 
 export async function startEgressProxy(
-  socketPath = process.env.JARVIS_BROWSER_EGRESS_SOCKET || "/run/jarvis-browser/egress.sock",
+  socketPath = process.env.JARVIS_BROWSER_EGRESS_SOCKET || "/run/jarvis-browser/egress/egress.sock",
 ) {
   mkdirSync(dirname(socketPath), { recursive: true, mode: 0o700 });
   await removeStaleUnixSocket(socketPath);
@@ -237,7 +237,8 @@ export async function startEgressProxy(
     server.once("error", reject);
     server.listen(socketPath, () => {
       try {
-        chmodSync(socketPath, 0o600);
+        // Broker owner controls the socket directory; browser worker gets group connect only.
+        chmodSync(socketPath, 0o620);
         resolve();
       } catch (error) {
         server.close();

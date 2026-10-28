@@ -3,6 +3,8 @@
 // and a private CONNECT target must be rejected by the pinned egress broker.
 import net from "node:net";
 import { lookup } from "node:dns/promises";
+import { lstatSync, unlinkSync } from "node:fs";
+import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   assertBrowserDestination,
@@ -40,6 +42,24 @@ async function dnsMustFail() {
   throw new Error("direct_dns_unexpectedly_succeeded");
 }
 
+function egressSocketMustBeProtected() {
+  const socketPath =
+    process.env.JARVIS_BROWSER_EGRESS_SOCKET || "/run/jarvis-browser/egress/egress.sock";
+  const socket = lstatSync(socketPath);
+  const directory = lstatSync(dirname(socketPath));
+  if (socket.uid !== 1001 || socket.gid !== 1000 || (socket.mode & 0o777) !== 0o620)
+    throw new Error("egress_socket_permissions_unexpected");
+  if (directory.uid !== 1001 || directory.gid !== 1000 || (directory.mode & 0o777) !== 0o710)
+    throw new Error("egress_socket_directory_permissions_unexpected");
+  try {
+    unlinkSync(socketPath);
+  } catch (error) {
+    if (["EACCES", "EROFS"].includes(error.code)) return;
+    throw new Error("egress_socket_mutation_check_failed");
+  }
+  throw new Error("egress_socket_mutable_by_worker");
+}
+
 function privateConnectMustFail() {
   return new Promise((resolve, reject) => {
     const client = net.createConnection({ host: "127.0.0.1", port: proxyPort });
@@ -68,6 +88,7 @@ function privateConnectMustFail() {
 }
 
 export async function runBrowserNetworkSmoke() {
+  egressSocketMustBeProtected();
   await Promise.all([directConnectMustFail(), dnsMustFail(), privateConnectMustFail()]);
   const { chromium } = await import("playwright");
   const browser = await chromium.launch({
@@ -83,6 +104,7 @@ export async function runBrowserNetworkSmoke() {
     const title = await page.title();
     if (!title.includes("Example Domain")) throw new Error("public_proxy_smoke_unexpected_page");
     return {
+      egressSocketMutation: "blocked",
       directTcp: "blocked",
       directDns: "blocked",
       privateTarget: "blocked",

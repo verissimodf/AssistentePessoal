@@ -6,7 +6,7 @@ import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export function startProxyBridge({
-  socketPath = process.env.JARVIS_BROWSER_EGRESS_SOCKET || "/run/jarvis-browser/egress.sock",
+  socketPath = process.env.JARVIS_BROWSER_EGRESS_SOCKET || "/run/jarvis-browser/egress/egress.sock",
   host = "127.0.0.1",
   port = Number(process.env.JARVIS_BROWSER_PROXY_PORT || 8899),
 } = {}) {

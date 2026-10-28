@@ -7,12 +7,15 @@ services:
     network_mode: none
     read_only: true
     restart: "no"
+    volumes:
+      - browser-worker-runtime:/run/jarvis-browser/worker
+      - browser-egress-runtime:/run/jarvis-browser/egress
     command:
       - sh
       - -ec
-      - install -d -o 1000 -g 1000 -m 0700 /run/jarvis-browser
-    volumes:
-      - browser-runtime:/run/jarvis-browser
+      - >-
+        install -d -o 1000 -g 1000 -m 0700 /run/jarvis-browser/worker &&
+        install -d -o 1001 -g 1000 -m 0710 /run/jarvis-browser/egress
 
   assistente:
     build:
@@ -39,10 +42,10 @@ services:
       JARVIS_DATA_DIR: /app/data
       JARVIS_PORT: "7777"
       PANEL_PORT: "8090"
-      JARVIS_BROWSER_WORKER_SOCKET: /run/jarvis-browser/worker.sock
+      JARVIS_BROWSER_WORKER_SOCKET: /run/jarvis-browser/worker/worker.sock
     volumes:
       - candidate-data:/app/data
-      - browser-runtime:/run/jarvis-browser:ro
+      - browser-worker-runtime:/run/jarvis-browser/worker:ro
 
   browser-worker:
     build:
@@ -68,18 +71,19 @@ services:
       - /home/node/.cache:size=64m,noexec,nosuid,nodev,mode=1777
       - /home/node/.config:size=16m,noexec,nosuid,nodev,mode=1777
     environment:
-      JARVIS_BROWSER_WORKER_SOCKET: /run/jarvis-browser/worker.sock
-      JARVIS_BROWSER_EGRESS_SOCKET: /run/jarvis-browser/egress.sock
+      JARVIS_BROWSER_WORKER_SOCKET: /run/jarvis-browser/worker/worker.sock
+      JARVIS_BROWSER_EGRESS_SOCKET: /run/jarvis-browser/egress/egress.sock
       JARVIS_BROWSER_PROXY_PORT: "8899"
     volumes:
-      - browser-runtime:/run/jarvis-browser
+      - browser-worker-runtime:/run/jarvis-browser/worker
+      - browser-egress-runtime:/run/jarvis-browser/egress:ro
     healthcheck:
       test:
         - CMD
         - node
         - -e
         - >-
-          const h=require('node:http');const r=h.request({socketPath:'/run/jarvis-browser/worker.sock',path:'/health',method:'GET'},s=>process.exit(s.statusCode===200?0:1));r.on('error',()=>process.exit(1));r.end()
+          const h=require('node:http');const r=h.request({socketPath:'/run/jarvis-browser/worker/worker.sock',path:'/health',method:'GET'},s=>process.exit(s.statusCode===200?0:1));r.on('error',()=>process.exit(1));r.end()
       interval: 10s
       timeout: 3s
       retries: 6
@@ -101,13 +105,15 @@ services:
     tmpfs:
       - /tmp:size=32m,noexec,nosuid,nodev
     environment:
-      JARVIS_BROWSER_EGRESS_SOCKET: /run/jarvis-browser/egress.sock
+      JARVIS_BROWSER_EGRESS_SOCKET: /run/jarvis-browser/egress/egress.sock
+    user: "1001:1000"
     volumes:
-      - browser-runtime:/run/jarvis-browser
+      - browser-egress-runtime:/run/jarvis-browser/egress
     networks:
       - browser-egress
     healthcheck:
-      test: [CMD, node, -e, "require('node:fs').accessSync('/run/jarvis-browser/egress.sock')"]
+      test:
+        [CMD, node, -e, "require('node:fs').accessSync('/run/jarvis-browser/egress/egress.sock')"]
       interval: 10s
       timeout: 3s
       retries: 6
@@ -115,7 +121,8 @@ services:
 
 volumes:
   candidate-data:
-  browser-runtime:
+  browser-worker-runtime:
+  browser-egress-runtime:
 
 networks:
   candidate-app:
