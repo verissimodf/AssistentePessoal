@@ -1,0 +1,29 @@
+# Dedicated browser worker and egress broker image; browser traffic is never routed on this image's
+# network by default. The worker service uses network_mode:none; only broker service gets egress.
+FROM node:22.22-bookworm-slim
+
+ENV NODE_ENV=production \
+    HOME=/home/node \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    JARVIS_BROWSER_WORKER_SOCKET=/run/jarvis-browser/worker.sock \
+    JARVIS_BROWSER_EGRESS_SOCKET=/run/jarvis-browser/egress.sock \
+    JARVIS_BROWSER_PROXY_PORT=8899
+WORKDIR /app
+
+# Install browser system libraries and a fixed Playwright/browser revision at image build time.
+RUN npm install --prefix /app --no-save --no-package-lock playwright@1.64.1 \
+ && npx --prefix /app playwright install-deps chromium \
+ && npx --prefix /app playwright install chromium
+
+RUN mkdir -p /run/jarvis-browser \
+ && chown -R 1000:1000 /app/node_modules /ms-playwright /home/node
+
+COPY scripts/browser-worker-entrypoint.mjs scripts/browser-worker.mjs \
+     scripts/browser-proxy-bridge.mjs scripts/browser-egress-proxy.mjs \
+     scripts/browser-network-smoke.mjs ./scripts/
+COPY server/browser-network.js server/browser-approval.js server/secret-crypto.js \
+     server/urlpolicy.js server/unix-socket.js ./server/
+
+USER node
+ENTRYPOINT ["node"]
+CMD ["/app/scripts/browser-worker-entrypoint.mjs"]

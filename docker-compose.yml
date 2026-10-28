@@ -46,6 +46,9 @@ services:
       PANEL_PORT: "8090"
       # Serviço de transcrição local opcional; habilitado pelo profile `stt`.
       JARVIS_STT_URL: "http://stt:8080"
+      # Worker Playwright isolado, habilitado apenas pelo profile `browser`; integração permanece
+      # disabled na configuração global até o smoke test do runbook passar.
+      JARVIS_BROWSER_WORKER_SOCKET: /run/jarvis-browser/worker.sock
       # Ponte de voz -> xtts-service pela rede Docker.
       XTTS_URL: "http://xtts-service:8000"
       XTTS_SPEAKER: ${XTTS_SPEAKER:-jarvis-ptbr}
@@ -78,6 +81,8 @@ services:
     volumes:
       # Banco SQLite (+ WAL/SHM), master.key, vozes e backups — mesmo volume persistente.
       - /opt/laytech-ai/AssistentePessoal/data:/app/data
+      # Socket privado; somente o serviço principal precisa iniciar chamadas do worker.
+      - browser-runtime:/run/jarvis-browser:ro
     networks:
       CNC_APP_PROD_01:
         ipv4_address: 192.168.2.40
@@ -108,6 +113,93 @@ services:
       CNC_APP_PROD_01:
         aliases: [stt]
 
+  browser-runtime-init:
+    profiles: [browser]
+    image: node:22.22-bookworm-slim
+    user: "0:0"
+    network_mode: none
+    read_only: true
+    restart: "no"
+    command: [sh, -ec, "install -d -o 1000 -g 1000 -m 0700 /run/jarvis-browser"]
+    volumes:
+      - browser-runtime:/run/jarvis-browser
+
+  browser-worker:
+    profiles: [browser]
+    build:
+      context: .
+      dockerfile: Dockerfile.browser
+    image: jarvis-browser-worker:playwright-1.64.1
+    restart: unless-stopped
+    depends_on:
+      browser-runtime-init:
+        condition: service_completed_successfully
+      browser-egress:
+        condition: service_healthy
+    network_mode: none
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 2.0
+    shm_size: 128m
+    tmpfs:
+      - /tmp:size=256m,noexec,nosuid,nodev
+      - /home/node/.cache:size=64m,noexec,nosuid,nodev,mode=1777
+      - /home/node/.config:size=16m,noexec,nosuid,nodev,mode=1777
+    environment:
+      JARVIS_BROWSER_WORKER_SOCKET: /run/jarvis-browser/worker.sock
+      JARVIS_BROWSER_EGRESS_SOCKET: /run/jarvis-browser/egress.sock
+      JARVIS_BROWSER_PROXY_PORT: "8899"
+    volumes:
+      - browser-runtime:/run/jarvis-browser
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          const h=require('node:http');const r=h.request({socketPath:'/run/jarvis-browser/worker.sock',path:'/health',method:'GET'},s=>process.exit(s.statusCode===200?0:1));r.on('error',()=>process.exit(1));r.end()
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  browser-egress:
+    profiles: [browser]
+    image: jarvis-browser-worker:playwright-1.64.1
+    command: [/app/scripts/browser-egress-proxy.mjs]
+    restart: unless-stopped
+    depends_on:
+      browser-runtime-init:
+        condition: service_completed_successfully
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid,nodev
+    environment:
+      JARVIS_BROWSER_EGRESS_SOCKET: /run/jarvis-browser/egress.sock
+    volumes:
+      - browser-runtime:/run/jarvis-browser
+    networks:
+      - browser-egress
+    healthcheck:
+      test: [CMD, node, -e, "require('node:fs').accessSync('/run/jarvis-browser/egress.sock')"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
 networks:
   CNC_APP_PROD_01:
     external: true
+  browser-egress:
+    driver: bridge
+
+volumes:
+  browser-runtime:

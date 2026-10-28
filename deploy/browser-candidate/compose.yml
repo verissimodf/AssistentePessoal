@@ -1,0 +1,126 @@
+name: jarvis-browser-candidate
+
+services:
+  runtime-init:
+    image: node:22.22-bookworm-slim
+    user: "0:0"
+    network_mode: none
+    read_only: true
+    restart: "no"
+    command:
+      - sh
+      - -ec
+      - install -d -o 1000 -g 1000 -m 0700 /run/jarvis-browser
+    volumes:
+      - browser-runtime:/run/jarvis-browser
+
+  assistente:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: assistente-pessoal:browser-candidate
+    restart: "no"
+    depends_on:
+      runtime-init:
+        condition: service_completed_successfully
+    networks:
+      - candidate-app
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 2.0
+    tmpfs:
+      - /tmp:size=128m,noexec,nosuid,nodev
+      - /home/node/.cache:size=64m,noexec,nosuid,nodev
+    environment:
+      NODE_ENV: production
+      JARVIS_DATA_DIR: /app/data
+      JARVIS_PORT: "7777"
+      PANEL_PORT: "8090"
+      JARVIS_BROWSER_WORKER_SOCKET: /run/jarvis-browser/worker.sock
+    volumes:
+      - candidate-data:/app/data
+      - browser-runtime:/run/jarvis-browser:ro
+
+  browser-worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.browser
+    image: jarvis-browser-worker:playwright-1.64.1
+    restart: "no"
+    depends_on:
+      runtime-init:
+        condition: service_completed_successfully
+      browser-egress:
+        condition: service_healthy
+    network_mode: none
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 128
+    mem_limit: 1g
+    cpus: 2.0
+    shm_size: 128m
+    tmpfs:
+      - /tmp:size=256m,noexec,nosuid,nodev
+      - /home/node/.cache:size=64m,noexec,nosuid,nodev,mode=1777
+      - /home/node/.config:size=16m,noexec,nosuid,nodev,mode=1777
+    environment:
+      JARVIS_BROWSER_WORKER_SOCKET: /run/jarvis-browser/worker.sock
+      JARVIS_BROWSER_EGRESS_SOCKET: /run/jarvis-browser/egress.sock
+      JARVIS_BROWSER_PROXY_PORT: "8899"
+    volumes:
+      - browser-runtime:/run/jarvis-browser
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          const h=require('node:http');const r=h.request({socketPath:'/run/jarvis-browser/worker.sock',path:'/health',method:'GET'},s=>process.exit(s.statusCode===200?0:1));r.on('error',()=>process.exit(1));r.end()
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  browser-egress:
+    image: jarvis-browser-worker:playwright-1.64.1
+    command: [/app/scripts/browser-egress-proxy.mjs]
+    restart: "no"
+    depends_on:
+      runtime-init:
+        condition: service_completed_successfully
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=32m,noexec,nosuid,nodev
+    environment:
+      JARVIS_BROWSER_EGRESS_SOCKET: /run/jarvis-browser/egress.sock
+    volumes:
+      - browser-runtime:/run/jarvis-browser
+    networks:
+      - browser-egress
+    healthcheck:
+      test: [CMD, node, -e, "require('node:fs').accessSync('/run/jarvis-browser/egress.sock')"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+volumes:
+  candidate-data:
+  browser-runtime:
+
+networks:
+  candidate-app:
+    driver: bridge
+    internal: true
+  browser-egress:
+    driver: bridge
+    internal: false

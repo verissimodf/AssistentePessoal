@@ -81,21 +81,6 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends tini procps \
  && rm -rf /var/lib/apt/lists/*
 
-# Navegador (browser_action) no MODO LOCAL — OPT-IN no build (INSTALL_BROWSER=1).
-# Por padrão NÃO instala: mantém a imagem enxuta e o CI rápido. Sem esta opção o modo local
-# responde `browser_unavailable` com instrução acionável, e o modo REMOTO (worker externo,
-# scripts/browser-worker.mjs) continua disponível sem nada instalado aqui.
-# Nunca contém credenciais; o navegador é isolado por contexto em cada execução.
-ARG INSTALL_BROWSER=0
-RUN if [ "$INSTALL_BROWSER" = "1" ]; then \
-      cd /app/server \
-      && npm install --no-audit --no-fund --no-save playwright-core@1.64.1 \
-      && npx --yes playwright-core@1.64.1 install --with-deps chromium \
-      && npm cache clean --force || exit 1; \
-    else \
-      echo "browser: modo local não instalado neste build (INSTALL_BROWSER=0)"; \
-    fi
-
 # Agentes CLI das integrações (Configurações → Integrações: claude_code, codex, opencode).
 # Versões fixadas para builds reproduzíveis; apenas binários — nenhuma credencial entra na
 # imagem (a autenticação é feita em runtime, dentro do container). Licenças: Claude Code
