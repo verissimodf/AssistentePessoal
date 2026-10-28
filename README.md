@@ -123,7 +123,7 @@ export BUILD_VERSION="$(node -p 'require("./package.json").version')"
 export BUILD_COMMIT="$(git rev-parse HEAD)"
 # Em build local ainda não publicado; use Registrado somente após merge/tag no remoto.
 export BUILD_COMMIT_STATUS="Não registrado (local)"
-export SCHEMA_VERSION=15
+export SCHEMA_VERSION=18
 export BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 export RELEASE_BUILD=1
 export IMAGE_TAG="$(git rev-parse --short HEAD)"

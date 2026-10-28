@@ -25,7 +25,28 @@ validação pendente contra provedores externos.
 | Compose | `docker compose --profile stt config --quiet` | **PASS** |
 | Modelo STT | revisão `5359861c739e955e79d9a303bcbc70fb988958b1` | SHA-256 `1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b` |
 
-## Evidência do deploy 1.9.1
+## Evidência do deploy 1.9.2
+
+| Item | Resultado observado |
+| --- | --- |
+| Commit publicado | `02519578f2ea3877949cee67d9bdf9222457945e` em `origin/main` |
+| Imagem | `assistente-pessoal:1.9.2`; ID `sha256:d19178dc4d270bacb6ca1e441baaaa36e94237220b40a3019b132344480602e8` |
+| Build | `2026-10-28T01:34:21Z`; `commitStatus=Registrado`; schema 18 |
+| Container | `running`, `healthy`, reinícios 0 |
+| Health API | HTTP **200**, versão `1.9.2`, SHA completo esperado, `setupRequired=false`, schema 18 |
+| Painel | HTTP **200**, servido pela porta interna 8090 |
+| Release image gate | labels, `build-info`, health e painel **PASS** |
+| OpenHands | `GET /server_info` com `X-Session-API-Key` HTTP **200** após recriação; chave persistida bate com a chave gerada sem exibir nenhum valor; health `healthy` |
+| Headroom | imagem `0.42.0`, `/health` **200**, `/v1/models` **200** (9 modelos), chat sintético `qwen2.5:7b` **200** |
+| CLIs | binários Claude Code, Codex e OpenCode presentes; versões conferidas; roteamento OpenAI, Anthropic e provider OpenCode configurados |
+| Serviços | Headroom e OpenHands `healthy`, reinícios 0 |
+| Arquivos secretos | `.env` raiz e `.env` do Headroom modo `0600`; ambos ignorados/não versionados |
+
+A chamada real `POST /api/conversations` do Agent Canvas não foi executada; o contrato foi validado
+por teste de unidade com servidor stub, enquanto a comunicação local foi validada por endpoint
+autenticado de leitura. O fluxo de produção continua protegido por aprovação no painel.
+
+## Histórico do deploy 1.9.1
 
 | Item | Resultado observado |
 | --- | --- |

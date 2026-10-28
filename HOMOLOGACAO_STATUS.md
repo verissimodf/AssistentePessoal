@@ -1,14 +1,37 @@
 # 📋 Relatório de Auditoria Técnica e Homologação (Production Readiness)
 **Projeto:** J.A.R.V.I.S. (Assistente Pessoal Local)
-**Versão Atual:** 1.9.1
-**Data do último release/deploy registrado:** 27 de Outubro de 2026
-**Status do Release:** ✅ **1.9.1 publicada em `origin/main` e implantada; container healthy, schema 18, smoke API/painel/TTS aprovado. OAuth real aguarda configuração de provedores.**
-**Commit da imagem atual:** `80b3f65c81a53854e8f3dc9776c7c13f27c5732d` (branch `main`)
+**Versão Atual:** 1.9.2
+**Data do último release/deploy registrado:** 28 de Outubro de 2026
+**Status do Release:** ✅ **1.9.2 publicada em `origin/main` e implantada; container healthy, schema 18, OpenHands autenticado e Headroom 0.42.0 operacional.** OAuth real aguarda configuração de provedores.
+**Commit da imagem atual:** `02519578f2ea3877949cee67d9bdf9222457945e` (branch `main`)
 **Repositório Oficial:** `https://github.com/verissimodf/AssistentePessoal`
 
 ---
 
-## Estado atual — release 1.9.1 — 27/10/2026
+## Estado atual — release 1.9.2 — 28/10/2026
+
+| Item | Evidência local pós-deploy |
+| --- | --- |
+| Versão / esquema | `1.9.2` / SQLite `18` |
+| Commit construído | `02519578f2ea3877949cee67d9bdf9222457945e`, publicado em `origin/main` |
+| Imagem | `assistente-pessoal:1.9.2`, ID `sha256:d19178dc4d270bacb6ca1e441baaaa36e94237220b40a3019b132344480602e8` |
+| Build | `2026-10-28T01:34:21Z`, `commitStatus=Registrado`, schema de build 18 |
+| Container | `running`, `healthy`, reinícios 0; volume e rede persistentes |
+| Health e painel | health HTTP 200 com versão/commit/schema esperados; painel HTTP 200; `setupRequired=false` |
+| Release image gate | `scripts/verificar-imagem-release.sh`: labels, `build-info`, health, painel **APROVADOS** |
+| Testes | Backend **657/657**, frontend **109/109**, avaliação offline **86/86**, TypeScript sem erros, lint **0 erros/0 avisos**, build Vite/Nitro OK |
+| OpenHands | `server_info` autenticado HTTP 200; chave do `.env` comparada em memória com o arquivo do Agent Canvas; container saudável |
+| Headroom | `ghcr.io/headroomlabs-ai/headroom:0.42.0`, saudável; `/health`, `/v1/models` (9) e chat sintético HTTP 200 |
+| CLIs | Claude Code `2.1.301`, Codex `0.163.0`, OpenCode `1.19.3`; endpoints Headroom configurados no ambiente do Assistente |
+| Lint | os nove `any`, três `catch` vazios e 16 avisos foram resolvidos; `.remember/**` permanece excluído |
+
+O `.env` raiz e o `.env` do serviço Headroom têm modo `0600`; nenhuma chave foi impressa ou
+versionada. A integração OpenHands continua submetendo tarefas apenas após aprovação humana. O
+provider Headroom está instalado e roteado, mas o toggle `enabled` do provider nas configurações
+administrativas permanece desativado e precisa ser ativado por um administrador verificado para
+selecioná-lo nas conversas do Assistente.
+
+## Histórico — release 1.9.1 — 27/10/2026
 
 | Item | Evidência local pós-deploy |
 | --- | --- |
@@ -24,7 +47,7 @@
 | Imagem isolada | `scripts/verificar-imagem-release.sh`: labels OCI, `build-info`, health API, `setupRequired` e painel **PASS** |
 | Novos fluxos | fila durável e retomada conservadora; retenção com quarentena; OAuth PKCE; STT local; voz XTTS ligada ao serviço existente |
 | AgentMail | 1 inbox com ownership `claimed`; zero eventos sem owner. Não foi lido conteúdo nem enviado e-mail nesta validação |
-| Lint | 88 arquivos rastreados formatados; ESLint ainda tem 12 erros fora de formatação e 16 avisos; detalhes em `docs/VALIDACAO.md` |
+| Lint naquela release | 12 erros e 16 avisos registrados antes das correções da 1.9.2 |
 
 O commit `80b3f65` foi enviado em fast-forward para `origin/main` e a imagem foi construída com o SHA
 completo publicado. O serviço `assistente` foi recriado explicitamente com `IMAGE_TAG=1.9.1`.
