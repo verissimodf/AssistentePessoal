@@ -253,6 +253,22 @@ function SettingsPage() {
                     onChange={(e) => setNested("integrations", a.id, "command", e.target.value)}
                   />
                 </Field>
+                {a.id === "browser" && (
+                  <Field label="Hosts permitidos (vírgula; vazio = qualquer host público)">
+                    <Input
+                      className="font-mono"
+                      value={
+                        Array.isArray(v.allowedHosts)
+                          ? v.allowedHosts.join(", ")
+                          : String(v.allowedHosts ?? "")
+                      }
+                      placeholder="example.com, docs.example.com"
+                      onChange={(e) =>
+                        setNested("integrations", a.id, "allowedHosts", e.target.value)
+                      }
+                    />
+                  </Field>
+                )}
                 {a.kind === "http" && (
                   <Field label={t("api_key")}>
                     <Input

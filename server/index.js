@@ -355,7 +355,10 @@ route("POST", "/api/oauth/:provider/disconnect", "session", ({ principal, params
 });
 route("POST", "/api/approvals/:id", "session", ({ params, body, principal }) => {
   if (!owns(principal?.adminId, "approval", params.id)) throw new AuthError(404, "not_found"); // foreign/legacy/unknown look the same
-  return resolveApproval(params.id, !!body.approve, principal);
+  return resolveApproval(params.id, !!body.approve, principal, {
+    confirmWrite: body.confirmWrite === true,
+    fingerprint: typeof body.fingerprint === "string" ? body.fingerprint : null,
+  });
 });
 // Evidência por execução (P0): mesmo portão de posse da aprovação — foreign/legacy/unknown → 404.
 // Só metadados técnicos (estado, código de saída, verificação); nunca conteúdo privado.

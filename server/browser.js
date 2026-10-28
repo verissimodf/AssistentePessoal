@@ -17,6 +17,7 @@ import { lookup as dnsResolve } from "node:dns/promises";
 import { isIP } from "node:net";
 import { assertSafeUrl, isBlockedAddress } from "./urlpolicy.js";
 import { getSettings } from "./settings.js";
+import { browserHostAllowed, normalizeBrowserHosts } from "./browser-approval.js";
 
 /** Operações suportadas — lista FECHADA (não existe eval/shell/download arbitrário). */
 export const BROWSER_OPS = ["navigate", "extract", "click", "fill", "wait_for", "screenshot"];
@@ -54,6 +55,7 @@ export function resolveBrowserConfig(adminId = null) {
       BROWSER_LIMITS.minTimeoutMs,
       BROWSER_LIMITS.maxTimeoutMs,
     ),
+    allowedHosts: normalizeBrowserHosts(cfg.allowedHosts),
   };
 }
 
@@ -116,7 +118,7 @@ export class BrowserError extends Error {
  * Valida o pedido ANTES de qualquer I/O: operação da lista fechada, destino seguro (SSRF),
  * seletor/texto dentro dos limites e timeout dentro do teto.
  */
-export function validateBrowserRequest(input = {}) {
+export function validateBrowserRequest(input = {}, { allowedHosts = [] } = {}) {
   const op = String(input.op ?? "").trim();
   if (!BROWSER_OPS.includes(op)) {
     return {
@@ -137,6 +139,12 @@ export function validateBrowserRequest(input = {}) {
         reason: `Destino recusado pela política de rede (${e?.message || "url inválida"}).`,
       };
     }
+    if (!browserHostAllowed(url, allowedHosts))
+      return {
+        ok: false,
+        code: "blocked_destination",
+        reason: "Destino fora da lista de hosts permitidos.",
+      };
   }
   if (op === "navigate" && !url)
     return { ok: false, code: "url_required", reason: "Informe a URL para navegar." };

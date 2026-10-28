@@ -23,6 +23,7 @@ const {
   cancelBrowserRun,
   BrowserError,
 } = await import("../server/browser.js");
+const { normalizeBrowserHosts } = await import("../server/browser-approval.js");
 const { createApp } = await import("../server/index.js");
 const { callTool, resolveApproval } = await import("../server/tools.js");
 const { auth, db } = await import("../server/db.js");
@@ -216,6 +217,62 @@ test("navegador: limites de seletor/texto/timeout com piso e teto", () => {
     BROWSER_LIMITS.minTimeoutMs,
     "piso de 1 s aplicado",
   );
+});
+
+test("navegador: allowlist aceita hosts exatos, rejeita hosts externos e sintaxe ampla", async () => {
+  assert.deepEqual(normalizeBrowserHosts("Example.com, docs.example.com,example.com."), [
+    "example.com",
+    "docs.example.com",
+  ]);
+  assert.equal(
+    validateBrowserRequest(
+      { op: "navigate", url: "https://evil.example/" },
+      {
+        allowedHosts: ["example.com"],
+      },
+    ).code,
+    "blocked_destination",
+  );
+  assert.equal(
+    validateBrowserRequest(
+      { op: "navigate", url: "https://sub.example.com/" },
+      {
+        allowedHosts: ["example.com"],
+      },
+    ).ok,
+    false,
+    "subdomínio não herda permissão",
+  );
+  assert.throws(() => normalizeBrowserHosts("*.example.com"), /browser_host_invalid/);
+  assert.throws(() => normalizeBrowserHosts("example.com:443"), /browser_host_invalid/);
+  assert.equal(
+    validateBrowserRequest({ op: "navigate", url: PUBLIC }, { allowedHosts: [] }).ok,
+    true,
+  );
+  updateSettings(
+    { integrations: { browser: { allowedHosts: "example.com" } } },
+    { adminId: null, allowGlobal: true },
+  );
+  assert.equal(resolveBrowserConfig(null).allowedHosts[0], "example.com");
+  assert.throws(
+    () =>
+      updateSettings(
+        { integrations: { browser: { allowedHosts: ["*.example.com"] } } },
+        { allowGlobal: false },
+      ),
+    (error) => error.status === 403,
+    "identidade sem privilégio administrativo não altera a política global",
+  );
+  const serviceToken = auth.createServiceToken(principalA, {
+    name: "browser-settings-test",
+    scopes: ["settings:write"],
+  }).token;
+  const response = await fetch(`${base}/api/settings`, {
+    method: "PUT",
+    headers: { authorization: `Bearer ${serviceToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ integrations: { browser: { allowedHosts: ["evil.example"] } } }),
+  });
+  assert.equal(response.status, 403, "token não modifica a política global do navegador");
 });
 
 test("navegador: resolução de modo por CONFIGURAÇÃO (off · local · remote) sem expor token", () => {
@@ -547,4 +604,73 @@ test("aprovação: pedido inválido não chega a virar aprovação (destino recu
     .all();
   assert.ok(refused.length >= 1, "recusa auditada");
   assert.match(String(refused.at(-1).detail), /blocked_destination/);
+});
+
+test("browser fill stores ciphertext and executes only with the reviewed fingerprint and confirmation", async () => {
+  updateSettings(
+    { integrations: { browser: { enabled: true, command: workerBase, apiKey: TOKEN } } },
+    { adminId: null, allowGlobal: true },
+  );
+  const secretText = "valor confidencial do formulario";
+  const ctx = agentCtx(principalA);
+  await callTool(
+    "browser_action",
+    { op: "fill", url: PUBLIC, selector: "#email", text: secretText },
+    ctx,
+  );
+  const id = ctx.pending[0].id;
+  const stored = JSON.parse(
+    db.prepare("SELECT action FROM approval_actions WHERE approval_id = ?").get(id).action,
+  );
+  assert.equal(stored.params.text, undefined, "texto em claro não persiste na ação");
+  assert.match(stored.params.encryptedText, /^enc:/, "texto protegido em repouso");
+  assert.equal(stored.fingerprint.length, 32);
+
+  const before = worker.hits.length;
+  const service = {
+    type: "service",
+    adminId: adminA,
+    tokenId: "test-writer",
+    scopes: ["web:write"],
+  };
+  await assert.rejects(
+    () =>
+      resolveApproval(id, true, service, { confirmWrite: true, fingerprint: stored.fingerprint }),
+    (error) => error.status === 403,
+    "token de serviço não pode fornecer confirmação humana",
+  );
+  await assert.rejects(() => resolveApproval(id, true, principalA), /review|fingerprint/i);
+  assert.equal(db.prepare("SELECT status FROM approvals WHERE id = ?").get(id).status, "pending");
+  assert.equal(worker.hits.length, before, "falta de confirmação não consome nem executa");
+
+  await assert.rejects(
+    () => resolveApproval(id, true, principalA, { confirmWrite: true, fingerprint: "stale" }),
+    /review|fingerprint/i,
+  );
+  assert.equal(worker.hits.length, before, "fingerprint divergente não executa");
+  const done = await resolveApproval(id, true, principalA, {
+    confirmWrite: true,
+    fingerprint: stored.fingerprint,
+  });
+  assert.equal(done.status, "done");
+  assert.equal(worker.hits.at(-1).text, secretText, "texto é descriptografado apenas na execução");
+});
+
+test("browser click e fill não são autorizados pelo escopo web somente leitura", async () => {
+  updateSettings(
+    { integrations: { browser: { enabled: true, command: workerBase, apiKey: TOKEN } } },
+    { adminId: null, allowGlobal: true },
+  );
+  const service = { type: "service", adminId: adminA, tokenId: "test-token", scopes: ["web"] };
+  for (const input of [
+    { op: "click", url: PUBLIC, selector: "button" },
+    { op: "fill", url: PUBLIC, selector: "#email", text: "x@y.test" },
+  ]) {
+    const ctx = agentCtx(service);
+    const before = db.prepare("SELECT COUNT(*) n FROM approvals").get().n;
+    const result = await callTool("browser_action", input, ctx);
+    assert.match(String(result), /permissão negada/i);
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM approvals").get().n, before);
+    assert.equal(ctx.pending.length, 0);
+  }
 });

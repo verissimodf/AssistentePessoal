@@ -15,7 +15,7 @@ import {
 } from "./db.js";
 import { getSettings } from "./settings.js";
 import { decide } from "./hostpolicy.js";
-import { can, TOOL_SCOPES, AuthError } from "./auth.js";
+import { can, isVerifiedAdmin, TOOL_SCOPES, AuthError } from "./auth.js";
 import { embed, cosine } from "./llm.js";
 import { searchDocuments } from "./documents.js";
 import { assignNew, owns, tx } from "./ownership.js";
@@ -25,6 +25,13 @@ import { safeFetch, assertPublicHost } from "./urlpolicy.js";
 import { getMailService } from "./mail-service.js";
 import { getDraftStore } from "./mail-drafts.js";
 import { runBrowserAction, validateBrowserRequest, BROWSER_OPS } from "./browser.js";
+import {
+  browserFingerprint,
+  isBrowserWrite,
+  protectBrowserAction,
+  unprotectBrowserAction,
+  browserHostAllowed,
+} from "./browser-approval.js";
 import { MailError, validateOutgoing } from "./mail.js";
 import { loadSkill, matchSkillsForPrompt } from "./skills.js";
 import {
@@ -907,21 +914,6 @@ export async function recall(query, limit = 6, ownerId) {
  * The row is claimed by one conditional UPDATE (pending → running), so a single approval can
  * never authorize two operations, and the payload is frozen at request time.
  */
-/** Fingerprint da ação de navegador: fixa operação + destino + seletor + texto no momento do pedido. */
-export const browserFingerprint = (request = {}) =>
-  createHash("sha256")
-    .update(
-      [
-        request.op,
-        request.url || "",
-        request.selector || "",
-        request.text || "",
-        String(request.timeoutMs ?? ""),
-      ].join("\u0000"),
-    )
-    .digest("hex")
-    .slice(0, 32);
-
 function queueApproval(entry, ownerId, correlation = null) {
   const id = uid();
   const command = typeof entry === "string" ? entry : String(entry.command ?? "");
@@ -929,7 +921,7 @@ function queueApproval(entry, ownerId, correlation = null) {
     typeof entry === "string"
       ? null
       : {
-          ...(entry.action ?? { kind: "run_command", command }),
+          ...protectBrowserAction(entry.action ?? { kind: "run_command", command }),
           ...(correlation ? { correlation } : {}),
         };
   tx(() => {
@@ -1032,7 +1024,10 @@ const who = (p) =>
 
 /** ctx: { autonomy: "confirm"|"safe"|"full", pending: [], principal } — authorization is re-checked here, at execution time. */
 export async function callTool(name, input, ctx) {
-  const scope = TOOL_SCOPES[name];
+  const scope =
+    name === "browser_action" && ["click", "fill"].includes(input?.op)
+      ? "web:write"
+      : TOOL_SCOPES[name];
   if (!scope) return `Ferramenta desconhecida: ${name}`;
   if (!can(ctx.principal, scope)) {
     audit("authz.tool_denied", { tool: name, scope, principal: who(ctx.principal) });
@@ -1365,7 +1360,7 @@ export async function callTool(name, input, ctx) {
       // aprovação; nada navega enquanto o humano não decidir. Sem shell, sem download, sem eval.
       const bcfg = s.integrations?.browser;
       if (!bcfg?.enabled) return 'Integração "browser" não está habilitada em Configurações.';
-      const v = validateBrowserRequest(input);
+      const v = validateBrowserRequest(input, { allowedHosts: bcfg.allowedHosts || [] });
       if (!v.ok) {
         audit("browser_action(refused)", {
           approvalId: null,
@@ -1553,7 +1548,7 @@ const evidenceAuditFields = (ev, executionId) => ({
  * concurrent requests can never both execute. A crash after "running" leaves the row "interrupted"
  * at next start (db.js) — never re-executed. Foreign, legacy and unknown ids → 404.
  */
-export async function resolveApproval(id, approve, principal) {
+export async function resolveApproval(id, approve, principal, review = {}) {
   const adminId = principal?.adminId || null;
   if (!owns(adminId, "approval", id)) throw new AuthError(404, "not_found");
   const row = db.prepare("SELECT command FROM approvals WHERE id = ?").get(id);
@@ -1563,6 +1558,12 @@ export async function resolveApproval(id, approve, principal) {
   // trata-se de um comando de shell — o formato anterior continua válido.
   const action = approvalAction(id);
   const kind = action?.kind || "run_command";
+  if (approve && isBrowserWrite(action)) {
+    if (!isVerifiedAdmin(principal) || !can(principal, "web:write"))
+      throw new AuthError(403, "forbidden");
+    if (review.confirmWrite !== true || review.fingerprint !== action.fingerprint)
+      throw new AuthError(409, "browser_review_stale");
+  }
   // Correlação: coluna estruturada (v9) quando preenchida, JSON legado como fallback. Divergência
   // é diagnosticada, nunca escolhida em silêncio (ver approvalCorrelation em db.js).
   const correlation = approvalCorrelation(id, action);
@@ -1596,7 +1597,12 @@ export async function resolveApproval(id, approve, principal) {
                 ? null
                 : "integration_disabled"
               : kind === "browser_action"
-                ? s.integrations?.browser?.enabled
+                ? s.integrations?.browser?.enabled &&
+                  (!action?.params?.url ||
+                    browserHostAllowed(
+                      action.params.url,
+                      s.integrations.browser.allowedHosts || [],
+                    ))
                   ? null
                   : "integration_disabled"
                 : "unknown_action";
@@ -1660,9 +1666,10 @@ export async function resolveApproval(id, approve, principal) {
       result = await sendMessage(adminId, action.channel, action.text, action.fingerprint);
     else if (kind === "agentmail_send")
       result = await sendAgentMailApproved(adminId, action, action.fingerprint);
-    else if (kind === "browser_action")
-      result = await runBrowserAction(adminId, action.params || {});
-    else result = await runShell(action?.command || row.command);
+    else if (kind === "browser_action") {
+      const executable = unprotectBrowserAction(action);
+      result = await runBrowserAction(adminId, executable.params || {});
+    } else result = await runShell(action?.command || row.command);
     const text = resultText(result);
     db.prepare("UPDATE approvals SET status = 'done', output = ? WHERE id = ?").run(text, id);
     const outcome = classifyOutcome(kind, result);

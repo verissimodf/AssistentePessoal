@@ -8,6 +8,7 @@ import { existsSync } from "node:fs";
 import { DATA_DIR, db, now, audit } from "./db.js";
 import { AuthError } from "./auth.js";
 import { encrypt, decrypt, ensureMasterKey } from "./secret-crypto.js";
+import { normalizeBrowserHosts } from "./browser-approval.js";
 export { encrypt, decrypt };
 
 // Preserve startup behavior for a new installation. Migrations run before this module loads and
@@ -245,6 +246,11 @@ export function updateSettings(incoming = {}, { adminId = null, allowGlobal = tr
     if (!allowGlobal) throw new AuthError(403, "global_settings_admin_only");
     const cur = readJson("SELECT data FROM global_settings WHERE id = 1") || {};
     const next = merge(cur, g);
+    if (next.integrations?.browser) {
+      next.integrations.browser.allowedHosts = normalizeBrowserHosts(
+        next.integrations.browser.allowedHosts,
+      );
+    }
     if (next.host)
       next.host = {
         enabled: !!next.host.enabled,

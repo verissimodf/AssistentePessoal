@@ -65,21 +65,23 @@
 - [x] Change `server/settings.js` to re-export the crypto helpers without changing callers.
 - [x] Add migration 19 using `apply(db, { dataDir, encryptFn })`; update the migration runner to invoke `apply` inside the existing `BEGIN IMMEDIATE` transaction and pass `{ dataDir, encryptFn: opts.encryptFn ?? ((text) => encrypt(text, { dataDir, createKey: false })) }`. Production requires the configured existing key when data must be transformed; tests inject deterministic encryption.
 - [x] Run `rtk node --test tests/migrations.test.mjs tests/oauth.test.mjs tests/settings-provenance.test.mjs tests/settings-comms-blank.test.mjs tests/secret-crypto.test.mjs`; 31/31 pass.
-- [ ] Commit Task 1 as `fix: encrypt browser approval payloads at rest`.
+- [x] Commit Task 1 as `fix: encrypt browser approval payloads at rest`.
 
 ## Task 2: Protect new browser actions and define write authorization
 
 **Interfaces:** `protectBrowserAction(action) -> storedAction`, `unprotectBrowserAction(action) -> executableAction`, `browserActionReview(action, { reveal }) -> safeReview`; review output contains only operation, host, selector, masked preview, and an opaque fingerprint unless reveal is explicitly authorized.
 
-- [ ] Add failing tests for stored `fill.text` being absent and ciphertext being present; decrypt occurs only at execution; action fingerprint and destination remain bound.
-- [ ] Add failing tests that `click` and `fill` require `web:write` for service tokens, legacy `web` remains read-only, unknown scopes are denied, and admin sessions retain existing read access.
-- [ ] Add failing settings/API tests that only a verified admin can change `integrations.browser.allowedHosts`; exact hostnames and empty-list behavior are validated, and URL redirects to hosts outside a configured list are refused.
-- [ ] Implement the browser action protection helper using the crypto module; only encrypt/decrypt the browser payload field, not unrelated actions. Preserve the fingerprint from the original request and verify it again after decrypting.
-- [ ] Add `web:write` to `SCOPES` but not `BOT_SCOPES`; add `browser_action` operation-aware authorization at call time and resolution time.
-- [ ] Add optional exact-host allowlist to global browser settings and the integrations panel. An empty list permits any public host; a nonempty list permits only listed hostnames, with no wildcard syntax.
-- [ ] Return the stored action fingerprint in the review projection and require the same fingerprint plus `confirmWrite === true` for `click`/`fill` approval resolution; a changed destination, stale review or replay does not execute.
-- [ ] Run `rtk node --test tests/browser-tool.test.mjs tests/approvals-actions.test.mjs tests/auth.test.mjs`; confirm existing read-only `navigate`/`extract` flows preserve behavior.
-- [ ] Commit Task 2 as `fix: gate browser writes with explicit scope and approval`.
+- [x] Add failing tests for stored `fill.text` being absent and ciphertext being present; decrypt occurs only at execution; action fingerprint and destination remain bound.
+- [x] Add failing tests that `click` and `fill` require `web:write` for service tokens, legacy `web` remains read-only, unknown scopes are denied, and admin sessions retain existing read access.
+- [x] Add failing settings/API tests that only a verified admin can change `integrations.browser.allowedHosts`; exact hostnames and empty-list behavior are validated.
+- [x] Implement the browser action protection helper using the crypto module; only encrypt/decrypt the browser payload field, not unrelated actions. Preserve the fingerprint from the original request and verify it again after decrypting.
+- [x] Add `web:write` to `SCOPES` but not `BOT_SCOPES`; add `browser_action` operation-aware authorization at call time and resolution time.
+- [x] Add optional exact-host allowlist to global browser settings and the integrations panel. An empty list permits any public host; a nonempty list permits only listed hostnames, with no wildcard syntax.
+- [x] Require the same fingerprint plus `confirmWrite === true` for `click`/`fill` approval resolution; a changed destination, stale review or replay does not execute. Review projection is completed in Task 3.
+- [x] Run `rtk node --test tests/browser-tool.test.mjs tests/approvals-actions.test.mjs tests/auth.test.mjs`; 56/56 pass, including existing read-only `navigate` approval flow.
+- [x] Commit Task 2 as `fix: gate browser writes with explicit scope and approval`.
+
+**Task 2 ruling:** redirects to unlisted hosts are verified in Task 4 route interception (not Task 2 request validation); Task 2 tests exact-host validation on the initial requested URL. Hostnames are capped at 100 and exact-only to bound configuration input. Cost if incorrect: redirect acceptance is deferred until Task 4; browser remains disabled until Tasks 4–6. The allowlist cap only limits unusually large admin configuration.
 
 ## Task 3: Owner-scoped review/reveal UI and endpoints
 

@@ -25,6 +25,7 @@ export const SCOPES = [
   "settings:write",
   "voice",
   "web",
+  "web:write",
   "host:run",
   "comms:read",
   "comms:send",
@@ -68,8 +69,7 @@ export const TOOL_SCOPES = {
   gigabrain_remember: "memories:write",
   // Hub Global de Skills (v1.2): carrega instruções e regras especializadas sob demanda.
   load_skill: "skills:read",
-  // Navegador: ação de rede externa — mesmo escopo de leitura de rede dos demais fetchers.
-  // O portão efetivo é a APROVAÇÃO HUMANA (ver tools.js) + integração opt-in.
+  // Navegador: a autorização de escrita (click/fill) é avaliada por operação em callTool.
   browser_action: "web",
   // AgentMail: mesmo enquadramento de leitura/envio de e-mail do IMAP nativo. Envio segue o
   // D9: a ferramenta só enfileira aprovação humana (nunca dispara a API de envio diretamente).

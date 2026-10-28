@@ -8,11 +8,20 @@ import { migrate } from "../server/migrations.js";
 import {
   createAuth,
   can,
+  SCOPES,
+  BOT_SCOPES,
   isVerifiedAdmin,
   IDLE_MS,
   ABSOLUTE_MS,
   BOOTSTRAP_TTL_MS,
 } from "../server/auth.js";
+
+test("web:write é grantable a tokens de serviço, mas não a bots", () => {
+  assert.ok(SCOPES.includes("web:write"));
+  assert.equal(BOT_SCOPES.includes("web:write"), false);
+  assert.equal(can({ type: "service", scopes: ["web"] }, "web:write"), false);
+  assert.equal(can({ type: "service", scopes: ["web:write"] }, "web:write"), true);
+});
 
 const PW = "senha-muito-forte-1";
 function setup() {
