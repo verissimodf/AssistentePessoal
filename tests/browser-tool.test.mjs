@@ -1,6 +1,6 @@
 // Navegador (browser_action) — testes NOVOS e estritamente da capacidade.
 // Sem navegador real, sem rede externa: worker falso atende somente por socket Unix temporário.
-import { test, before, after } from "node:test";
+import { test as nodeTest, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtempSync } from "node:fs";
@@ -8,6 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const dir = mkdtempSync(join(tmpdir(), "jarvis-browser-"));
+// Managed browser integration is Linux-only: it requires filesystem Unix sockets.
+const test = process.platform === "win32" ? nodeTest.skip : nodeTest;
 process.env.JARVIS_DATA_DIR = dir;
 process.env.JARVIS_NO_LISTEN = "1";
 const workerSocket = join(dir, "worker.sock");
@@ -105,6 +107,7 @@ const wserver = createServer((req, res) => {
 });
 
 before(async () => {
+  if (process.platform === "win32") return;
   policyServer = await startBrowserPolicyServer(policySocket, policyRegistry);
   await new Promise((r) => wserver.listen(workerSocket, r));
   app = createApp();
@@ -116,6 +119,7 @@ before(async () => {
   principalB = null; // isolamento provado com identidade estrangeira inexistente (404 uniforme)
 });
 after(async () => {
+  if (process.platform === "win32") return;
   // Fecha handles de forma determinística (o worker falso pode ter socket pendente do teste de timeout).
   wserver.closeAllConnections?.();
   await new Promise((r) => wserver.close(r));

@@ -11,6 +11,11 @@ delete process.env.JARVIS_MASTER_KEY;
 
 const { encrypt, decrypt } = await import("../server/settings.js");
 
+function assertPrivateKeyMode(path) {
+  // Windows ACLs are not represented as POSIX mode bits by Node; Linux CI checks 0600 exactly.
+  if (process.platform !== "win32") assert.equal(statSync(path).mode & 0o777, 0o600);
+}
+
 test("encrypt refuses to create a replacement key when createKey is false", () => {
   const missingDir = mkdtempSync(join(tmpdir(), "jarvis-no-key-"));
   assert.throws(
@@ -21,7 +26,7 @@ test("encrypt refuses to create a replacement key when createKey is false", () =
 });
 
 test("settings still creates the local master key during normal service initialization", () => {
-  assert.equal(statSync(join(dataDir, "master.key")).mode & 0o777, 0o600);
+  assertPrivateKeyMode(join(dataDir, "master.key"));
 });
 
 test("encrypt rejects a malformed existing master key", () => {
@@ -39,6 +44,6 @@ test("new data-directory keys retain AES-GCM round-trip and private file mode", 
   const ciphertext = encrypt(plaintext, { dataDir: isolatedDir });
   assert.notEqual(ciphertext, plaintext);
   assert.equal(decrypt(ciphertext, { dataDir: isolatedDir }), plaintext);
-  assert.equal(statSync(join(isolatedDir, "master.key")).mode & 0o777, 0o600);
+  assertPrivateKeyMode(join(isolatedDir, "master.key"));
   assert.equal(readFileSync(join(isolatedDir, "master.key"), "utf8").trim().length, 64);
 });

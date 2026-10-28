@@ -14,6 +14,7 @@ const {
   startEgressProxy,
   startBrowserPolicyServer,
 } = await import("../scripts/browser-egress-proxy.mjs");
+const posixTest = process.platform === "win32" ? test.skip : test;
 const { createBrowserEgressPolicyRegistry } = await import("../server/browser-egress-policy.js");
 const { createBrowserEgressPolicy, revokeBrowserEgressPolicy } =
   await import("../server/browser-egress-policy-client.js");
@@ -232,7 +233,7 @@ test("broker enforces exact host policy and rejects missing, expired, or out-of-
   assert.equal(dials, 1, "somente o host autorizado e vigente chega ao dialer");
 });
 
-test("app registra e revoga grants de host pelo socket privado do broker", async (t) => {
+posixTest("app registra e revoga grants de host pelo socket privado do broker", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "jarvis-policy-socket-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const socketPath = join(directory, "policy.sock");
@@ -313,7 +314,7 @@ test("proxy drops clients that never finish a bounded request header", async (t)
   assert.equal(client.destroyed, true);
 });
 
-test("Unix socket startup preserves active listeners and removes stale sockets", async (t) => {
+posixTest("Unix socket startup preserves active listeners and removes stale sockets", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "jarvis-egress-socket-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
 
