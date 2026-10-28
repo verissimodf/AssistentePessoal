@@ -32,6 +32,7 @@ definida/não definida, sem valor. O servidor nunca devolve chaves, tokens ou se
 | `JARVIS_SKILLS_SETUP` | `builtin` (padrão), `off` ou `full` (rede opt-in) |
 | `JARVIS_MAIL_TRANSPORT` | `imap` ativa o adaptador real de e-mail; ausente = mock |
 | `XTTS_URL` | endpoint do TTS local (padrão `http://xtts-service:8000`) |
+| `XTTS_SPEAKER` | voz pré-carregada do serviço XTTS (padrão `jarvis-ptbr`) |
 | `JARVIS_STT_URL` | serviço local whisper.cpp; profile Docker `stt`, padrão interno `http://stt:8080` |
 | `GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI` | app OAuth Gmail; callback `/api/oauth/callback` |
 | `MICROSOFT_OAUTH_CLIENT_ID/SECRET/REDIRECT_URI` | app OAuth Microsoft Graph; callback `/api/oauth/callback` |
@@ -143,10 +144,13 @@ O estado implantado e a pendência de reivindicação desta instalação estão 
 
 ## Voz
 
-- Motor: Web Speech API (navegador), XTTS-v2/Kokoro local via `xtts-service`, ou ElevenLabs.
+- Motor: Web Speech API (navegador), XTTS-v2 local via `xtts-service`, ou ElevenLabs.
 - Voz clonada: amostra de 10–60 s; arquivos em `data/voices/`.
-- A ponte `scripts/voice-adapter.mjs` traduz `/tts` para o serviço local. Sem `xtts-service`, o
-  painel usa o fallback do navegador.
+- A ponte `scripts/voice-adapter.mjs` traduz `/tts` para `/voice/speak` ou `/voice/clone`; encaminha
+  somente amostras dentro de `data/voices/` e consulta o health real do `xtts-service`. O container
+  XTTS desta instalação carrega o modelo sob demanda e opera em CPU. Sem o serviço, o painel usa o
+  fallback do navegador. Kokoro só funciona quando `localVoiceUrl` aponta para um servidor Python
+  compatível separado; não é fornecido pelo `xtts-service`.
 
 ## Bots e autonomia
 

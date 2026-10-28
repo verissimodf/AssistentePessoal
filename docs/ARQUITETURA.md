@@ -59,7 +59,7 @@ de voz e painel no mesmo container e encerra o conjunto se um componente morrer.
 | Comunicações | `server/comms.js`, `server/mail-service.js` | Telegram/WhatsApp/Signal, IMAP/SMTP, calendário |
 | AgentMail | `server/agentmail.js` | webhook Svix, leitura sob demanda, envio D9 e ownership explícito da inbox |
 | RAG | `server/documents.js` | ingestão, chunks, embeddings, busca híbrida |
-| Voz | `scripts/voice-adapter.mjs`, `server/voice.js`, `src/lib/voice.ts` | TTS e escolha entre reconhecimento do navegador ou STT local |
+| Voz | `scripts/voice-adapter.mjs`, `scripts/voice-adapter-core.mjs`, `server/voice.js`, `src/lib/voice.ts` | TTS XTTS local com voz pré-cadastrada ou clone local; escolha entre reconhecimento do navegador ou STT local |
 | Painel | `src/` (React/TanStack/Vite/Nitro) | UI, bridge HTTP, estados de saúde/diagnóstico |
 
 ---
@@ -73,7 +73,8 @@ de voz e painel no mesmo container e encerra o conjunto se um componente morrer.
 4. Se o modelo pedir uma ferramenta, `callTool` revalida o escopo **no momento da execução**;
    ações de host entram na fila de aprovação quando a autonomia exige.
 5. A resposta é persistida na conversa; a auditoria registra metadados (nunca prompt/conteúdo).
-6. TTS (quando habilitado) recebe o texto e devolve áudio; o painel reproduz.
+6. TTS (quando habilitado) passa pela ponte local; a ponte valida tamanho/voz, chama `/voice/speak`
+   ou `/voice/clone` no `xtts-service` e devolve WAV sem expor mensagens internas. O painel reproduz.
 
 ### Fluxo de e-mail AgentMail
 

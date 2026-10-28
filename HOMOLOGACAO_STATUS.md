@@ -1,33 +1,33 @@
 # 📋 Relatório de Auditoria Técnica e Homologação (Production Readiness)
 **Projeto:** J.A.R.V.I.S. (Assistente Pessoal Local)
-**Versão Atual:** 1.9.0
+**Versão Atual:** 1.9.1
 **Data do último release/deploy registrado:** 27 de Outubro de 2026
-**Status do Release:** ✅ **1.9.0 publicada em `origin/main` e implantada; container healthy, schema 18, smoke de API/painel aprovado. OAuth real aguarda configuração de provedores.**
-**Commit da imagem atual:** `f633fb7e2647357e17e7ea0eda90f8c7215c9b91` (branch `main`)
+**Status do Release:** ✅ **1.9.1 publicada em `origin/main` e implantada; container healthy, schema 18, smoke API/painel/TTS aprovado. OAuth real aguarda configuração de provedores.**
+**Commit da imagem atual:** `80b3f65c81a53854e8f3dc9776c7c13f27c5732d` (branch `main`)
 **Repositório Oficial:** `https://github.com/verissimodf/AssistentePessoal`
 
 ---
 
-## Estado atual — release 1.9.0 — 27/10/2026
+## Estado atual — release 1.9.1 — 27/10/2026
 
 | Item | Evidência local pós-deploy |
 | --- | --- |
-| Versão / esquema | `1.9.0` / SQLite `18` |
-| Commit construído | `f633fb7e2647357e17e7ea0eda90f8c7215c9b91` (`main`, publicado em `origin/main`) |
-| Imagem | `assistente-pessoal:1.9.0`, manifest `sha256:3def0096e45455e05eb776c403e4ca4333007aba9c8c85f89256e50d9526ddf3` |
-| Build | `2026-10-27T23:02:50Z`, `commitStatus=Registrado`, schema de build 18 |
+| Versão / esquema | `1.9.1` / SQLite `18` |
+| Commit construído | `80b3f65c81a53854e8f3dc9776c7c13f27c5732d` (`main`, publicado em `origin/main`) |
+| Imagem | `assistente-pessoal:1.9.1`, manifest `sha256:77d96b77d4531182c79456b36d75c621fa1e8d369fb0ac26a384af0093a5100b` |
+| Build | `2026-10-27T23:48:20Z`, `commitStatus=Registrado`, schema de build 18 |
 | Container | `running`, `healthy`, `restarts=0`; volume de dados e rede Docker mantidos |
-| Smoke | `/api/health` HTTP 200 reporta versão/commit/schema esperados; painel HTTP `200` |
-| Banco | `integrity_check=ok`, `foreign_key_check=0`; migração v15→v18 com backup verificado automático em `/app/data/backups/jarvis-2026-10-27T23-09-38-162Z-v15.db` |
+| Smoke | `/api/health` HTTP 200 reporta versão/commit/schema esperados; painel HTTP `200`; TTS retorna WAV válido via XTTS |
+| Banco | schema 18 mantido; `integrity_check=ok`, `foreign_key_check=0`; sem migração nesta versão |
 | Backup pré-release | `/app/data/backups/pre-1.8.1-20261027T202000Z.db` + `master.key`, integridade verificada |
-| Testes locais | Backend **652/652**, frontend **109/109**, avaliação offline **86/86**, `tsc --noEmit` sem erros, build Vite/Nitro OK |
+| Testes locais | Backend **657/657**, frontend **109/109**, avaliação offline **86/86**, `tsc --noEmit` sem erros, build Vite/Nitro OK |
 | Imagem isolada | `scripts/verificar-imagem-release.sh`: labels OCI, `build-info`, health API, `setupRequired` e painel **PASS** |
-| Novos fluxos | fila SQLite durável e retomada conservadora; retenção com quarentena; OAuth PKCE; STT local whisper.cpp |
+| Novos fluxos | fila durável e retomada conservadora; retenção com quarentena; OAuth PKCE; STT local; voz XTTS ligada ao serviço existente |
 | AgentMail | 1 inbox com ownership `claimed`; zero eventos sem owner. Não foi lido conteúdo nem enviado e-mail nesta validação |
-| Lint | ESLint global/focado não verde por formatação em arquivos legados/minimamente tocados; módulos novos passaram no lint focado; sem formatação em massa |
+| Lint | 88 arquivos rastreados formatados; ESLint ainda tem 12 erros fora de formatação e 16 avisos; detalhes em `docs/VALIDACAO.md` |
 
-O commit `f633fb7` foi enviado em fast-forward para `origin/main` e a imagem foi construída com o SHA
-completo publicado. O serviço `assistente` foi recriado explicitamente com `IMAGE_TAG=1.9.0`.
+O commit `80b3f65` foi enviado em fast-forward para `origin/main` e a imagem foi construída com o SHA
+completo publicado. O serviço `assistente` foi recriado explicitamente com `IMAGE_TAG=1.9.1`.
 Nenhum conteúdo de e-mail foi consultado, nenhum e-mail foi enviado e nenhum modelo pago foi chamado.
 
 ### Estado das propostas avaliadas
@@ -40,6 +40,9 @@ Nenhum conteúdo de e-mail foi consultado, nenhum e-mail foi enviado e nenhum mo
   registrados pelo operador. Testes com mocks não afirmam validação de ponta a ponta externa.
 - **Operacionalização opt-in:** retenção permanece desativada por padrão; STT local precisa ser
   escolhido nas configurações para substituir o reconhecimento do navegador.
+- **TTS local:** o container `xtts-service` existente foi reutilizado sem rebuild; síntese com voz
+  `jarvis-ptbr` passou no smoke real. O encaminhamento de clones locais tem testes de contrato e
+  proteção de caminho; o modelo carrega sob demanda em CPU.
 
 ---
 
