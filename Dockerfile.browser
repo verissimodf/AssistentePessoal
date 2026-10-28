@@ -23,6 +23,7 @@ COPY scripts/browser-worker-entrypoint.mjs scripts/browser-worker.mjs \
      scripts/browser-proxy-bridge.mjs scripts/browser-egress-proxy.mjs \
      scripts/browser-network-smoke.mjs ./scripts/
 COPY server/browser-network.js server/browser-approval.js server/secret-crypto.js \
+     server/browser-hosts.js server/browser-egress-policy.js \
      server/urlpolicy.js server/unix-socket.js ./server/
 
 USER node

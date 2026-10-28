@@ -3,18 +3,38 @@
 import net from "node:net";
 import { lookup as dnsResolve } from "node:dns/promises";
 import { isIP } from "node:net";
+import http from "node:http";
 import { mkdirSync, chmodSync } from "node:fs";
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isBlockedAddress } from "../server/urlpolicy.js";
 import { removeStaleUnixSocket } from "../server/unix-socket.js";
+import { createBrowserEgressPolicyRegistry } from "../server/browser-egress-policy.js";
 
 export const MAX_PROXY_HEADER_BYTES = 16 * 1024;
 export const MAX_PROXY_CONNECTIONS = 32;
+export const MAX_POLICY_BODY_BYTES = 32 * 1024;
 const HEADER_TIMEOUT_MS = 5_000;
 const IDLE_TIMEOUT_MS = 120_000;
 const ALLOWED_PORTS = new Set([80, 443]);
 const AUTHORITY = /^(?:\[([0-9a-f:.%]+)\]|([a-z0-9.-]+)):(\d{1,5})$/i;
+const POLICY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function proxyPolicyId(headers) {
+  const values = headers.filter(([name]) => /^proxy-authorization$/i.test(name));
+  if (values.length > 1) throw new Error("proxy_auth_invalid");
+  if (!values.length) return null;
+  const match = /^Basic ([A-Za-z0-9+/]+={0,2})$/i.exec(values[0][1]);
+  if (!match) throw new Error("proxy_auth_invalid");
+  const decoded = Buffer.from(match[1], "base64").toString("utf8");
+  if (Buffer.from(decoded, "utf8").toString("base64") !== match[1])
+    throw new Error("proxy_auth_invalid");
+  const prefix = "jarvis:";
+  if (!decoded.startsWith(prefix)) throw new Error("proxy_auth_invalid");
+  const policyId = decoded.slice(prefix.length);
+  if (!POLICY_ID.test(policyId)) throw new Error("proxy_auth_invalid");
+  return policyId;
+}
 
 function targetAuthority(authority) {
   if (authority.includes("@")) throw new Error("invalid_proxy_target");
@@ -60,9 +80,10 @@ export function parseProxyRequest(input, { maxHeaderBytes = MAX_PROXY_HEADER_BYT
   if (contentLengths.length > 1 || (contentLengths.length && hasTransferEncoding))
     throw new Error("invalid_proxy_header");
 
+  const policyId = proxyPolicyId(headers);
   if (method === "CONNECT") {
     const { hostname, port } = targetAuthority(target);
-    return { method, hostname, port, requestHead: "" };
+    return { method, hostname, port, requestHead: "", policyId };
   }
   let url;
   try {
@@ -92,7 +113,7 @@ export function parseProxyRequest(input, { maxHeaderBytes = MAX_PROXY_HEADER_BYT
   const requestHead = `${method} ${url.pathname || "/"}${url.search} ${version}\r\n${outgoing
     .map(([name, value]) => `${name}: ${value}\r\n`)
     .join("")}\r\n`;
-  return { method, hostname, port, requestHead };
+  return { method, hostname, port, requestHead, policyId };
 }
 
 export async function resolvePinnedTarget(hostname, port, { resolveHost } = {}) {
@@ -173,6 +194,8 @@ export async function handleProxySocket(
   socket,
   {
     resolveHost,
+    policyRegistry,
+    onError,
     dialer = ({ address, port }) => net.createConnection({ host: address, port }),
     headerTimeoutMs = HEADER_TIMEOUT_MS,
     idleTimeoutMs = IDLE_TIMEOUT_MS,
@@ -183,6 +206,8 @@ export async function handleProxySocket(
     socket.setTimeout(headerTimeoutMs, () => socket.destroy());
     const { head, remainder } = await readRequestHead(socket);
     const request = parseProxyRequest(head);
+    if (!policyRegistry) throw new Error("proxy_auth_required");
+    policyRegistry.authorize(request.policyId, request.hostname);
     const pinned = await resolvePinnedTarget(request.hostname, request.port, { resolveHost });
     if (socket.destroyed) return;
     upstream = dialer(pinned);
@@ -200,12 +225,25 @@ export async function handleProxySocket(
       new Promise((resolve) => upstream.once("close", resolve)),
     ]);
   } catch (error) {
+    onError?.(error);
     if (!socket.destroyed && !socket.writableEnded) {
       const forbidden = [
         "blocked_destination",
         "port_not_allowed",
         "invalid_proxy_target",
+        "host_not_allowed",
       ].includes(error?.message);
+      const authRequired = [
+        "proxy_auth_required",
+        "proxy_auth_invalid",
+        "proxy_policy_expired",
+      ].includes(error?.message);
+      if (authRequired) {
+        socket.end(
+          'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="jarvis-browser"\r\nConnection: close\r\n\r\n',
+        );
+        return;
+      }
       socket.end(
         forbidden
           ? "HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n"
@@ -218,9 +256,81 @@ export async function handleProxySocket(
   }
 }
 
+async function readPolicyBody(req) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > MAX_POLICY_BODY_BYTES) throw new Error("browser_policy_body_too_large");
+    chunks.push(chunk);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new Error("browser_policy_body_invalid");
+  }
+}
+
+export async function startBrowserPolicyServer(
+  socketPath = process.env.JARVIS_BROWSER_POLICY_SOCKET || "/run/jarvis-browser/policy/policy.sock",
+  policyRegistry = createBrowserEgressPolicyRegistry(),
+) {
+  mkdirSync(dirname(socketPath), { recursive: true, mode: 0o700 });
+  await removeStaleUnixSocket(socketPath);
+  const server = http.createServer(async (req, res) => {
+    const send = (status, body) => {
+      const json = JSON.stringify(body);
+      res.writeHead(status, {
+        "content-type": "application/json",
+        "content-length": Buffer.byteLength(json),
+        "cache-control": "no-store",
+      });
+      res.end(json);
+    };
+    try {
+      const url = new URL(req.url || "/", "http://policy.local");
+      if (url.pathname === "/policy" && req.method === "POST") {
+        const body = await readPolicyBody(req);
+        policyRegistry.register(body);
+        return send(200, { ok: true });
+      }
+      const revoke = /^\/policy\/([0-9a-f-]{36})$/i.exec(url.pathname);
+      if (revoke && req.method === "DELETE") {
+        policyRegistry.revoke(revoke[1]);
+        return send(200, { ok: true });
+      }
+      return send(404, { ok: false, error: "not_found" });
+    } catch (error) {
+      const code = String(error?.message || "browser_policy_invalid");
+      const status = code === "browser_policy_capacity" ? 503 : 400;
+      return send(status, { ok: false, error: code });
+    }
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(socketPath, () => {
+      try {
+        chmodSync(socketPath, 0o620);
+        resolve();
+      } catch (error) {
+        server.close();
+        reject(error);
+      }
+    });
+  });
+  return server;
+}
+
 export async function startEgressProxy(
   socketPath = process.env.JARVIS_BROWSER_EGRESS_SOCKET || "/run/jarvis-browser/egress/egress.sock",
+  {
+    policySocketPath = process.env.JARVIS_BROWSER_POLICY_SOCKET || null,
+    policyRegistry = createBrowserEgressPolicyRegistry(),
+  } = {},
 ) {
+  const policyServer = policySocketPath
+    ? await startBrowserPolicyServer(policySocketPath, policyRegistry)
+    : null;
   mkdirSync(dirname(socketPath), { recursive: true, mode: 0o700 });
   await removeStaleUnixSocket(socketPath);
   let connections = 0;
@@ -231,7 +341,7 @@ export async function startEgressProxy(
     }
     connections++;
     socket.once("close", () => connections--);
-    void handleProxySocket(socket);
+    void handleProxySocket(socket, { policyRegistry });
   });
   await new Promise((resolve, reject) => {
     server.once("error", reject);
@@ -246,6 +356,8 @@ export async function startEgressProxy(
       }
     });
   });
+  server.policyServer = policyServer;
+  server.policyRegistry = policyRegistry;
   return server;
 }
 

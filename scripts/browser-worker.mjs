@@ -33,6 +33,7 @@ const MAX_BODY = 64 * 1024;
 const OPS = ["navigate", "extract", "click", "fill", "wait_for", "screenshot"];
 const MAX_TIMEOUT = 60_000;
 const MAX_TEXT = 4_000;
+const POLICY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 if (!WORKER_SOCKET && (!TOKEN || TOKEN.length < 16)) {
   console.error(
@@ -96,11 +97,16 @@ const send = (res, status, body) => {
   res.end(payload);
 };
 
-async function runOp({ op, url, selector, text, timeoutMs, allowedHosts = [] }, signal) {
+async function runOp({ op, url, selector, text, timeoutMs, allowedHosts = [], policyId }, signal) {
   if (!OPS.includes(op))
     return {
       state: "failed",
       error: { code: "unsupported_op", message: "Operação não suportada." },
+    };
+  if (!POLICY_ID.test(String(policyId || "")))
+    return {
+      state: "failed",
+      error: { code: "browser_policy_required", message: "Política de egress ausente." },
     };
   if (url) {
     try {
@@ -118,12 +124,17 @@ async function runOp({ op, url, selector, text, timeoutMs, allowedHosts = [] }, 
     browser = await chromium.launch({
       headless: true,
       args: ["--disable-dev-shm-usage"],
-      proxy: {
-        server: `http://127.0.0.1:${process.env.JARVIS_BROWSER_PROXY_PORT || 8899}`,
-        bypass: "localhost,127.0.0.1,::1",
-      },
     });
-  const context = await browser.newContext({ acceptDownloads: false, ignoreHTTPSErrors: false });
+  const context = await browser.newContext({
+    acceptDownloads: false,
+    ignoreHTTPSErrors: false,
+    proxy: {
+      server: `http://127.0.0.1:${process.env.JARVIS_BROWSER_PROXY_PORT || 8899}`,
+      bypass: "localhost,127.0.0.1,::1",
+      username: "jarvis",
+      password: policyId,
+    },
+  });
   try {
     const page = await context.newPage();
     await installBrowserRequestPolicy(page, { signal, allowedHosts, checkDns: false });
@@ -201,6 +212,7 @@ const server = createServer(async (req, res) => {
           text: body.text || null,
           timeoutMs,
           allowedHosts: body.allowedHosts || [],
+          policyId: body.policyId,
         },
         ctl.signal,
       ),

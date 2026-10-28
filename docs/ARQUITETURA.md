@@ -40,28 +40,28 @@ de voz e painel no mesmo container e encerra o conjunto se um componente morrer.
 
 ## 2. Componentes
 
-| Camada              | Módulo                                                                                                      | Responsabilidade                                                                                             |
-| ------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| HTTP/API            | `server/index.js`                                                                                           | rotas, autenticação, CSRF, escopos, CORS/Origin, erros                                                       |
-| Auth                | `server/auth.js`                                                                                            | sessões, tokens de serviço, escopos, `isVerifiedAdmin`                                                       |
-| Banco               | `server/db.js`, `server/migrations.js`                                                                      | SQLite WAL, migrações versionadas, backup verificado                                                         |
-| Settings            | `server/settings.js`                                                                                        | configuração pessoal/global, AES-256-GCM, proveniência                                                       |
-| Ownership           | `server/ownership.js`                                                                                       | isolamento por administrador e transferência explícita                                                       |
-| LLM/router          | `server/llm.js`                                                                                             | providers, fallback, timeouts, telemetria, testes de provider                                                |
-| Agentes/ferramentas | `server/tools.js`, `server/bots.js`                                                                         | tool calling, autonomia, aprovações, auditoria                                                               |
-| Fila de scheduler   | `server/jobs.js`                                                                                            | jobs SQLite idempotentes, payload cifrado, leases e recovery sem replay cego                                 |
-| Retenção de memória | `server/memory-retention.js`                                                                                | política opt-in por admin, quarentena, restore e purga limitada                                              |
-| OAuth de e-mail     | `server/oauth.js`                                                                                           | Gmail/Graph, Authorization Code + PKCE, refresh token cifrado e envio opcional                               |
-| STT local           | `server/stt.js`, `Dockerfile.stt`                                                                           | validação de upload e adaptador privado whisper.cpp CPU                                                      |
-| Browser isolado     | `server/browser.js`, `scripts/browser-worker.mjs`, `scripts/browser-egress-proxy.mjs`, `Dockerfile.browser` | Playwright por UDS privado, worker sem rede e proxy egress com DNS pinado                                    |
-| Host                | `server/hostpolicy.js`                                                                                      | allowlist/negação de comandos e ações no host                                                                |
-| Skills              | `server/skills.js`, `scripts/setup-global-skills.mjs`                                                       | catálogo, carregamento sob demanda, checksums, confinamento                                                  |
-| Integrações HTTP    | `server/http-integration.js`                                                                                | allowlist de integração, timeout, limite de prompt/resposta                                                  |
-| Comunicações        | `server/comms.js`, `server/mail-service.js`                                                                 | Telegram/WhatsApp/Signal, IMAP/SMTP, calendário                                                              |
-| AgentMail           | `server/agentmail.js`                                                                                       | webhook Svix, leitura sob demanda, envio D9 e ownership explícito da inbox                                   |
-| RAG                 | `server/documents.js`                                                                                       | ingestão, chunks, embeddings, busca híbrida                                                                  |
-| Voz                 | `scripts/voice-adapter.mjs`, `scripts/voice-adapter-core.mjs`, `server/voice.js`, `src/lib/voice.ts`        | TTS XTTS local com voz pré-cadastrada ou clone local; escolha entre reconhecimento do navegador ou STT local |
-| Painel              | `src/` (React/TanStack/Vite/Nitro)                                                                          | UI, bridge HTTP, estados de saúde/diagnóstico                                                                |
+| Camada              | Módulo                                                                                                                                         | Responsabilidade                                                                                             |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| HTTP/API            | `server/index.js`                                                                                                                              | rotas, autenticação, CSRF, escopos, CORS/Origin, erros                                                       |
+| Auth                | `server/auth.js`                                                                                                                               | sessões, tokens de serviço, escopos, `isVerifiedAdmin`                                                       |
+| Banco               | `server/db.js`, `server/migrations.js`                                                                                                         | SQLite WAL, migrações versionadas, backup verificado                                                         |
+| Settings            | `server/settings.js`                                                                                                                           | configuração pessoal/global, AES-256-GCM, proveniência                                                       |
+| Ownership           | `server/ownership.js`                                                                                                                          | isolamento por administrador e transferência explícita                                                       |
+| LLM/router          | `server/llm.js`                                                                                                                                | providers, fallback, timeouts, telemetria, testes de provider                                                |
+| Agentes/ferramentas | `server/tools.js`, `server/bots.js`                                                                                                            | tool calling, autonomia, aprovações, auditoria                                                               |
+| Fila de scheduler   | `server/jobs.js`                                                                                                                               | jobs SQLite idempotentes, payload cifrado, leases e recovery sem replay cego                                 |
+| Retenção de memória | `server/memory-retention.js`                                                                                                                   | política opt-in por admin, quarentena, restore e purga limitada                                              |
+| OAuth de e-mail     | `server/oauth.js`                                                                                                                              | Gmail/Graph, Authorization Code + PKCE, refresh token cifrado e envio opcional                               |
+| STT local           | `server/stt.js`, `Dockerfile.stt`                                                                                                              | validação de upload e adaptador privado whisper.cpp CPU                                                      |
+| Browser isolado     | `server/browser.js`, `server/browser-egress-policy.js`, `scripts/browser-worker.mjs`, `scripts/browser-egress-proxy.mjs`, `Dockerfile.browser` | Playwright por UDS privado, worker sem rede e broker egress com grants de host exato e DNS pinado            |
+| Host                | `server/hostpolicy.js`                                                                                                                         | allowlist/negação de comandos e ações no host                                                                |
+| Skills              | `server/skills.js`, `scripts/setup-global-skills.mjs`                                                                                          | catálogo, carregamento sob demanda, checksums, confinamento                                                  |
+| Integrações HTTP    | `server/http-integration.js`                                                                                                                   | allowlist de integração, timeout, limite de prompt/resposta                                                  |
+| Comunicações        | `server/comms.js`, `server/mail-service.js`                                                                                                    | Telegram/WhatsApp/Signal, IMAP/SMTP, calendário                                                              |
+| AgentMail           | `server/agentmail.js`                                                                                                                          | webhook Svix, leitura sob demanda, envio D9 e ownership explícito da inbox                                   |
+| RAG                 | `server/documents.js`                                                                                                                          | ingestão, chunks, embeddings, busca híbrida                                                                  |
+| Voz                 | `scripts/voice-adapter.mjs`, `scripts/voice-adapter-core.mjs`, `server/voice.js`, `src/lib/voice.ts`                                           | TTS XTTS local com voz pré-cadastrada ou clone local; escolha entre reconhecimento do navegador ou STT local |
+| Painel              | `src/` (React/TanStack/Vite/Nitro)                                                                                                             | UI, bridge HTTP, estados de saúde/diagnóstico                                                                |
 
 ---
 
@@ -114,16 +114,16 @@ caminho seguro quando um gateway externo está indisponível.
 
 ## 5. Segurança e limites de confiança
 
-| Limite                  | Controle                                                                                         |
-| ----------------------- | ------------------------------------------------------------------------------------------------ |
-| Internet → edge         | TLS/HSTS/WAF Cloudflare; Nginx só na rede Docker                                                 |
-| Cliente → API           | sessão `HttpOnly`/`SameSite=Strict`, CSRF, Origin allowlist                                      |
-| API → recursos          | escopos de rota e de ferramenta reavaliados; `ownership` por admin                               |
-| Agente → host           | `hostpolicy`, allowlist, aprovação humana, auditoria imutável                                    |
-| Browser → Internet      | worker `network_mode:none`, broker dedicado, IP DNS validado no dial, bloqueio de redes privadas |
-| Skills/LLM → filesystem | confinamento de caminho, sem execução, limite de tamanho                                         |
-| API → integrações       | URL da configuração (admin), Bearer do settings, timeout/limite                                  |
-| Segredos                | AES-256-GCM em repouso; `master.key` 600; nunca em logs/relatórios                               |
+| Limite                  | Controle                                                                                                                          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Internet → edge         | TLS/HSTS/WAF Cloudflare; Nginx só na rede Docker                                                                                  |
+| Cliente → API           | sessão `HttpOnly`/`SameSite=Strict`, CSRF, Origin allowlist                                                                       |
+| API → recursos          | escopos de rota e de ferramenta reavaliados; `ownership` por admin                                                                |
+| Agente → host           | `hostpolicy`, allowlist, aprovação humana, auditoria imutável                                                                     |
+| Browser → Internet      | worker `network_mode:none`, broker dedicado, grant app-issued por host exato, IP DNS validado no dial, bloqueio de redes privadas |
+| Skills/LLM → filesystem | confinamento de caminho, sem execução, limite de tamanho                                                                          |
+| API → integrações       | URL da configuração (admin), Bearer do settings, timeout/limite                                                                   |
+| Segredos                | AES-256-GCM em repouso; `master.key` 600; nunca em logs/relatórios                                                                |
 
 Rotas públicas incluem `GET /api/health`, `POST /api/auth/setup`, `POST /api/auth/login`, o callback
 `GET /api/oauth/callback` (state opaco, one-use, PKCE e erro redirecionado sem detalhe) e o webhook
@@ -154,8 +154,9 @@ escopo. O CSRF é obrigatório em toda mutação com cookie.
   `setupRequired`.
 - `/api/diagnostics` (sessão) inventaria providers, integrações, skills, contagens e integridade.
 - O navegador fica desligado por padrão. Quando habilitado, a aplicação fala apenas com o worker
-  pelo socket privado; o worker não participa da rede de produção, e só o broker tem uma rede de
-  egress própria. Endpoint HTTP de worker legado é recusado.
+  pelo socket privado; grants temporários de hosts exatos são registrados pelo app no broker em socket
+  de controle inacessível ao worker. O worker não participa da rede de produção, e só o broker tem
+  uma rede de egress própria. Endpoint HTTP de worker legado é recusado.
 - `/api/router/telemetry` (escopo `skills:read`) expõe chamadas, falhas, latência e fallbacks.
 - A telemetria é agregada em memória do processo e reinicia com o serviço; retenção durável/configurável
   ainda não existe. O endpoint não guarda prompt nem chave.

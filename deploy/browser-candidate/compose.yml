@@ -10,12 +10,14 @@ services:
     volumes:
       - browser-worker-runtime:/run/jarvis-browser/worker
       - browser-egress-runtime:/run/jarvis-browser/egress
+      - browser-policy-runtime:/run/jarvis-browser/policy
     command:
       - sh
       - -ec
       - >-
         install -d -o 1000 -g 1000 -m 0700 /run/jarvis-browser/worker &&
-        install -d -o 1001 -g 1000 -m 0710 /run/jarvis-browser/egress
+        install -d -o 1001 -g 1000 -m 0710 /run/jarvis-browser/egress &&
+        install -d -o 1001 -g 1000 -m 0710 /run/jarvis-browser/policy
 
   assistente:
     build:
@@ -43,9 +45,11 @@ services:
       JARVIS_PORT: "7777"
       PANEL_PORT: "8090"
       JARVIS_BROWSER_WORKER_SOCKET: /run/jarvis-browser/worker/worker.sock
+      JARVIS_BROWSER_POLICY_SOCKET: /run/jarvis-browser/policy/policy.sock
     volumes:
       - candidate-data:/app/data
       - browser-worker-runtime:/run/jarvis-browser/worker:ro
+      - browser-policy-runtime:/run/jarvis-browser/policy:ro
 
   browser-worker:
     build:
@@ -106,14 +110,21 @@ services:
       - /tmp:size=32m,noexec,nosuid,nodev
     environment:
       JARVIS_BROWSER_EGRESS_SOCKET: /run/jarvis-browser/egress/egress.sock
+      JARVIS_BROWSER_POLICY_SOCKET: /run/jarvis-browser/policy/policy.sock
     user: "1001:1000"
     volumes:
       - browser-egress-runtime:/run/jarvis-browser/egress
+      - browser-policy-runtime:/run/jarvis-browser/policy
     networks:
       - browser-egress
     healthcheck:
       test:
-        [CMD, node, -e, "require('node:fs').accessSync('/run/jarvis-browser/egress/egress.sock')"]
+        [
+          CMD,
+          node,
+          -e,
+          "const f=require('node:fs');f.accessSync('/run/jarvis-browser/egress/egress.sock');f.accessSync('/run/jarvis-browser/policy/policy.sock')",
+        ]
       interval: 10s
       timeout: 3s
       retries: 6
@@ -123,6 +134,7 @@ volumes:
   candidate-data:
   browser-worker-runtime:
   browser-egress-runtime:
+  browser-policy-runtime:
 
 networks:
   candidate-app:

@@ -3,16 +3,11 @@
 // and a private CONNECT target must be rejected by the pinned egress broker.
 import net from "node:net";
 import { lookup } from "node:dns/promises";
-import { lstatSync, unlinkSync } from "node:fs";
+import { existsSync, lstatSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
-import {
-  assertBrowserDestination,
-  installBrowserRequestPolicy,
-} from "../server/browser-network.js";
 
 const proxyPort = Number(process.env.JARVIS_BROWSER_PROXY_PORT || 8899);
-const smokeUrl = process.env.JARVIS_BROWSER_SMOKE_URL || "https://example.com/";
 
 function directConnectMustFail() {
   return new Promise((resolve, reject) => {
@@ -51,6 +46,8 @@ function egressSocketMustBeProtected() {
     throw new Error("egress_socket_permissions_unexpected");
   if (directory.uid !== 1001 || directory.gid !== 1000 || (directory.mode & 0o777) !== 0o710)
     throw new Error("egress_socket_directory_permissions_unexpected");
+  if (existsSync("/run/jarvis-browser/policy/policy.sock"))
+    throw new Error("worker_can_access_policy_control");
   try {
     unlinkSync(socketPath);
   } catch (error) {
@@ -90,29 +87,13 @@ function privateConnectMustFail() {
 export async function runBrowserNetworkSmoke() {
   egressSocketMustBeProtected();
   await Promise.all([directConnectMustFail(), dnsMustFail(), privateConnectMustFail()]);
-  const { chromium } = await import("playwright");
-  const browser = await chromium.launch({
-    headless: true,
-    args: ["--disable-dev-shm-usage"],
-    proxy: { server: `http://127.0.0.1:${proxyPort}`, bypass: "localhost,127.0.0.1,::1" },
-  });
-  try {
-    const page = await browser.newPage();
-    await installBrowserRequestPolicy(page, { checkDns: false });
-    await assertBrowserDestination(smokeUrl, { checkDns: false });
-    await page.goto(smokeUrl, { waitUntil: "domcontentloaded", timeout: 15_000 });
-    const title = await page.title();
-    if (!title.includes("Example Domain")) throw new Error("public_proxy_smoke_unexpected_page");
-    return {
-      egressSocketMutation: "blocked",
-      directTcp: "blocked",
-      directDns: "blocked",
-      privateTarget: "blocked",
-      publicPage: "ok",
-    };
-  } finally {
-    await browser.close();
-  }
+  return {
+    egressSocketMutation: "blocked",
+    policyControlIsolation: "blocked",
+    directTcp: "blocked",
+    directDns: "blocked",
+    privateTarget: "blocked",
+  };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

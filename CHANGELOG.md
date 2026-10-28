@@ -13,7 +13,8 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 - Aprovações de escrita `click`/`fill` mantêm `web:write`, revisão, confirmação explícita e payload cifrado em repouso (migração v19).
 - Compose principal ganha profile opt-in `browser`; configuração permanece desligada. O projeto de candidata usa volumes e rede interna próprios.
 - Instruções e evidência de candidato em `docs/NAVEGADOR.md`; rollback v19 em `docs/RECUPERACAO.md`.
-- A allowlist de host protege o fluxo normal do Playwright, mas não é aplicada pelo broker contra worker comprometido; enforcement no broker permanece como hardening antes de ampliar a garantia de isolamento.
+- Broker aplica allowlist exata com grants curtos emitidos pelo app via socket de controle privado; worker não monta esse socket e não pode ampliar a política.
+- Smoke de candidata exercita navegação real e tentativa de bypass da allowlist local; produção permanece desligada até release explícito.
 
 ## [1.9.1] — 2026-10-27
 

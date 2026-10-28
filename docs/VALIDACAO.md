@@ -7,7 +7,7 @@ smoke da imagem implantada e validação pendente contra provedores externos.
 
 | Área                   | Verificação                                                                      | Resultado                                                                              |
 | ---------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| Backend                | `node --no-warnings --test ../tests/*.test.mjs` (via `npm --prefix server test`) | **679/679 PASS**                                                                       |
+| Backend                | `node --no-warnings --test ../tests/*.test.mjs` (via `npm --prefix server test`) | **681/681 PASS**                                                                       |
 | Migrações v16–v18      | backup, preservação de linhas, ownership, constraints e rollback                 | **PASS**                                                                               |
 | Fila/scheduler         | idempotência, concorrência, atraso em disputa e recovery conservador             | **PASS**                                                                               |
 | Retenção               | desativada por padrão, isolamento por dono, quarentena, restore e purga          | **PASS**                                                                               |
@@ -62,23 +62,26 @@ produção. Evidência executada:
 | Destino privado via proxy             | **BLOQUEADO** para `169.254.169.254:80`                                                                                                    |
 | Navegação Chromium pública            | **PASS**, `https://example.com/` via broker; operação GET sintética                                                                        |
 | Comunicação app → worker              | HTTP **200** em `/health` pelo socket Unix compartilhado                                                                                   |
-| Testes focados de navegador           | `node --test tests/browser-tool.test.mjs tests/browser-egress-proxy.test.mjs`                                                              | **31/31 PASS**                                                                                        |
-| Smoke Playwright/Chromium             | `rtk docker exec jarvis-browser-candidate-browser-worker-1 node /app/scripts/browser-network-smoke.mjs`                                    | **PASS**: mutação de socket, TCP/DNS direto e destino privado bloqueados; navegação pública concluída |
-| Healthchecks após recriação candidata | `rtk docker compose -f deploy/browser-candidate/compose.yml ps --all` e GET `/health` no socket pelo app                                   | app, broker e worker **healthy**; socket **HTTP 200**                                                 |
+| Testes focados de navegador           | `node --test tests/browser-tool.test.mjs tests/browser-egress-proxy.test.mjs`                                                              | **33/33 PASS**                                                                               |
+| Smoke Playwright/Chromium             | `rtk docker exec jarvis-browser-candidate-browser-worker-1 node /app/scripts/browser-network-smoke.mjs`                                    | **PASS**: mutação de socket, socket de controle, TCP/DNS direto e destino privado bloqueados |
+| Healthchecks após recriação candidata | `rtk docker compose -f deploy/browser-candidate/compose.yml ps --all` e GET `/health` no socket pelo app                                   | app, broker e worker **healthy**; socket **HTTP 200**                                        |
 | Container ativo                       | permaneceu `assistente-pessoal:1.9.2`, `running/healthy`, na `CNC_APP_PROD_01`; não foi recriado                                           |
 
-O smoke de rede foi executado no worker real, com Chromium real e proxy real. O usuário configurado
-para o worker é `node`; a inspeção confirmou `network_mode=none`, `ReadonlyRootfs=true`, capabilities
-removidas e os limites definidos no Compose. A versão publicada
-permanece no schema 18; schema v19 e a capacidade de browser ainda não foram aplicados ao container
-ativo. A integração continua desabilitada por padrão.
+O smoke de rede foi executado no worker real. O smoke de integração executou Chromium real no
+contexto da aplicação: `https://example.com/` concluiu e uma tentativa para `example.org`, enquanto
+o worker recebeu uma allowlist local vazia, foi bloqueada pelo broker (`{"publicPage":"ok","brokerAllowlist":"blocked"}`). O broker registra grants de curta duração pelo socket privado `policy.sock`, inacessível ao worker; diretório `1001:1000/0710`, socket `1001:1000/0620`, e o worker confirmou que não tem esse socket montado. O smoke do worker retornou
+`{"egressSocketMutation":"blocked","policyControlIsolation":"blocked","directTcp":"blocked","directDns":"blocked","privateTarget":"blocked"}`.
 
-**Limitação de segurança remanescente:** a allowlist de host é imposta pelo fluxo Playwright antes
-de cada navegação/recurso, mas não pelo proxy broker. Caso o processo worker/Chromium seja
-comprometido, ele ainda pode alcançar qualquer endereço público nas portas 80/443; IPs privados,
-reservados e metadados seguem bloqueados pelo broker. Enforcement de allowlist no broker deve ser
-concluído antes de tratar a lista configurada no painel como limite de egress contra comprometimento
-do navegador.
+Validações adicionais deste hardening: backend **681/681**, frontend **110/110**, ESLint sem erros,
+TypeScript sem erros, build frontend/SSR concluído e os dois Compose (`browser-candidate` e profile
+principal) validaram. Imagens `assistente-pessoal:browser-candidate` e
+`jarvis-browser-worker:playwright-1.64.1` foram reconstruídas e somente a candidata foi recriada; os
+três serviços ficaram `healthy`. O container ativo permaneceu `assistente-pessoal:1.9.2`,
+`running/healthy`, e a leitura somente leitura do banco confirmou `browser_enabled=false`. Nenhum
+deploy de schema 19 ou habilitação do navegador ocorreu em produção.
+
+**Estado:** a lacuna de enforcement da allowlist no broker foi fechada e validada na candidata. A
+capacidade continua opt-in; habilitação e release exigem o processo de publicação normal.
 
 ## Histórico do deploy 1.9.1
 

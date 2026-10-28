@@ -18,6 +18,10 @@ import { getSettings } from "./settings.js";
 import { browserHostAllowed, normalizeBrowserHosts } from "./browser-approval.js";
 import { assertBrowserDestination, installBrowserRequestPolicy } from "./browser-network.js";
 import { requestBrowserWorker } from "./browser-worker-client.js";
+import {
+  createBrowserEgressPolicy,
+  revokeBrowserEgressPolicy,
+} from "./browser-egress-policy-client.js";
 
 /** Operações suportadas — lista FECHADA (não existe eval/shell/download arbitrário). */
 export const BROWSER_OPS = ["navigate", "extract", "click", "fill", "wait_for", "screenshot"];
@@ -44,11 +48,19 @@ export function resolveBrowserConfig(adminId = null) {
   const endpoint = typeof cfg.command === "string" ? cfg.command.trim() : "";
   // URL configurada = transporte externo legado, recusado em execução; managed usa somente UDS.
   const workerSocket = process.env.JARVIS_BROWSER_WORKER_SOCKET || "";
-  const mode = !enabled ? "off" : endpoint ? "remote" : workerSocket ? "managed" : "unavailable";
+  const policySocket = process.env.JARVIS_BROWSER_POLICY_SOCKET || "";
+  const mode = !enabled
+    ? "off"
+    : endpoint
+      ? "remote"
+      : workerSocket && policySocket
+        ? "managed"
+        : "unavailable";
   return {
     mode,
     endpoint,
     workerSocket,
+    policySocket,
     token: typeof cfg.apiKey === "string" ? cfg.apiKey : "",
     executablePath:
       typeof cfg.executablePath === "string" && cfg.executablePath ? cfg.executablePath : null,
@@ -262,13 +274,38 @@ async function localRun(
 // ---------------------------------------------------------------------------
 async function managedRun(
   request,
-  { socketPath, timeoutMs, runId, signal, allowedHosts, workerRequest },
+  {
+    socketPath,
+    policySocket,
+    timeoutMs,
+    runId,
+    signal,
+    allowedHosts,
+    workerRequest,
+    policyRequest = createBrowserEgressPolicy,
+    policyRevoke = revokeBrowserEgressPolicy,
+  },
 ) {
+  let policyId;
+  try {
+    policyId = await policyRequest(allowedHosts, {
+      socketPath: policySocket,
+      expiresAt: Date.now() + Math.min(timeoutMs + 5_000, 65_000),
+      signal,
+    });
+  } catch {
+    throw new BrowserError(
+      "browser_policy_unavailable",
+      "Broker de egress indisponível; política do navegador não foi registrada.",
+    );
+  }
+
   let body;
   try {
     body = await (workerRequest || requestBrowserWorker)(
       {
         runId,
+        policyId,
         op: request.op,
         url: request.url || null,
         selector: request.selector || null,
@@ -282,6 +319,15 @@ async function managedRun(
     if (error?.name === "AbortError" || signal?.aborted)
       throw new BrowserError("browser_timeout", "Navegador gerenciado excedeu o tempo limite.");
     throw new BrowserError("browser_unreachable", "Worker local indisponível pelo socket privado.");
+  } finally {
+    try {
+      await policyRevoke(policyId, {
+        socketPath: policySocket,
+        signal: AbortSignal.timeout(1_000),
+      });
+    } catch {
+      // O broker também expira cada autorização pelo prazo limitado registrado pela aplicação.
+    }
   }
   if (!body || typeof body !== "object" || typeof body.state !== "string")
     throw new BrowserError("browser_protocol_error", "Resposta do worker local fora do contrato.");
@@ -351,11 +397,14 @@ export async function runBrowserAction(adminId, params = {}, options = {}) {
       cfg.mode === "managed"
         ? await managedRun(request, {
             socketPath: cfg.workerSocket,
+            policySocket: cfg.policySocket,
             timeoutMs,
             runId,
             signal,
             allowedHosts: cfg.allowedHosts || [],
             workerRequest: options.workerRequest,
+            policyRequest: options.policyRequest,
+            policyRevoke: options.policyRevoke,
           })
         : await localRun(request, {
             timeoutMs,

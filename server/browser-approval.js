@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { decrypt, encrypt } from "./secret-crypto.js";
+import { browserHostAllowed, normalizeBrowserHosts } from "./browser-hosts.js";
+export { browserHostAllowed, normalizeBrowserHosts };
 
 export const browserFingerprint = (request = {}) =>
   createHash("sha256")
@@ -58,29 +60,4 @@ export function browserActionReview(action, { reveal = false } = {}) {
     preview,
     fingerprint: action.fingerprint,
   };
-}
-
-export function normalizeBrowserHosts(value) {
-  const entries = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
-  const hosts = entries.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
-  if (hosts.length > 100) throw new Error("browser_hosts_limit");
-  for (const host of hosts) {
-    if (
-      host.length > 253 ||
-      host.includes("*") ||
-      /[/:?#@\s]/.test(host) ||
-      !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*\.?$/.test(
-        host,
-      )
-    )
-      throw new Error("browser_host_invalid");
-  }
-  return [...new Set(hosts.map((host) => host.replace(/\.$/, "")))];
-}
-
-export function browserHostAllowed(rawUrl, allowedHosts = []) {
-  const allowlist = normalizeBrowserHosts(allowedHosts);
-  if (!allowlist.length) return true;
-  const host = new URL(rawUrl).hostname.toLowerCase().replace(/\.$/, "");
-  return allowlist.includes(host);
 }

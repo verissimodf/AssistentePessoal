@@ -49,6 +49,7 @@ services:
       # Worker Playwright isolado, habilitado apenas pelo profile `browser`; integração permanece
       # disabled na configuração global até o smoke test do runbook passar.
       JARVIS_BROWSER_WORKER_SOCKET: /run/jarvis-browser/worker/worker.sock
+      JARVIS_BROWSER_POLICY_SOCKET: /run/jarvis-browser/policy/policy.sock
       # Ponte de voz -> xtts-service pela rede Docker.
       XTTS_URL: "http://xtts-service:8000"
       XTTS_SPEAKER: ${XTTS_SPEAKER:-jarvis-ptbr}
@@ -83,6 +84,7 @@ services:
       - /opt/laytech-ai/AssistentePessoal/data:/app/data
       # Socket privado; somente o serviço principal precisa iniciar chamadas do worker.
       - browser-worker-runtime:/run/jarvis-browser/worker:ro
+      - browser-policy-runtime:/run/jarvis-browser/policy:ro
     networks:
       CNC_APP_PROD_01:
         ipv4_address: 192.168.2.40
@@ -125,10 +127,12 @@ services:
       - -ec
       - >-
         install -d -o 1000 -g 1000 -m 0700 /run/jarvis-browser/worker &&
-        install -d -o 1001 -g 1000 -m 0710 /run/jarvis-browser/egress
+        install -d -o 1001 -g 1000 -m 0710 /run/jarvis-browser/egress &&
+        install -d -o 1001 -g 1000 -m 0710 /run/jarvis-browser/policy
     volumes:
       - browser-worker-runtime:/run/jarvis-browser/worker
       - browser-egress-runtime:/run/jarvis-browser/egress
+      - browser-policy-runtime:/run/jarvis-browser/policy
 
   browser-worker:
     profiles: [browser]
@@ -191,14 +195,21 @@ services:
       - /tmp:size=32m,noexec,nosuid,nodev
     environment:
       JARVIS_BROWSER_EGRESS_SOCKET: /run/jarvis-browser/egress/egress.sock
+      JARVIS_BROWSER_POLICY_SOCKET: /run/jarvis-browser/policy/policy.sock
     user: "1001:1000"
     volumes:
       - browser-egress-runtime:/run/jarvis-browser/egress
+      - browser-policy-runtime:/run/jarvis-browser/policy
     networks:
       - browser-egress
     healthcheck:
       test:
-        [CMD, node, -e, "require('node:fs').accessSync('/run/jarvis-browser/egress/egress.sock')"]
+        [
+          CMD,
+          node,
+          -e,
+          "const f=require('node:fs');f.accessSync('/run/jarvis-browser/egress/egress.sock');f.accessSync('/run/jarvis-browser/policy/policy.sock')",
+        ]
       interval: 10s
       timeout: 3s
       retries: 6
@@ -213,3 +224,4 @@ networks:
 volumes:
   browser-worker-runtime:
   browser-egress-runtime:
+  browser-policy-runtime:

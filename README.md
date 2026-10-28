@@ -17,9 +17,9 @@ acontecem quando o provedor/integração correspondente está configurado e habi
 > pré-cadastradas, encaminha amostras clonadas e não expõe erros internos do serviço. A versão 1.9.0
 > já entregou fila durável, retenção opt-in, OAuth PKCE e STT local. Evidências em
 > [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
-> A árvore atual também contém a Fase 1 de segurança Playwright (schema 19), com worker isolado e
-> broker egress; a integração continua desligada na instalação ativa até a aprovação do release.
-> Uso e smoke test isolado: [`docs/NAVEGADOR.md`](docs/NAVEGADOR.md).
+> A árvore de trabalho contém o hardening Playwright de schema 19, com worker isolado e allowlist
+> exata aplicada também pelo broker; a integração segue desligada na instalação ativa até aprovação
+> e release. Uso e smoke test isolado: [`docs/NAVEGADOR.md`](docs/NAVEGADOR.md).
 > Ver [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md) e
 > [`reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md`](reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md).
 

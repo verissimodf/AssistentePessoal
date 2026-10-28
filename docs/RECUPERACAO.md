@@ -113,6 +113,15 @@ Para a candidata Playwright, use apenas os volumes do projeto
 `jarvis-browser-candidate`. `docker compose ... down --volumes` dessa candidata descarta dados e
 sockets temporários; não aponte esses comandos para `/opt/laytech-ai/AssistentePessoal/data`.
 
+## Rollback da candidata Playwright
+
+O profile `browser` permanece opt-in. Se a candidata falhar no smoke ou no healthcheck, mantenha
+`integrations.browser.enabled=false`, pare apenas o projeto `jarvis-browser-candidate` e preserve os
+logs sanitizados. Para descartar apenas o ambiente descartável, use o `down --volumes --remove-orphans`
+documentado em [NAVEGADOR.md](NAVEGADOR.md). O runtime de política contém grants efêmeros em memória,
+não estado de usuário; sua perda bloqueia novas chamadas e não exige migração ou restauração do banco.
+Não recrie o serviço de produção nem remova volumes compartilhados para recuperar a candidata.
+
 ## A migração v2 (Fase 2 — isolamento)
 
 Cria apenas tabelas novas: `ownership`, `admin_settings`, `global_settings`, `legacy_settings`, `legacy_claims`. Nenhuma tabela existente é alterada (contagem e SHA-256 conferidos).

@@ -12,6 +12,8 @@ process.env.JARVIS_DATA_DIR = dir;
 process.env.JARVIS_NO_LISTEN = "1";
 const workerSocket = join(dir, "worker.sock");
 process.env.JARVIS_BROWSER_WORKER_SOCKET = workerSocket;
+const policySocket = join(dir, "policy.sock");
+process.env.JARVIS_BROWSER_POLICY_SOCKET = policySocket;
 
 const {
   BROWSER_OPS,
@@ -26,6 +28,8 @@ const {
   redact,
 } = await import("../server/browser.js");
 const { normalizeBrowserHosts } = await import("../server/browser-approval.js");
+const { createBrowserEgressPolicyRegistry } = await import("../server/browser-egress-policy.js");
+const { startBrowserPolicyServer } = await import("../scripts/browser-egress-proxy.mjs");
 const { assertBrowserDestination, installBrowserRequestPolicy } =
   await import("../server/browser-network.js");
 const { createApp } = await import("../server/index.js");
@@ -65,6 +69,8 @@ async function loginSession(username) {
 
 // ---- worker falso pelo mesmo transporte Unix usado pelo serviço gerenciado ----
 const worker = { hits: [], mode: "ok" };
+const policyRegistry = createBrowserEgressPolicyRegistry();
+let policyServer;
 const wserver = createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
@@ -99,6 +105,7 @@ const wserver = createServer((req, res) => {
 });
 
 before(async () => {
+  policyServer = await startBrowserPolicyServer(policySocket, policyRegistry);
   await new Promise((r) => wserver.listen(workerSocket, r));
   app = createApp();
   await new Promise((r) => app.listen(0, "127.0.0.1", r));
@@ -112,6 +119,7 @@ after(async () => {
   // Fecha handles de forma determinística (o worker falso pode ter socket pendente do teste de timeout).
   wserver.closeAllConnections?.();
   await new Promise((r) => wserver.close(r));
+  if (policyServer) await new Promise((r) => policyServer.close(r));
   app?.closeAllConnections?.();
   if (app) await new Promise((r) => app.close(r));
 });
@@ -401,6 +409,7 @@ test("navegador: resolução de modo por configuração (off · managed · remot
     { adminId: null, allowGlobal: true },
   );
   assert.equal(resolveBrowserConfig(null).mode, "managed");
+  assert.equal(resolveBrowserConfig(null).policySocket, policySocket);
 
   updateSettings(
     {
@@ -424,7 +433,9 @@ test("navegador: resolução de modo por configuração (off · managed · remot
 
 test("navegador habilitado sem socket gerenciado falha sem fallback in-process", async () => {
   const workerSocket = process.env.JARVIS_BROWSER_WORKER_SOCKET;
+  const policySocket = process.env.JARVIS_BROWSER_POLICY_SOCKET;
   delete process.env.JARVIS_BROWSER_WORKER_SOCKET;
+  delete process.env.JARVIS_BROWSER_POLICY_SOCKET;
   try {
     updateSettings(
       { integrations: { browser: { enabled: true, command: "", apiKey: "" } } },
@@ -437,6 +448,8 @@ test("navegador habilitado sem socket gerenciado falha sem fallback in-process",
   } finally {
     if (workerSocket === undefined) delete process.env.JARVIS_BROWSER_WORKER_SOCKET;
     else process.env.JARVIS_BROWSER_WORKER_SOCKET = workerSocket;
+    if (policySocket === undefined) delete process.env.JARVIS_BROWSER_POLICY_SOCKET;
+    else process.env.JARVIS_BROWSER_POLICY_SOCKET = policySocket;
   }
 });
 
@@ -466,6 +479,8 @@ test("navegador gerenciado: sucesso estruturado + redação de cookie/token", as
   assert.equal(r.host, "example.com");
   assert.match(r.output, /Titulo/);
   assert.deepEqual(worker.hits.at(-1).allowedHosts, ["example.com"]);
+  assert.match(worker.hits.at(-1).policyId, /^[0-9a-f-]{36}$/i);
+  assert.equal(policyRegistry.size, 0, "grant de egress é revogado após a execução");
   const raw = JSON.stringify(r);
   assert.equal(raw.includes("SEGREDO_COOKIE"), false, "cookie nunca propagado");
   assert.equal(raw.includes(TOKEN), false, "token do worker nunca propagado");
@@ -490,7 +505,12 @@ test("navegador externo HTTP é recusado; socket inacessível e resposta inváli
     null,
     { op: "navigate", url: PUBLIC },
     {
-      config: { mode: "managed", workerSocket: `${workerSocket}.missing`, timeoutMs: 5_000 },
+      config: {
+        mode: "managed",
+        workerSocket: `${workerSocket}.missing`,
+        policySocket,
+        timeoutMs: 5_000,
+      },
     },
   );
   assert.equal(unreachable.error.code, "browser_unreachable");
@@ -499,7 +519,7 @@ test("navegador externo HTTP é recusado; socket inacessível e resposta inváli
     null,
     { op: "navigate", url: PUBLIC },
     {
-      config: { mode: "managed", workerSocket, timeoutMs: 5_000 },
+      config: { mode: "managed", workerSocket, policySocket, timeoutMs: 5_000 },
       workerRequest: async () => ({ nada: true }),
     },
   );
@@ -520,6 +540,7 @@ test("navegador gerenciado: tempo limite é respeitado (sem espera ilimitada)", 
       config: {
         mode: "managed",
         workerSocket,
+        policySocket,
         timeoutMs: 60_000,
         executablePath: null,
       },
