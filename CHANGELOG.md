@@ -2,7 +2,7 @@
 
 Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O formato é baseado no [Keep a Changelog](https://keepachangelog.com) e este projeto adere ao [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [1.9.3] — 2026-10-28
 
 ### Segurança — Playwright
 

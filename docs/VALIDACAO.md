@@ -1,7 +1,7 @@
-# Validação — release 1.9.2
+# Validação — release 1.9.3
 
-Atualizado em 2026-10-28 após validação da candidata Playwright. Distingue testes automatizados,
-smoke da imagem implantada e validação pendente contra provedores externos.
+Atualizado em 2026-10-28 para a publicação de 1.9.3. Distingue testes automatizados, smoke de
+imagem, validação do deploy e validação pendente contra provedores externos.
 
 ## Verificações da release implantada
 

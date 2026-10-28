@@ -1,6 +1,6 @@
 # 🏛️ Arquitetura do Sistema e Fluxo de Dados
 
-Documento atualizado para a release **1.9.2** (esquema SQLite **19**). Descreve a topologia real,
+Documento atualizado para a release **1.9.3** (esquema SQLite **19**). Descreve a topologia real,
 os componentes e os limites de confiança. Para configuração, ver `docs/CONFIGURACAO.md`.
 
 ---

@@ -1,8 +1,8 @@
-# 🤖 AssistentePessoal (J.A.R.V.I.S.) — v1.9.2
+# 🤖 AssistentePessoal (J.A.R.V.I.S.) — v1.9.3
 
-[![Version](https://img.shields.io/badge/version-1.9.2-blue.svg?style=flat-square)](package.json)
+[![Version](https://img.shields.io/badge/version-1.9.3-blue.svg?style=flat-square)](package.json)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg?style=flat-square&logo=node.js)](https://nodejs.org/)
-[![Test Suite](https://img.shields.io/badge/tests-679%20backend%20%2B%20110%20frontend-success.svg?style=flat-square)](tests/)
+[![Test Suite](https://img.shields.io/badge/tests-681%20backend%20%2B%20110%20frontend-success.svg?style=flat-square)](tests/)
 [![Schema](https://img.shields.io/badge/schema-19-informational.svg?style=flat-square)](server/migrations.js)
 [![Privacy](https://img.shields.io/badge/privacy-local--first-blueviolet.svg?style=flat-square)](#-segurança-e-privacidade)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
@@ -12,14 +12,14 @@ memória, agentes e integrações com serviços da máquina. O desenho padrão �
 dados, banco, documentos, memórias e segredos ficam na máquina do operador; chamadas externas só
 acontecem quando o provedor/integração correspondente está configurado e habilitado.
 
-> **Release 1.9.2:** integração local do OpenHands Agent Canvas, Headroom fixado na release estável e
+> **Release 1.9.3:** hardening do Playwright com allowlist de hosts aplicada no broker e grants de curta duração; navegador desligado por padrão.
+> A release 1.9.2 integrou o OpenHands Agent Canvas, fixou o Headroom na release estável e
 > saneamento completo do lint. TTS continua integrado ao container `xtts-service`; a ponte local usa vozes
 > pré-cadastradas, encaminha amostras clonadas e não expõe erros internos do serviço. A versão 1.9.0
 > já entregou fila durável, retenção opt-in, OAuth PKCE e STT local. Evidências em
 > [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
-> A árvore de trabalho contém o hardening Playwright de schema 19, com worker isolado e allowlist
-> exata aplicada também pelo broker; a integração segue desligada na instalação ativa até aprovação
-> e release. Uso e smoke test isolado: [`docs/NAVEGADOR.md`](docs/NAVEGADOR.md).
+> O worker isolado e o broker aplicam a allowlist exata; a integração permanece desligada até
+> habilitação deliberada pelo operador. Uso e smoke test: [`docs/NAVEGADOR.md`](docs/NAVEGADOR.md).
 > Ver [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md) e
 > [`reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md`](reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md).
 
