@@ -96,12 +96,12 @@
 
 ## Task 4: Enforce destination checks in Playwright
 
-- [ ] Add failing tests proving the local and managed-worker route hooks call the injected resolver for every HTTP(S) request, including subresources and redirect requests, and abort if any DNS answer is blocked or resolution fails.
-- [ ] Implement async `assertPublicHost` in each route callback, use the approved `resolveHost` injection, validate protocol again, and abort on any exception/cancel.
-- [ ] Add tests for IPv4, IPv6, localhost/Docker aliases, mixed public/private DNS answers, DNS failure, non-HTTP protocols, timeouts, ANSI/control characters, known credential patterns in plain text, and output truncation at `BROWSER_LIMITS.maxOutputChars`.
-- [ ] Run `rtk node --test tests/browser-tool.test.mjs`; verify there is no outbound request in tests.
-- [ ] Commit Task 4 as `fix: validate every browser destination`.
-- [ ] Extend string redaction to remove known credential patterns and control sequences before truncation; preserve ordinary text and the existing maximum output size.
+- [x] Add failing tests proving the local and managed-worker route hooks call the shared injected resolver for every HTTP(S) request, including subresources and redirect requests, and abort if any DNS answer is blocked or resolution fails.
+- [x] Implement async destination validation in the shared route callback, use the approved `resolveHost` injection, validate protocol again, and abort on any exception/cancel.
+- [x] Add tests for IPv4, IPv6, localhost/Docker aliases, mixed public/private DNS answers, DNS failure, non-HTTP protocols, timeouts, ANSI/control characters, known credential patterns in plain text, and output truncation at `BROWSER_LIMITS.maxOutputChars`.
+- [x] Run `rtk node --test tests/browser-tool.test.mjs` (23/23); fake browser/route fixtures perform no outbound requests.
+- [x] Extend string redaction to remove known credential patterns and control sequences before truncation; preserve ordinary text and the existing maximum output size.
+- [x] Commit Task 4 as `fix: validate every browser destination`.
 
 ## Task 5: Add pinned egress broker and isolated worker transport
 

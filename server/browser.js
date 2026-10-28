@@ -14,10 +14,10 @@
 // é quem possui o portão. Aqui ficam apenas: validação do pedido, driver, timeout, cancelamento e
 // redação de segredos. Nenhum cookie/token/valor secreto sai daqui.
 import { lookup as dnsResolve } from "node:dns/promises";
-import { isIP } from "node:net";
-import { assertSafeUrl, isBlockedAddress } from "./urlpolicy.js";
+import { assertSafeUrl } from "./urlpolicy.js";
 import { getSettings } from "./settings.js";
 import { browserHostAllowed, normalizeBrowserHosts } from "./browser-approval.js";
+import { assertBrowserDestination, installBrowserRequestPolicy } from "./browser-network.js";
 
 /** Operações suportadas — lista FECHADA (não existe eval/shell/download arbitrário). */
 export const BROWSER_OPS = ["navigate", "extract", "click", "fill", "wait_for", "screenshot"];
@@ -79,30 +79,13 @@ export async function assertPublicHost(
   rawUrl,
   { resolve = (h) => dnsResolve(h, { all: true, verbatim: true }) } = {},
 ) {
-  const host = new URL(String(rawUrl)).hostname.replace(/^\[|\]$/g, "");
-  if (isIP(host)) {
-    if (isBlockedAddress(host))
-      throw new BrowserError("blocked_destination", "Destino interno/metadados recusado.");
-    return;
-  }
-  let addrs;
   try {
-    addrs = await resolve(host);
+    await assertBrowserDestination(rawUrl, { resolveHost: resolve });
   } catch {
     throw new BrowserError(
       "blocked_destination",
       "Não foi possível resolver o destino com segurança.",
     );
-  }
-  const list = Array.isArray(addrs) ? addrs : [addrs];
-  if (!list.length)
-    throw new BrowserError("blocked_destination", "Destino sem endereço resolvido.");
-  for (const a of list) {
-    if (isBlockedAddress(a?.address || a))
-      throw new BrowserError(
-        "blocked_destination",
-        "Destino resolve para endereço interno/metadados; recusado.",
-      );
   }
 }
 
@@ -166,15 +149,28 @@ export function validateBrowserRequest(input = {}, { allowedHosts = [] } = {}) {
 }
 
 const SECRET_KEY = /cookie|authorization|token|password|secret|credential|set-cookie|session/i;
+const ANSI_CONTROL =
+  /\u001b\[[0-?]*[ -/]*[@-~]|[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g;
+const SECRET_ASSIGNMENT =
+  /["']?\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|authorization|password|passwd|token|secret)\b["']?\s*[:=]\s*(?:"[^"]*"|'[^']*'|Bearer\s+[^\s,;]+|[^\s,;]+)/gi;
+const BEARER_CREDENTIAL = /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi;
+
+const redactString = (value) =>
+  value
+    .replace(ANSI_CONTROL, "")
+    .replace(SECRET_ASSIGNMENT, (match) => `${match.split(/[:=]/, 1)[0]}=[redacted]`)
+    .replace(BEARER_CREDENTIAL, "Bearer [redacted]");
 
 /** Remove qualquer coisa com cara de credencial e limita o tamanho — inclusive de worker externo. */
 export function redact(value, depth = 0) {
   if (depth > 4) return "[profundidade]";
   if (value === null || value === undefined) return value;
-  if (typeof value === "string")
-    return value.length > BROWSER_LIMITS.maxOutputChars
-      ? `${value.slice(0, BROWSER_LIMITS.maxOutputChars)}…`
-      : value;
+  if (typeof value === "string") {
+    const clean = redactString(value);
+    return clean.length > BROWSER_LIMITS.maxOutputChars
+      ? `${clean.slice(0, BROWSER_LIMITS.maxOutputChars)}…`
+      : clean;
+  }
   if (typeof value !== "object") return value;
   if (Array.isArray(value)) return value.slice(0, 50).map((v) => redact(v, depth + 1));
   const out = {};
@@ -207,9 +203,12 @@ async function loadPlaywright() {
 
 async function localRun(
   request,
-  { timeoutMs, executablePath, loadPlaywrightFn, signal, resolveHost },
+  { timeoutMs, executablePath, loadPlaywrightFn, signal, resolveHost, allowedHosts },
 ) {
-  if (request.url) await assertPublicHost(request.url, resolveHost ? { resolve: resolveHost } : {});
+  if (request.url)
+    await assertPublicHost(request.url, {
+      resolve: resolveHost || ((h) => dnsResolve(h, { all: true, verbatim: true })),
+    });
   const pw = await loadPlaywrightFn();
   const chromium = pw.chromium || pw.default?.chromium;
   if (!chromium)
@@ -228,17 +227,7 @@ async function localRun(
   try {
     const page = await context.newPage();
     // Defesa em profundidade: bloqueia qualquer requisição cujo destino viole a política de rede.
-    await page.route("**/*", async (route) => {
-      const reqUrl = route.request().url();
-      try {
-        if (!/^https?:$/.test(new URL(reqUrl).protocol)) return route.abort();
-        assertSafeUrl(reqUrl);
-        if (signal?.aborted) return route.abort();
-        return route.continue();
-      } catch {
-        return route.abort();
-      }
-    });
+    await installBrowserRequestPolicy(page, { signal, resolveHost, allowedHosts });
     if (request.url)
       await page.goto(request.url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     if (request.op === "click") await page.click(request.selector, { timeout: timeoutMs });
@@ -271,7 +260,10 @@ async function localRun(
 // ---------------------------------------------------------------------------
 const REMOTE_CONTRACT = { path: "/run", cancelPath: "/cancel", method: "POST" };
 
-async function remoteRun(request, { endpoint, token, timeoutMs, runId, fetchFn, signal }) {
+async function remoteRun(
+  request,
+  { endpoint, token, timeoutMs, runId, fetchFn, signal, allowedHosts },
+) {
   const base = String(endpoint).replace(/\/+$/, "");
   let res;
   try {
@@ -288,6 +280,7 @@ async function remoteRun(request, { endpoint, token, timeoutMs, runId, fetchFn, 
         selector: request.selector || null,
         text: request.text || null,
         timeoutMs,
+        allowedHosts,
       }),
       signal,
     });
@@ -354,7 +347,7 @@ export async function runBrowserAction(adminId, params = {}, options = {}) {
         message: "Navegador desabilitado em Configurações (integração browser).",
       },
     });
-  const v = validateBrowserRequest(params);
+  const v = validateBrowserRequest(params, { allowedHosts: cfg.allowedHosts || [] });
   if (!v.ok) return done("failed", { error: { code: v.code, message: v.reason } });
   const request = v.request;
   if (request.url) base.host = new URL(request.url).host;
@@ -377,6 +370,7 @@ export async function runBrowserAction(adminId, params = {}, options = {}) {
             runId,
             fetchFn,
             signal,
+            allowedHosts: cfg.allowedHosts || [],
           })
         : await localRun(request, {
             timeoutMs,
@@ -384,6 +378,7 @@ export async function runBrowserAction(adminId, params = {}, options = {}) {
             loadPlaywrightFn,
             signal,
             resolveHost: options.resolveHost,
+            allowedHosts: cfg.allowedHosts || [],
           });
     const state = cfg.mode === "remote" ? result.state : "completed";
     const error =

@@ -17,9 +17,10 @@
 //  - teto de tempo por execução e cancelamento cooperativo.
 import { createServer } from "node:http";
 import { timingSafeEqual, randomUUID } from "node:crypto";
-import { lookup as dnsResolve } from "node:dns/promises";
-import { isIP } from "node:net";
-import { assertSafeUrl, isBlockedAddress } from "../server/urlpolicy.js";
+import {
+  assertBrowserDestination,
+  installBrowserRequestPolicy,
+} from "../server/browser-network.js";
 
 const PORT = Number(process.env.JARVIS_BROWSER_PORT || 7788);
 const BIND = process.env.JARVIS_BROWSER_BIND || "127.0.0.1";
@@ -54,22 +55,6 @@ async function loadPlaywright() {
     }
   }
   throw Object.assign(new Error("playwright_unavailable"), { code: "playwright_unavailable" });
-}
-
-async function assertPublicHost(rawUrl) {
-  const host = new URL(String(rawUrl)).hostname.replace(/^\[|\]$/g, "");
-  if (isIP(host)) {
-    if (isBlockedAddress(host))
-      throw Object.assign(new Error("blocked_destination"), { code: "blocked_destination" });
-    return;
-  }
-  const addrs = await dnsResolve(host, { all: true, verbatim: true }).catch(() => {
-    throw Object.assign(new Error("blocked_destination"), { code: "blocked_destination" });
-  });
-  for (const a of addrs) {
-    if (isBlockedAddress(a?.address || a))
-      throw Object.assign(new Error("blocked_destination"), { code: "blocked_destination" });
-  }
 }
 
 const readJson = (req) =>
@@ -107,7 +92,7 @@ const send = (res, status, body) => {
   res.end(payload);
 };
 
-async function runOp({ op, url, selector, text, timeoutMs }, signal) {
+async function runOp({ op, url, selector, text, timeoutMs, allowedHosts = [] }, signal) {
   if (!OPS.includes(op))
     return {
       state: "failed",
@@ -115,8 +100,7 @@ async function runOp({ op, url, selector, text, timeoutMs }, signal) {
     };
   if (url) {
     try {
-      assertSafeUrl(url);
-      await assertPublicHost(url);
+      await assertBrowserDestination(url, { allowedHosts });
     } catch (e) {
       return {
         state: "failed",
@@ -134,16 +118,7 @@ async function runOp({ op, url, selector, text, timeoutMs }, signal) {
   const context = await browser.newContext({ acceptDownloads: false, ignoreHTTPSErrors: false });
   try {
     const page = await context.newPage();
-    await page.route("**/*", (route) => {
-      const u = route.request().url();
-      try {
-        if (!/^https?:$/.test(new URL(u).protocol)) return route.abort();
-        assertSafeUrl(u);
-        return route.continue();
-      } catch {
-        return route.abort();
-      }
-    });
+    await installBrowserRequestPolicy(page, { signal, allowedHosts });
     if (url) await page.goto(url, { waitUntil: "domcontentloaded", timeout: timeoutMs });
     if (op === "click") await page.click(selector, { timeout: timeoutMs });
     if (op === "fill") await page.fill(selector, text, { timeout: timeoutMs });
@@ -216,6 +191,7 @@ const server = createServer(async (req, res) => {
           selector: body.selector || null,
           text: body.text || null,
           timeoutMs,
+          allowedHosts: body.allowedHosts || [],
         },
         ctl.signal,
       ),

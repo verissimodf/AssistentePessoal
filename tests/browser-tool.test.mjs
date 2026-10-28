@@ -22,8 +22,10 @@ const {
   runBrowserAction,
   cancelBrowserRun,
   BrowserError,
+  redact,
 } = await import("../server/browser.js");
 const { normalizeBrowserHosts } = await import("../server/browser-approval.js");
+const { installBrowserRequestPolicy } = await import("../server/browser-network.js");
 const { createApp } = await import("../server/index.js");
 const { callTool, resolveApproval } = await import("../server/tools.js");
 const { auth, db } = await import("../server/db.js");
@@ -165,6 +167,27 @@ test("navegador: nome público que resolve para endereço interno é recusado (b
       }),
     (e) => e.code === "blocked_destination",
   );
+  await assert.rejects(
+    () =>
+      assertPublicHost("https://docker-alias.example/", {
+        resolve: async () => [{ address: "172.18.0.2" }],
+      }),
+    (e) => e.code === "blocked_destination",
+  );
+  await assert.rejects(
+    () =>
+      assertPublicHost("https://ipv6-private.example/", {
+        resolve: async () => [{ address: "2001:db8::1" }],
+      }),
+    (e) => e.code === "blocked_destination",
+  );
+  await assert.rejects(
+    () =>
+      assertPublicHost("https://mixed.example/", {
+        resolve: async () => [{ address: "93.184.216.34" }, { address: "10.0.0.1" }],
+      }),
+    (e) => e.code === "blocked_destination",
+  );
   await assert.doesNotReject(() =>
     assertPublicHost("https://publico.example/", {
       resolve: async () => [{ address: "93.184.216.34" }],
@@ -179,6 +202,64 @@ test("navegador: nome público que resolve para endereço interno é recusado (b
       }),
     (e) => e.code === "blocked_destination",
   );
+});
+
+test("navegador: cada navegação, subrecurso e redirect passa pela mesma política DNS", async () => {
+  let handler;
+  const page = { route: async (_pattern, callback) => (handler = callback) };
+  const resolved = [];
+  await installBrowserRequestPolicy(page, {
+    allowedHosts: [
+      "example.com",
+      "assets.example.com",
+      "redirect-private.example",
+      "dns-failure.example",
+    ],
+    resolveHost: async (host) => {
+      resolved.push(host);
+      if (host === "dns-failure.example") throw new Error("ENOTFOUND");
+      if (host === "redirect-private.example") return [{ address: "10.0.0.8" }];
+      return [{ address: "93.184.216.34" }];
+    },
+  });
+  const decisions = [];
+  const request = (url) => ({
+    request: () => ({ url: () => url }),
+    continue: async () => decisions.push([url, "continue"]),
+    abort: async () => decisions.push([url, "abort"]),
+  });
+  for (const url of [
+    "https://example.com/",
+    "https://assets.example.com/image.png",
+    "https://redirect-private.example/landing",
+    "https://outside.example/redirect",
+    "https://dns-failure.example/",
+    "file:///etc/passwd",
+  ])
+    await handler(request(url));
+  assert.deepEqual(resolved, [
+    "example.com",
+    "assets.example.com",
+    "redirect-private.example",
+    "dns-failure.example",
+  ]);
+  assert.deepEqual(
+    decisions.map(([, decision]) => decision),
+    ["continue", "continue", "abort", "abort", "abort", "abort"],
+  );
+});
+
+test("navegador: redaction remove ANSI, credenciais conhecidas e limita strings", () => {
+  const clean = redact(
+    'texto normal \u001b[31mBearer abc.def-123 api_key=sk-secret password: \'senha forte\' Authorization: Bearer auth-secret {"api_key":"json-secret"}\u001b[0m',
+  );
+  assert.match(clean, /texto normal/);
+  assert.equal(
+    /\u001b|abc\.def-123|sk-secret|senha forte|auth-secret|json-secret/.test(clean),
+    false,
+  );
+  const long = redact("x".repeat(BROWSER_LIMITS.maxOutputChars + 10));
+  assert.equal(long.length, BROWSER_LIMITS.maxOutputChars + 1, "truncamento acrescenta reticência");
 });
 
 test("navegador: limites de seletor/texto/timeout com piso e teto", () => {
@@ -347,11 +428,13 @@ test("navegador remoto: sucesso estruturado + redação de cookie/token", async 
     token: TOKEN,
     timeoutMs: 5_000,
     executablePath: null,
+    allowedHosts: ["example.com"],
   };
   const r = await runBrowserAction(null, { op: "navigate", url: PUBLIC }, { config: cfg });
   assert.equal(r.state, "completed");
   assert.equal(r.host, "example.com");
   assert.match(r.output, /Titulo/);
+  assert.deepEqual(worker.hits.at(-1).allowedHosts, ["example.com"]);
   const raw = JSON.stringify(r);
   assert.equal(raw.includes("SEGREDO_COOKIE"), false, "cookie nunca propagado");
   assert.equal(raw.includes(TOKEN), false, "token do worker nunca propagado");
@@ -443,6 +526,65 @@ test("navegador local: sem Playwright instalado falha com instrução acionável
   assert.equal(r.state, "error");
   assert.equal(r.error.code, "browser_unavailable");
   assert.match(r.error.message, /playwright|worker/i);
+});
+
+test("navegador local: protege requisições e redirects com DNS injetado sem rede real", async () => {
+  let handler;
+  const decisions = [];
+  const fakePage = {
+    route: async (_pattern, callback) => (handler = callback),
+    goto: async () => {
+      for (const url of [
+        PUBLIC,
+        "https://cdn.example.com/image.png",
+        "https://private.example.com/redirect",
+      ]) {
+        const request = {
+          request: () => ({ url: () => url }),
+          continue: async () => decisions.push([url, "continue"]),
+          abort: async () => decisions.push([url, "abort"]),
+        };
+        await handler(request);
+      }
+    },
+    title: async () => "fake",
+    url: () => PUBLIC,
+  };
+  const config = {
+    mode: "local",
+    endpoint: "",
+    token: "",
+    timeoutMs: 5_000,
+    executablePath: null,
+    allowedHosts: [],
+  };
+  const calls = [];
+  const r = await runBrowserAction(
+    null,
+    { op: "navigate", url: PUBLIC },
+    {
+      config,
+      loadPlaywright: async () => ({
+        chromium: {
+          launch: async () => ({
+            newContext: async () => ({ newPage: async () => fakePage, close: async () => {} }),
+          }),
+        },
+      }),
+      resolveHost: async (host) => {
+        calls.push(host);
+        return [{ address: host.startsWith("private") ? "10.0.0.9" : "93.184.216.34" }];
+      },
+    },
+  );
+  assert.equal(r.state, "completed");
+  assert.ok(calls.includes("example.com"));
+  assert.ok(calls.includes("cdn.example.com"));
+  assert.ok(calls.includes("private.example.com"));
+  assert.deepEqual(
+    decisions.map(([, decision]) => decision),
+    ["continue", "continue", "abort"],
+  );
 });
 
 // ---------- fluxo de aprovação (pipeline existente, preservado) ----------
