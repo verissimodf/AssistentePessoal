@@ -61,7 +61,7 @@ const EXT_TO_MIME: Record<string, string> = {
 };
 
 export function parseDocError(err: unknown): string {
-  const raw = String((err as any)?.message || err || "");
+  const raw = String((err instanceof Error ? err.message : err) || "");
   if (raw.includes("pdf_no_text_layer")) {
     return "O arquivo PDF é escaneado ou uma imagem sem camada de texto pesquisável.";
   }

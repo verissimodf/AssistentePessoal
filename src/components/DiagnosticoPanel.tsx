@@ -190,7 +190,6 @@ export function DiagnosticoPanel() {
   };
   useEffect(() => {
     if (state === "ok") carregar().catch(() => undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
   if (state !== "ok") return <p className="text-sm text-muted-foreground">{x("demo")}</p>;

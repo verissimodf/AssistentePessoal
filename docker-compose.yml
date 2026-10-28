@@ -30,7 +30,7 @@ services:
     # Tag dirigida pela release (P0.3.1): um deploy exporta `IMAGE_TAG` (ex.: 1.0.0) para a nova
     # imagem NÃO sobrescrever a tag da versão em produção — que fica disponível como rollback.
     # Por omissão mantém a tag atual para não partir fluxos que correm `compose up --build` sem env.
-    image: assistente-pessoal:${IMAGE_TAG:-1.9.1}
+    image: assistente-pessoal:${IMAGE_TAG:-1.9.2}
     container_name: assistente-pessoal
     restart: unless-stopped
     # Não-root vem da própria imagem (`USER 1000:1000`), não duplicado aqui.
@@ -49,6 +49,16 @@ services:
       # Ponte de voz -> xtts-service pela rede Docker.
       XTTS_URL: "http://xtts-service:8000"
       XTTS_SPEAKER: ${XTTS_SPEAKER:-jarvis-ptbr}
+      OPENHANDS_URL: ${OPENHANDS_URL:-http://openhands:8000}
+      OPENHANDS_API_KEY: ${OPENHANDS_API_KEY:-}
+      OPENHANDS_MODEL: ${OPENHANDS_MODEL:-openai/qwen2.5:7b}
+      HEADROOM_PROXY_TOKEN: ${HEADROOM_PROXY_TOKEN:-}
+      OPENAI_BASE_URL: http://headroom:8787/v1
+      OPENAI_API_KEY: ${HEADROOM_PROXY_TOKEN:-}
+      ANTHROPIC_BASE_URL: http://headroom:8787
+      ANTHROPIC_CUSTOM_HEADERS: "X-Headroom-Proxy-Token: ${HEADROOM_PROXY_TOKEN:-}"
+      OPENCODE_CONFIG_CONTENT: >-
+        {"$$schema":"https://opencode.ai/config.json","provider":{"headroom":{"npm":"@ai-sdk/openai-compatible","name":"Headroom local","options":{"baseURL":"http://headroom:8787/v1","apiKey":"${HEADROOM_PROXY_TOKEN:-}"},"models":{"qwen2.5:7b":{"name":"Qwen 2.5 7B"}}}}}
       # Origens autorizadas (header Origin), sem curingas. Inclui tailnet (relé no host)
       # e o hostname HTTPS (ativado na Fase 7).
       JARVIS_ALLOWED_ORIGINS: "http://100.87.104.126:8090,http://app.tail43f1fb.ts.net:8090,https://jarvis.laytech.com.br,http://192.168.2.40:8090"

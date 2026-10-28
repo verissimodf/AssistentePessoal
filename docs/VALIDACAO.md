@@ -1,4 +1,4 @@
-# Validação — release 1.9.1
+# Validação — release 1.9.2
 
 Atualizado em 2026-10-27 após deploy. Distingue testes automatizados, smoke da imagem implantada e
 validação pendente contra provedores externos.
@@ -19,7 +19,7 @@ validação pendente contra provedores externos.
 | Frontend | `npm test` | **109/109 PASS** (21 arquivos) |
 | Avaliação agêntica | `npm run eval:agents` | **86/86 PASS** em seis cenários offline |
 | Tipos | `npx tsc --noEmit` | **sem erros** |
-| ESLint/Prettier | ESLint global + Prettier dirigido | **88/88 arquivos rastreados formatados**; lint ainda tem 12 erros não relacionados à formatação (9 `no-explicit-any`, 3 `no-empty`) e 16 avisos (15 `react-refresh`, 1 diretiva de lint não utilizada). `.remember/**` está excluído do lint por ser estado local ignorado pelo Git |
+| ESLint/Prettier | ESLint global + Prettier dirigido | **0 erros, 0 avisos**; nove `any` substituídos por contratos tipados, três `catch` documentados e exports React Fast Refresh explicitamente permitidos |
 | Build frontend/SSR | `npm run build` | **PASS**; aviso existente de chunk >500 kB e avisos de Vite |
 | Docker STT | `docker compose --profile stt build stt` e inicialização | **PASS**, não-root, sem porta publicada, zero reinícios no smoke |
 | Compose | `docker compose --profile stt config --quiet` | **PASS** |
@@ -56,10 +56,10 @@ da migração anterior v15→v18 continua disponível em
 - O teste STT usou amostra pública em inglês do repositório whisper.cpp, não uma gravação pessoal.
   Qualidade de português, latência em hardware de menor capacidade e experiência real pelo browser
   ficam para validação opt-in do operador.
-- `npm run lint` global ainda falha em regras fora do formato: nove usos explícitos de `any` em
-  `src/lib/bridge.ts`, `src/routes/documentos.tsx` e `src/test/documents-page.test.tsx`, além de três
-  blocos `catch` vazios em `src/lib/handsfree.ts`. Os avisos `react-refresh` são preservados. Os
-  arquivos Prettier rastreados foram formatados sem mudança intencional de lógica.
+- Lint: os nove usos explícitos de `any` foram substituídos por contratos tipados, os três `catch`
+  agora documentam falhas esperadas de SpeechRecognition e as 16 advertências foram eliminadas.
+- OpenHands Agent Canvas e Headroom: estado atualizado e evidências operacionais no documento
+  [`INTEGRACOES-AGENT-CANVAS-HEADROOM-2026-10-27.md`](INTEGRACOES-AGENT-CANVAS-HEADROOM-2026-10-27.md).
 - `.remember/**` é estado local ignorado pelo Git e excluído explicitamente do ESLint; seu conteúdo
   não foi editado nem adicionado ao repositório.
 - O build aponta chunk JavaScript acima de 500 kB. Otimizar divisão de bundles requer medição de

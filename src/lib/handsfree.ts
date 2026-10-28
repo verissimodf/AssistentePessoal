@@ -463,13 +463,17 @@ export function startHandsFreeSession(config: HandsFreeConfig) {
             setTimeout(() => {
               try {
                 if (active) rec.start();
-              } catch {}
+              } catch {
+                // SpeechRecognition.start may race with the browser's end event; retry next cycle.
+              }
             }, 350);
           }
         };
         rec.start();
         recognition = rec;
-      } catch {}
+      } catch {
+        // Speech recognition is optional and may be unavailable or denied by browser policy.
+      }
     }
   }
 
@@ -500,7 +504,9 @@ export function startHandsFreeSession(config: HandsFreeConfig) {
       if (recognition && typeof (recognition as { abort?: () => void }).abort === "function") {
         try {
           (recognition as { abort: () => void }).abort();
-        } catch {}
+        } catch {
+          // abort() may throw after the recognition service has already stopped.
+        }
       }
     },
   };

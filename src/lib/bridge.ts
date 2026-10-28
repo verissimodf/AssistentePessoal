@@ -363,14 +363,33 @@ export function collection<T extends { id: string }>(name: string) {
 }
 
 // ---------- settings ----------
+type SettingsRecord = {
+  enabled?: boolean;
+  baseUrl?: string;
+  command?: string;
+  apiKey?: string;
+  hasKey?: boolean;
+  model?: string;
+  [key: string]: unknown;
+};
 export type Settings = {
-  general: any;
-  providers: any;
-  integrations: any;
-  comms: any;
-  voice: any;
-  host: any;
-  [k: string]: any;
+  general: { agentName: string; language: string; [key: string]: unknown };
+  providers: Record<string, SettingsRecord>;
+  integrations: Record<string, SettingsRecord>;
+  comms: Record<string, SettingsRecord>;
+  voice: {
+    tts: string;
+    stt: string;
+    sensitivity: number;
+    hotkey: string;
+    wake: { clap: boolean; word: boolean; hotkey: boolean; ptt: boolean; [key: string]: boolean };
+    cloneEngine?: string;
+    clonedVoiceId?: string;
+    clonedName?: string;
+    localVoiceUrl?: string;
+    [key: string]: unknown;
+  };
+  host: { enabled: boolean; allowlist: string; [key: string]: unknown };
 };
 export const DEFAULT_SETTINGS: Settings = {
   general: { agentName: "Jarvis", language: "pt" },

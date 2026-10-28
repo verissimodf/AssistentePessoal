@@ -796,7 +796,7 @@ const openhandsFingerprint = (base, task) =>
  */
 async function openhandsSend(base, task, expect) {
   const cfg = getSettings().integrations?.openhands || {};
-  const current = String(cfg.command || "").replace(/\/$/, "");
+  const current = String(process.env.OPENHANDS_URL || cfg.command || "").replace(/\/$/, "");
   if (!cfg?.enabled || current !== base)
     return { output: "Delegação cancelada: a integração mudou desde a aprovação." };
   if (openhandsFingerprint(base, task) !== expect)
@@ -805,9 +805,20 @@ async function openhandsSend(base, task, expect) {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      ...(cfg.apiKey ? { authorization: `Bearer ${cfg.apiKey}` } : {}),
+      ...(process.env.OPENHANDS_API_KEY || cfg.apiKey
+        ? { "X-Session-API-Key": process.env.OPENHANDS_API_KEY || cfg.apiKey }
+        : {}),
     },
-    body: JSON.stringify({ initial_user_msg: task }),
+    body: JSON.stringify({
+      workspace: { working_dir: "/workspace" },
+      agent_settings: {
+        llm: {
+          model: process.env.OPENHANDS_MODEL || "openai/qwen2.5:7b",
+          api_key: "dummy-key",
+        },
+      },
+      initial_message: { role: "user", content: [{ type: "text", text: task }] },
+    }),
     signal: AbortSignal.timeout(180000),
   });
   if (!r.ok) return { output: `OpenHands ${r.status}: ${(await r.text()).slice(0, 500)}` };
@@ -1280,7 +1291,7 @@ export async function callTool(name, input, ctx) {
       // Delegação externa: nunca enviada antes da aprovação humana (mesmo mecanismo do cli_agent).
       const cfg = s.integrations?.openhands;
       if (!cfg?.enabled) return 'Integração "openhands" não está habilitada em Configurações.';
-      const base = String(cfg.command || "").replace(/\/$/, "");
+      const base = String(process.env.OPENHANDS_URL || cfg.command || "").replace(/\/$/, "");
       const task = String(input.task ?? "");
       if (!task.trim()) return "Tarefa vazia.";
       const summary = `Delegar ao OpenHands (${base}): ${task}`.slice(0, 500);

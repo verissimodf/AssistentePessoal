@@ -47,7 +47,7 @@ before(async () => {
       body += c;
     });
     req.on("end", () => {
-      stubHits.push({ url: req.url, body });
+      stubHits.push({ url: req.url, headers: req.headers, body });
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ conversation_id: "conv-1", status: "running" }));
     });
@@ -94,10 +94,28 @@ test("openhands_task: NADA é enviado antes da aprovação; aprovar executa exat
   );
   assert.equal(stubHits.length, 0, "nenhuma requisição antes da aprovação");
 
-  const r = await resolveApproval(c.pending[0].id, true, principal);
+  const oldKey = process.env.OPENHANDS_API_KEY;
+  const oldModel = process.env.OPENHANDS_MODEL;
+  process.env.OPENHANDS_API_KEY = "test-session-key";
+  process.env.OPENHANDS_MODEL = "openai/qwen2.5:7b";
+  let r;
+  try {
+    r = await resolveApproval(c.pending[0].id, true, principal);
+  } finally {
+    if (oldKey === undefined) delete process.env.OPENHANDS_API_KEY;
+    else process.env.OPENHANDS_API_KEY = oldKey;
+    if (oldModel === undefined) delete process.env.OPENHANDS_MODEL;
+    else process.env.OPENHANDS_MODEL = oldModel;
+  }
   assert.match(r.output, /conversation_id/);
   assert.equal(stubHits.length, 1);
-  assert.match(stubHits[0].body, /tarefa A/);
+  assert.equal(stubHits[0].headers["x-session-api-key"], "test-session-key");
+  assert.equal(stubHits[0].headers.authorization, undefined);
+  assert.deepEqual(JSON.parse(stubHits[0].body), {
+    workspace: { working_dir: "/workspace" },
+    agent_settings: { llm: { model: "openai/qwen2.5:7b", api_key: "dummy-key" } },
+    initial_message: { role: "user", content: [{ type: "text", text: "tarefa A" }] },
+  });
   assert.equal(
     db.prepare("SELECT status FROM approvals WHERE id=?").get(c.pending[0].id).status,
     "done",

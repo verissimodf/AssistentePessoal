@@ -1,6 +1,6 @@
 # Configuração
 
-Atualizado para **1.9.1** (esquema 18). A configuração de aplicação é feita no painel e persistida
+Atualizado para **1.9.2** (esquema 18). A configuração de aplicação é feita no painel e persistida
 cifrada em `data/jarvis.db`; variáveis de ambiente cobrem infraestrutura e segurança.
 
 ## Proveniência dos valores
@@ -57,7 +57,7 @@ Os endereços abaixo refletem a topologia Docker atual; no modo local use `127.0
 | OpenCode Go | `https://opencode.ai/zen/v1` | sim | não testado |
 | OpenRouter / Groq / Gemini | compatíveis com OpenAI | sim | não testados |
 | OpenWebUI | `http://openwebui:8080/api` | sim | não testado |
-| Headroom | `http://headroom:8787/v1` | sim | **OPERATIONAL** (`/models` 200, 9 modelos; chat 200) |
+| Headroom | `http://headroom:8787/v1` | sim | **OPERATIONAL** (`/models` 200, 9 modelos; chat 200 em 2026-10-27) |
 | Compatível com OpenAI | qualquer `/v1` | opcional | conforme configuração |
 
 O estado “operacional” exige uma chamada real bem-sucedida; a mera presença do adaptador no código
@@ -71,10 +71,10 @@ não basta. O fallback local (Ollama) continua sendo o caminho seguro quando um 
 | Hermes | CLI/HTTP | gateway local | `/models` 200; chat depende de sessão/gateway |
 | OpenClaw | HTTP | `http://openclaw:18789/v1` | **BLOCKED-CONFIGURATION** — `/healthz`/`/models` 200, chat 404 |
 | Odysseus | HTTP | `http://odysseus:8000/v1` | não exposto como ferramenta de agente |
-| OpenHands | HTTP | `http://127.0.0.1:8085` | primeira execução pode montar runtime e demorar |
+| OpenHands Agent Canvas | HTTP local | `http://openhands:8000` (Docker) / `http://127.0.0.1:8085` (host) | chave de sessão no `.env`; execução segue aprovação humana |
 | Context7 | MCP | `http://127.0.0.1:8000/mcp` | ferramenta `context7_docs` |
 | crawl4ai | HTTP | `http://<ip-crawl4ai>:11235` | ferramenta `crawl_page` (fail-closed egress) |
-| Headroom | HTTP | `http://headroom:8787/v1` | proxy de contexto; ver provedores |
+| Headroom | HTTP | `http://headroom:8787/v1` | imagem `0.42.0`, token em `.env`; somente loopback publicado no host |
 | REA | CLI | `rea-agents` na imagem | ferramenta `rea_analyze` com aprovação |
 | Gigabrain | CLI/MCP | store em `data/gigabrain/` | ferramentas `gigabrain_recall/remember` |
 
@@ -97,9 +97,24 @@ não basta. O fallback local (Ollama) continua sendo o caminho seguro quando um 
   vazios para alguns aliases. Não habilite chamadas pagas sem confirmar provedores conectados e
   orçamento.
 - Headroom: requer token (`HEADROOM_PROXY_TOKEN` no serviço); a porta é publicada só em loopback.
-  Chat sintético validado em 2026-10-26.
+  Imagem fixada em `ghcr.io/headroomlabs-ai/headroom:0.42.0`. O valor é mantido em
+  `/opt/laytech-ai/docker/headroom/.env` e também no `.env` local do Assistente para autenticação;
+  ambos os arquivos devem permanecer com permissão `0600` e não ser versionados. Integração do
+  Assistente usa o provider OpenAI-compatible. Codex, OpenCode e Claude Code podem usar a mesma
+  instalação via `headroom wrap` ou MCP, conforme a configuração local de cada CLI.
 - Falhas de gateway caem no fallback local (Ollama); não há loops de retry infinito — o router
   tem timeout por tentativa e circuit breaker.
+
+### OpenHands Agent Canvas local
+
+- A integração usa `OPENHANDS_URL=http://openhands:8000` e `OPENHANDS_API_KEY` no `.env` raiz
+  (0600), transferida do arquivo gerado pelo Agent Canvas sem exibir seu conteúdo. A chamada local
+  usa `X-Session-API-Key`, `agent_settings`, `workspace` e `initial_message`; a API Cloud Bearer
+  não é usada.
+- O healthcheck e o acesso de host usam a porta unificada 8000 do Agent Canvas. O volume persistente
+  `/.openhands` e o workspace são preservados ao recriar o container.
+- O envio de tarefa permanece atrás da aprovação humana. A verificação operacional usa endpoints
+  autenticados de leitura; ela não cria nem executa uma conversa de agente.
 
 ## Comunicações
 

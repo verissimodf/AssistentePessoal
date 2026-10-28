@@ -63,9 +63,17 @@ function SettingsPage() {
   }, []);
   if (!s) return null;
 
-  const set = (section: string, key: string, value: unknown) =>
-    setS({ ...s, [section]: { ...s[section], [key]: value } });
-  const setNested = (section: string, id: string, key: string, value: unknown) =>
+  const set = (
+    section: "general" | "providers" | "integrations" | "comms" | "voice" | "host",
+    key: string,
+    value: unknown,
+  ) => setS({ ...s, [section]: { ...s[section], [key]: value } });
+  const setNested = (
+    section: "general" | "providers" | "integrations" | "comms" | "voice" | "host",
+    id: string,
+    key: string,
+    value: unknown,
+  ) =>
     setS({
       ...s,
       [section]: { ...s[section], [id]: { ...(s[section]?.[id] || {}), [key]: value } },
@@ -289,7 +297,7 @@ function SettingsPage() {
                     <Input
                       type={/token|password/i.test(f) ? "password" : "text"}
                       placeholder={/token|password/i.test(f) && v.hasKey ? "•••••••• (salvo)" : ""}
-                      value={v[f] || ""}
+                      value={typeof v[f] === "string" ? v[f] : ""}
                       onChange={(e) => setNested("comms", c.id, f, e.target.value)}
                     />
                   </Field>

@@ -180,7 +180,7 @@ describe("DocumentsPage — RAG Semântico Híbrido & Ingestão Multiformato", (
 
   describe("Tratamento de Erros e Mensagens Amigáveis", () => {
     it("exibe alerta amigável quando API retorna 422 pdf_no_text_layer no upload manual", async () => {
-      mockApi.mockImplementation(async (path: string, options?: any) => {
+      mockApi.mockImplementation(async (path: string, options?: { method?: string }) => {
         if (path === "/api/documents" && options?.method === "POST") {
           throw new Error('422: {"error":"pdf_no_text_layer"}');
         }

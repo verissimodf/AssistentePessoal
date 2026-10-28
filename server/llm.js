@@ -65,7 +65,7 @@ export function providerConfig(id, adminId = null) {
   return {
     id,
     baseUrl: (p.baseUrl || p.command || DEFAULT_URLS[id] || "").replace(/\/$/, ""),
-    apiKey: p.apiKey || "",
+    apiKey: p.apiKey || (id === "headroom" ? process.env.HEADROOM_PROXY_TOKEN || "" : ""),
     model: p.model || "",
   };
 }
