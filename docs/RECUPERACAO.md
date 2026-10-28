@@ -1,5 +1,7 @@
 # Backup, migração, recuperação e rollback
 
+> Esquema atual do repositório: v19. Preserve sempre o par banco SQLite + `master.key`.
+
 ## Como as migrações funcionam
 
 - A versão do banco fica em `PRAGMA user_version` de `data/jarvis.db`.
@@ -88,6 +90,28 @@ há expurgo automático: a política fica com quem opera a máquina.
 ## Primeiro acesso
 
 O código fica em `data/bootstrap-token.txt` (permissão `0600` no Linux; no Windows, valem as permissões da pasta do usuário). Ele vale 15 minutos, funciona uma vez e é trocado a cada reinício enquanto não houver administrador. O código não aparece no terminal nem nos logs.
+
+## Migração v19 — valores de preenchimento Playwright
+
+A v19 transforma, no próprio registro, `browser_action.fill.params.text` em payload cifrado com a
+`master.key` local. O estado da aprovação, fingerprint, correlação e contagem de registros são
+preservados. A migração exige backup verificado e executa em transação; sem a chave existente ou se
+uma linha não puder ser convertida, o startup falha e a transação é revertida.
+
+Em falha de migração:
+
+1. Não apague nem regenere `data/master.key` e não edite `server/migrations.js` para contornar a
+   falha.
+2. Preserve os logs de erro sanitizados e o backup `pre-v19` que foi criado antes da transação.
+3. Se for necessário voltar o código, pare o serviço, restaure o backup pré-v19 com sua
+   `master.key` correspondente e só então inicie a versão anterior. O payload já migrado não deve
+   ser reaberto por SQL manual.
+4. Confirme `PRAGMA integrity_check = ok`, `PRAGMA user_version` e a saúde HTTP antes de retomar o
+   tráfego.
+
+Para a candidata Playwright, use apenas os volumes do projeto
+`jarvis-browser-candidate`. `docker compose ... down --volumes` dessa candidata descarta dados e
+sockets temporários; não aponte esses comandos para `/opt/laytech-ai/AssistentePessoal/data`.
 
 ## A migração v2 (Fase 2 — isolamento)
 

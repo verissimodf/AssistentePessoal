@@ -2,27 +2,44 @@
 
 Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O formato é baseado no [Keep a Changelog](https://keepachangelog.com) e este projeto adere ao [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Segurança — Playwright
+
+- Worker Chromium dedicado com Playwright `1.64.1`, usuário não-root, filesystem somente leitura e sem interface de rede.
+- Socket do broker separado do worker por UID/GID, volumes distintos e mount readonly; worker conecta sem poder substituir o socket.
+- Broker egress por socket Unix valida todos os endereços DNS e conecta ao IP fixado; restringe a HTTP/HTTPS em portas 80/443 e rejeita destinos privados.
+- App comunica com o worker somente por UDS; endpoint HTTP legado falha fechado e ausência do worker não inicia navegador local.
+- Aprovações de escrita `click`/`fill` mantêm `web:write`, revisão, confirmação explícita e payload cifrado em repouso (migração v19).
+- Compose principal ganha profile opt-in `browser`; configuração permanece desligada. O projeto de candidata usa volumes e rede interna próprios.
+- Instruções e evidência de candidato em `docs/NAVEGADOR.md`; rollback v19 em `docs/RECUPERACAO.md`.
+- A allowlist de host protege o fluxo normal do Playwright, mas não é aplicada pelo broker contra worker comprometido; enforcement no broker permanece como hardening antes de ampliar a garantia de isolamento.
+
 ## [1.9.1] — 2026-10-27
 
 ### Corrigido
+
 - Ponte TTS usa a voz pré-cadastrada do container `xtts-service` e encaminha amostras clonadas, salvas pelo painel, ao endpoint `/voice/clone`.
 - Validação de caminho, extensão, tamanho e texto na ponte de voz; erros do serviço upstream não expõem detalhes internos; health reflete a disponibilidade real do XTTS.
 - Incluído `voice-adapter-core.mjs` no runtime Docker para evitar falha de import no boot.
 - Formatados os 88 arquivos rastreados com violações Prettier no baseline. Não houve alteração intencional de comportamento nesses arquivos.
 
 ### Validação
+
 - Backend **657/657**, frontend **109/109**, TypeScript e build Vite/Nitro aprovados; smoke TTS local sintetizou WAV via XTTS.
 - `xtts-service` existente foi reutilizado, sem rebuild: XTTS-v2 carrega sob demanda e está operacional em CPU.
 
 ## [1.9.0] — 2026-10-27
 
 ### Adicionado
+
 - Fila SQLite durável/idempotente para bots agendados, payload cifrado, ownership explícito e recuperação conservadora após restart; execuções que já iniciaram exigem reconciliação manual.
 - Política opt-in de retenção de memória com prévia, ocultação da recuperação, quarentena restaurável e purga em lotes.
 - Conexões Gmail/Microsoft Graph por OAuth 2.0 Authorization Code + PKCE, tokens cifrados e escopos de envio opcionais com confirmação manual mantida.
 - STT local opcional por whisper.cpp, upload validado e limitado, profile Docker isolado e seleção do motor no painel.
 
 ### Migrações
+
 - v16 fila durável e ownership para jobs; v17 política e quarentena de retenção; v18 conexões OAuth e ownership. Todas com verificação de backup e preservação de linhas.
 - Testes automatizados específicos adicionados; OAuth com provedor real requer credenciais de aplicação e consentimento configurados pelo operador.
 
@@ -31,6 +48,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 ## [1.8.2] — 2026-10-27
 
 ### Melhorias aplicadas
+
 - Avaliação offline e versionada de seis fluxos críticos (chat/aprovação, RAG/injeção, e-mail,
   fallback/telemetria, ownership/exportação de memória e scheduler), exposta por `npm run eval:agents`
   e executada no CI.
@@ -44,6 +62,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 - CI constrói imagem com metadados estritos e executa o verificador isolado de artefato, API e painel.
 
 ### Migração e validação
+
 - Migração v15 aditiva cria `bot_schedule_claims`; backup v14 verificado, tabelas preservadas e
   integridade/FKs conferidas.
 - Backend **636/636**, frontend **109/109**, avaliação offline **86/86**, TypeScript sem erros,
@@ -54,6 +73,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   externo nesta validação.
 
 ### Limites mantidos
+
 - Telemetria continua agregada em memória do processo; retenção configurável persistente ainda não
   foi implementada.
 - Retenção automática de memórias permanece desativada; requer política explícita por administrador.
@@ -63,6 +83,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 ## [1.8.1] — 2026-10-27
 
 ### Segurança e corrigido
+
 - AgentMail passa a respeitar isolamento por administrador: inbox com ownership explícito,
   histórico filtrado pelo proprietário e rotas/ferramentas restritas à inbox configurada.
 - Novo endpoint de reivindicação explícita; registros históricos não recebem proprietário
@@ -73,6 +94,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   integrações e roadmap; a especificação antiga de e-mail foi marcada como histórica.
 
 ### Migração e validação
+
 - Migração v14 cria o registro de inboxes e amplia o tipo de ownership preservando linhas já
   existentes; backup verificado continua sendo requisito de migração.
 - Backend **632/632**, frontend **109/109**, TypeScript limpo, build de produção concluído e
@@ -86,6 +108,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 ## [1.8.0] — 2026-10-27
 
 ### Adicionado
+
 - **Integração server-side AgentMail** (`server/agentmail.js`): cliente REST `https://api.agentmail.to/v0`
   (`Authorization: Bearer`, timeout 10 s, erros instantâneos e sem vazar credencial), verificação de
   webhook **Svix** com `node:crypto` (HMAC-SHA256, janela de 5 min, comparação em tempo constante —
@@ -113,7 +136,9 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 - Correção histórica: os 5 testes do script de build (`tests/build-info.test.mjs`) resolviam o
   caminho do script com `process.cwd()` e falhavam quando a suíte rodava de `server/` — os
   caminhos agora ficam ancorados no arquivo de teste (`import.meta.dirname`). 11/11 verdes.
+
 ### Segurança
+
 - A lista pública de rotas passa a incluir apenas o webhook (recebido do provider, que não
   efetua login); a rota exige assinatura Svix válida e é fail-closed com 503 quando
   desabilitada/sem segredo — `tests/http-auth.test.mjs` e `tests/agentmail.test.mjs` (8/8)
@@ -127,6 +152,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 ## [1.7.9] — 2026-10-26
 
 ### Segurança
+
 - **HSTS:** removido o `add_header Strict-Transport-Security` do hop HTTP interno
   (`deploy/nginx-jarvis.laytech.com.br.conf`), regressão introduzida em
   `f1965d462c3c30cb9b8d9dbea42f607a8dce2f0d` que quebrava o guardrail
@@ -139,6 +165,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   `npm audit` do backend e da raiz: **0 vulnerabilidades**.
 
 ### Corrigido
+
 - `deploy/backup-data.sh` versionado com modo **`100755`** (estava `100644`; o timer systemd
   falhava com `203/EXEC` desde 2026-10-25).
 - `SHA256SUMS.txt` do backup passou a cobrir **todos** os artefatos incluídos (banco, chave
@@ -151,6 +178,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   1.0.0/1.1.0).
 
 ### Adicionado
+
 - `tests/backup-guardrail.test.mjs`: guarda o modo Git executável do script de backup, o uso de
   `VACUUM INTO`, a validação de integridade, o manifesto completo e a cópia externa opt-in.
 - Validação conversacional real via **OmniRoute** (`auto/best-coding` → `Beam-1.0-501B-A23B`):
@@ -158,6 +186,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   (integração atualizada em `INTEGRACOES-LAYTECH.md`).
 
 ### Documentação
+
 - README, arquitetura, configuração, backup (incl. ensaio de restauração isolado validado),
   integrações, SLOs/incidentes, índice documental e relatórios de auditoria alinhados ao estado
   real; documentos históricos preservados.
@@ -167,6 +196,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 ## [1.7.8] — 2026-10-26
 
 ### Adicionado
+
 - **Sete skills vendorizadas** de `addyosmani/agent-skills` no commit fixado
   `aeac41d4d005999432bb7312f7ff06383a91d59d` (MIT): `security-and-hardening`,
   `test-driven-development`, `code-review-and-quality`, `spec-driven-development`,
@@ -186,6 +216,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   localmente e no edge Cloudflare.
 
 ### Segurança
+
 - Confinamento de caminho por `realpath` no hub de skills, bloqueio de symlink para fora,
   validação de nomes de referência e limite de 2 MiB por arquivo.
 - `GET /api/skills/:id` mapeia `skill_too_large` para HTTP 413; escopos e rotas de skills
@@ -194,12 +225,14 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   dado não confiável.
 
 ### Corrigido
+
 - Compatibilidade Windows/CRLF nos checksums das skills (`.gitattributes`).
 - Deploy interino com metadados `unknown` foi detectado e corrigido pelo build final `4ad3ba2`
   com release/esquema/commit exatos.
 - Compose ativo consolidado em `docker-compose.yml`; `docker-compose.jarvis.yml` removido.
 
 ### Operacional
+
 - PR **#76**, merge `4ad3ba2`, tag `v1.7.8`, imagem `assistente-pessoal:4ad3ba2` + `:latest`
   (digest `sha256:de0017e8…`), container `healthy`/`restarts=0`.
 - CI remoto 3/3 (Ubuntu, Windows, container); backend 616/616, frontend 109/109; teste HTTP
@@ -207,9 +240,10 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 
 ---
 
-
 ## [1.2.2] — Memória compartilhada local (Gigabrain)
+
 ### Adicionado
+
 - Ferramentas de agente `gigabrain_recall` (escopo `memories:read`) e `gigabrain_remember` (escopo `memories:write`): camada de memória local persistente e compartilhada com o pacote oficial `@legendaryvibecoder/gigabrain@0.11.0` (MIT) via MCP sobre stdio.
 - Store no volume persistente `data/gigabrain/` (SQLite + notas diárias + perfil do usuário). Bootstrap standalone idempotente no `container-entrypoint.sh` via `gigabrain-codex-setup` (só roda quando `data/gigabrain/config.json` ainda não existe; sem depender de agentes CLI detectados).
 - Cada operação é um processo MCP efêmero com argv fixo (`spawn` sem shell; nenhum byte do chamador no shell); consulta e conteúdo entram como argumentos JSON únicos com limite de tamanho. O `command` do painel é documental — divergência é recusada.
@@ -220,7 +254,9 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 - Testes: `tests/gigabrain.test.mjs` (8 casos: validação de config, recusas, ciclo real remember→recall com o pacote de publicação, comando alterado recusado, escopos de token).
 
 ## [1.2.1] — Integração REA (engenharia reversa de artefatos)
+
 ### Adicionado
+
 - Ferramenta de agente `rea_analyze` (escopo `host:run`): análise estática de aplicativos JavaScript/Electron/ASAR com o REA (`rea-agents@6.5.0`, MIT), com todos os resultados acompanhados de Evidence.
 - Fluxo idêntico às demais delegações no host: aprovação humana **sempre**, ação estruturada congelada (`kind: rea_analyze`) com revalidação de caminho/raízes/fingerprint no momento da aprovação.
 - Executor sem shell (`spawn` com argv fixo `rea analyze-javascript-application <path> --json`); o campo `command` da integração no painel é documental — qualquer divergência é recusada.
@@ -232,7 +268,9 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 - Testes: `tests/rea-analyze.test.mjs` (7 casos: validação, aprovação, execução, negação, revalidação, recusa de comando alterado).
 
 ## [1.3.0] — Fase 3: gestão documental (TXT)
+
 ### Adicionado
+
 - Armazenamento local **privado** de documentos (primeiro formato: **TXT**), com propriedade por administrador via a tabela `ownership` (migração v3).
 - Validação de entrada: nome, tipo suportado, documento vazio, limite de tamanho (`JARVIS_MAX_DOCUMENT`, padrão 2 MB) e rejeição de conteúdo binário (NUL).
 - Rotas `GET/POST/DELETE /api/documents` e `GET /api/documents/search`, com escopos `documents:read`/`documents:write`.
@@ -242,21 +280,28 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 - Testes: `tests/documents.test.mjs`.
 
 ## [1.2.0] — Fase 2: preferências e isolamento
+
 - Migração v2 (só tabelas novas): propriedade de recursos, configurações pessoais/globais, configurações antigas preservadas.
 - Memórias, agentes, bots, execuções, aprovações e configurações isolados por administrador (rotas, ferramentas, agendador, Telegram).
 - Dados antigos sem proprietário bloqueados; atribuição explícita, atômica e auditada; bots sem proprietário não executam (`legacy_blocked`).
 - O agente padrão deixou de ser criado no banco; sem agente próprio usa-se um modelo embutido.
 
 ## [1.1.2] — 2026-10-14
+
 ### Segurança
+
 - Curinga `*` vinculado a sessão de administrador verificada e viva (registro privado em `server/auth.js`); objetos forjados são negados.
 - `createServiceToken()` exige sessão verificada e rejeita `*`, escopos de administrador, desconhecidos e listas inválidas com códigos específicos.
 - Rotas `session` usam `isVerifiedAdmin()`.
+
 ### Testes
+
 - Novos testes de identidade forjada, revogação/expiração/desativação e emissão de tokens; fixtures de admin sintético substituídos por login real.
 
 ## [1.1.1] — 2026-10-14
+
 ### Adicionado
+
 - Autenticação de administradores (máx. 2) no serviço local: sessão em cookie HttpOnly/SameSite=Strict, expiração por inatividade (30 min) e absoluta (12 h), rotação no login, revogação no servidor.
 - Proteção CSRF em toda operação que altera estado (inclusive logout).
 - Primeiro acesso com código de uso único (15 min) gravado em `data/bootstrap-token.txt` (permissão 0600), consumido atomicamente.
@@ -265,13 +310,17 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 - Identidade responsável por execução de bots; novos bots registram proprietário; bots antigos não são reatribuídos.
 - Migrações versionadas com backup verificado em `data/backups/` e reversão total em caso de falha.
 - Aba Segurança no painel (administradores, sessões, tokens) e telas de entrada/primeiro acesso.
+
 ### Alterado
+
 - `/api/health` passa a expor só `ok`, `version`, `setupRequired`.
 - `cli_agent` em modo de confirmação exige aprovação no painel.
 - O MCP exige `JARVIS_SERVICE_TOKEN`.
 
 ## [1.1.0] — 2026-10-14
+
 ### Adicionado
+
 - **Novas ferramentas de agente** (`server/tools.js`):
   - `context7_docs` — busca documentação atualizada de bibliotecas no **Context7** (MCP sobre HTTP).
   - `crawl_page` — extrai markdown limpo de páginas (inclusive JS) via **crawl4ai**.
@@ -286,6 +335,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 - **Integrações no catálogo do painel** (`src/lib/catalog.ts`): Context7 (MCP), OpenHands, Headroom e crawl4ai.
 
 ### Corrigido
+
 - `server/db.js`: ativa **WAL** e `busy_timeout` no SQLite, evitando `database is locked` em acessos
   concorrentes (scripts/CLI lendo o banco enquanto o serviço roda).
 - `server/bots.js`: o agendador agora captura exceções — uma falha de tick não derruba mais o serviço.
@@ -293,17 +343,21 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   reiniciar o conjunto em vez de ficar com o serviço parcialmente no ar.
 
 ### Documentação
+
 - `INTEGRACOES-LAYTECH.md`: instalação, portas, integrações, Tailscale, substituição do OpenJarvis e rollback.
 - `docs/CONFIGURACAO.md`, `docs/ARQUITETURA.md`, `docs/IMPLANTACAO.md` e `docs/VALIDACAO.md` atualizados
   com as novas ferramentas, integrações e o acesso por Tailscale.
 
 ## [1.0.2] — 2026-10-13
+
 ### Corrigido
+
 - `server/llm.js`: `callOpenAI` passa a enviar `stream: false`. Gateways compatíveis com OpenAI
   (Omniroute, entre outros) respondem em `text/event-stream` por padrão, e o `r.json()` quebrava
   com `Unexpected token 'd', "data: {...` — a conversa falhava mesmo com o provedor OK.
 
 ### Documentação
+
 - Primeiro uso: trocar o provedor/modelo **do agente** é passo obrigatório (ligar um provedor em
   Configurações não troca o do agente, que nasce no Ollama), e o painel deve ser aberto por
   `localhost`, não pelo IP da máquina.
@@ -313,7 +367,9 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   7777 não servir páginas.
 
 ## [1.0.1] — 2026-10-13
+
 ### Segurança
+
 - `nodemailer` atualizado de `^6.9.16` para `^10.1.0`, zerando um alerta de severidade alta que
   agrupava 15 advisories: injeção de comando SMTP via CRLF (nome do transporte, `envelope.size`,
   cabeçalhos `List-*`), entrega a domínio não pretendido por erro de interpretação e por bypass de
@@ -323,6 +379,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   `server/comms.js` (`createTransport` + `sendMail`) não mudou de contrato.
 
 ### Corrigido
+
 - `scripts/instalar-voz.cmd` e `instalar-voz.sh`: a seleção do Python procurava só pelo launcher
   (`where py`) e, quando nenhum 3.10–3.12 estava instalado, caía no `python` do PATH — em geral
   3.13/3.14, onde o `kokoro` (`requires_python <3.13`) não instala. A `.venv` era criada e o
@@ -330,6 +387,7 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   mensagem clara se não acharem e propagam erro em cada etapa.
 
 ### Documentação
+
 - Faixa de Python da voz corrigida de 3.10–3.11 para **3.10–3.12** (o limite vem do `kokoro`).
 - Instalação: comandos de verificação por etapa (`npx vitest run`, `/api/health`), nota de que o
   `npm install` fica silencioso, recomendação de caminho de instalação e nota sobre Pythons do uv.
@@ -339,7 +397,9 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
   repositório.
 
 ## [1.0.0] — 2026-10-13
+
 ### Adicionado
+
 - Painel web com conversa, avatar 3D, memória, agentes, bots e configurações (PT/EN/ES).
 - Serviço local Node.js (`server/`) com SQLite embutido e chaves cifradas.
 - Provedores: Ollama, Anthropic, OpenAI, HuggingFace, Omniroute, OpenCode Go, OpenRouter, Groq, Gemini, OpenWebUI, compatível com OpenAI.
@@ -353,9 +413,10 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 ## - 2026-10-14
 
 ### ✨ Adicionado
+
 - **Interface Web Imersiva:** Painel construído com React, TanStack e Tailwind CSS rodando por padrão em `http://localhost:8080`.
 - **Núcleo Holográfico 3D:** Renderização de avatar interativo utilizando Three.js que reage visualmente aos estados de áudio (escutando, pensando, falando).
-- **Mecanismos de Ativação Multi-Modais:** Suporte para ativação via palmas duplas (calibráveis), palavra de ativação (*Wake Word* "Jarvis"), atalho de teclado `Ctrl+Shift+J` e *Push-to-Talk*.
+- **Mecanismos de Ativação Multi-Modais:** Suporte para ativação via palmas duplas (calibráveis), palavra de ativação (_Wake Word_ "Jarvis"), atalho de teclado `Ctrl+Shift+J` e _Push-to-Talk_.
 - **Clonagem de Voz Local/Nuvem:** Integração nativa com XTTS-v2 (local via Python) e ElevenLabs (nuvem).
 - **Ecossistema de IA Híbrido:** Suporte extensível para Ollama (100% offline), Anthropic, OpenAI, Gemini, Groq, OpenRouter e qualquer provedor compatível com a API da OpenAI.
 - **Protocolo MCP:** Integração de agentes externos via Claude Desktop (Model Context Protocol).
@@ -363,14 +424,15 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 - **Canais de Comunicação:** Módulos de integração integrados para Gmail, Outlook (IMAP/SMTP), arquivos de agenda (.ics), Telegram, WhatsApp Cloud API e Signal.
 
 ### ⚙️ Modificado
+
 - **Arquitetura de Banco de Dados:** Migração para o motor SQLite embutido do Node.js 22+, eliminando a necessidade de compilação nativa no host e simplificando o processo de instalação.
 
 ### 🔒 Segurança
+
 - **Isolamento de Rede:** Restrição rígida de escuta do serviço local apenas para a interface de loopback (`127.0.0.1`), recusando origens externas por padrão.
 - **Criptografia de Dados:** Implementação de algoritmo AES-256-GCM para cifragem de chaves e dados sensíveis persistidos no diretório `data/`.
-- **Ações do Host Protegidas:** Sistema de execução de comandos locais vem desligado por padrão, operando sob uma lista de permissões estrita (*whitelist*) e registro em log de auditoria.
+- **Ações do Host Protegidas:** Sistema de execução de comandos locais vem desligado por padrão, operando sob uma lista de permissões estrita (_whitelist_) e registro em log de auditoria.
 
 ---
 
-*Nota: Os lançamentos anteriores a este marco estão consolidados na árvore de commits do Git.*
-
+_Nota: Os lançamentos anteriores a este marco estão consolidados na árvore de commits do Git._

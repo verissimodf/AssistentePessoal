@@ -2,8 +2,8 @@
 
 [![Version](https://img.shields.io/badge/version-1.9.2-blue.svg?style=flat-square)](package.json)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg?style=flat-square&logo=node.js)](https://nodejs.org/)
-[![Test Suite](https://img.shields.io/badge/tests-657%20backend%20%2B%20109%20frontend-success.svg?style=flat-square)](tests/)
-[![Schema](https://img.shields.io/badge/schema-18-informational.svg?style=flat-square)](server/migrations.js)
+[![Test Suite](https://img.shields.io/badge/tests-679%20backend%20%2B%20110%20frontend-success.svg?style=flat-square)](tests/)
+[![Schema](https://img.shields.io/badge/schema-19-informational.svg?style=flat-square)](server/migrations.js)
 [![Privacy](https://img.shields.io/badge/privacy-local--first-blueviolet.svg?style=flat-square)](#-segurança-e-privacidade)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
 
@@ -17,6 +17,9 @@ acontecem quando o provedor/integração correspondente está configurado e habi
 > pré-cadastradas, encaminha amostras clonadas e não expõe erros internos do serviço. A versão 1.9.0
 > já entregou fila durável, retenção opt-in, OAuth PKCE e STT local. Evidências em
 > [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
+> A árvore atual também contém a Fase 1 de segurança Playwright (schema 19), com worker isolado e
+> broker egress; a integração continua desligada na instalação ativa até a aprovação do release.
+> Uso e smoke test isolado: [`docs/NAVEGADOR.md`](docs/NAVEGADOR.md).
 > Ver [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md) e
 > [`reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md`](reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md).
 
@@ -143,23 +146,23 @@ encerra o conjunto se um componente cair (o Docker reinicia).
 A configuração de aplicação é feita no painel e persistida cifrada em `data/jarvis.db`. As
 variáveis de ambiente são de infraestrutura/segurança:
 
-| Variável | Uso |
-| --- | --- |
-| `JARVIS_DATA_DIR` | diretório de dados (`/app/data` no container) |
-| `JARVIS_HOST` / `JARVIS_PORT` | bind da API (o entrypoint descobre o IP do container; nunca `0.0.0.0`) |
-| `PANEL_PORT` | porta do painel no container (8090) |
-| `JARVIS_ALLOWED_ORIGINS` | origens permitidas para o painel/API, separadas por vírgula |
-| `JARVIS_COOKIE_SECURE` | `1` para cookie `Secure` quando servido por HTTPS |
-| `JARVIS_MAX_UPLOAD` / `JARVIS_MAX_DOCUMENT` | limites de upload/documento |
-| `JARVIS_MASTER_KEY` | chave mestra alternativa ao `data/master.key` (não versionar) |
-| `JARVIS_SERVICE_TOKEN` | token de serviço para MCP/scripts (criado no painel) |
-| `JARVIS_GLOBAL_SKILLS_DIR` | diretório do hub de skills (padrão `$HOME/.agent-skills`) |
-| `JARVIS_SKILLS_SETUP` | `builtin` (padrão), `off` ou `full` (modo de rede opt-in) |
-| `JARVIS_MAIL_TRANSPORT` | `imap` ativa o adaptador real de e-mail; ausente = mock |
-| `XTTS_URL` | endpoint do serviço de voz local (padrão `http://xtts-service:8000`) |
-| `JARVIS_STT_URL` | endpoint interno whisper.cpp (`http://stt:8080`); habilite compose profile `stt` |
-| `GOOGLE_OAUTH_*` | Client ID, secret e callback OAuth do Gmail (opcional) |
-| `MICROSOFT_OAUTH_*` | Client ID, secret, callback e tenant Microsoft Graph (opcional) |
+| Variável                                    | Uso                                                                              |
+| ------------------------------------------- | -------------------------------------------------------------------------------- |
+| `JARVIS_DATA_DIR`                           | diretório de dados (`/app/data` no container)                                    |
+| `JARVIS_HOST` / `JARVIS_PORT`               | bind da API (o entrypoint descobre o IP do container; nunca `0.0.0.0`)           |
+| `PANEL_PORT`                                | porta do painel no container (8090)                                              |
+| `JARVIS_ALLOWED_ORIGINS`                    | origens permitidas para o painel/API, separadas por vírgula                      |
+| `JARVIS_COOKIE_SECURE`                      | `1` para cookie `Secure` quando servido por HTTPS                                |
+| `JARVIS_MAX_UPLOAD` / `JARVIS_MAX_DOCUMENT` | limites de upload/documento                                                      |
+| `JARVIS_MASTER_KEY`                         | chave mestra alternativa ao `data/master.key` (não versionar)                    |
+| `JARVIS_SERVICE_TOKEN`                      | token de serviço para MCP/scripts (criado no painel)                             |
+| `JARVIS_GLOBAL_SKILLS_DIR`                  | diretório do hub de skills (padrão `$HOME/.agent-skills`)                        |
+| `JARVIS_SKILLS_SETUP`                       | `builtin` (padrão), `off` ou `full` (modo de rede opt-in)                        |
+| `JARVIS_MAIL_TRANSPORT`                     | `imap` ativa o adaptador real de e-mail; ausente = mock                          |
+| `XTTS_URL`                                  | endpoint do serviço de voz local (padrão `http://xtts-service:8000`)             |
+| `JARVIS_STT_URL`                            | endpoint interno whisper.cpp (`http://stt:8080`); habilite compose profile `stt` |
+| `GOOGLE_OAUTH_*`                            | Client ID, secret e callback OAuth do Gmail (opcional)                           |
+| `MICROSOFT_OAUTH_*`                         | Client ID, secret, callback e tenant Microsoft Graph (opcional)                  |
 
 Detalhes de provedores, integrações, canais e proveniência de valores:
 [`docs/CONFIGURACAO.md`](docs/CONFIGURACAO.md).
@@ -239,14 +242,14 @@ não presuma que o adaptador existe = integração operacional.
 
 Estado verificado em 2026-10-26 (sem alterar configuração):
 
-| Provedor | Estado | Evidência |
-| --- | --- | --- |
-| Ollama | **OPERATIONAL** | `/models` 200, 9 modelos; chat real via agente |
-| Headroom | **OPERATIONAL** | `/models` 200, 9 modelos; chat sintético 200 (~6,4 s) |
-| OmniRoute | **OPERATIONAL** | `/models` 200, 268 modelos; chat real 200 (`auto/best-coding` → `Beam-1.0-501B-A23B`, resposta `PONG`) |
-| Hermes | **PASS-WITH-CONDITIONS** | `/models` 200, 1 modelo; chat depende do gateway/sessão |
-| OpenClaw | **BLOCKED-CONFIGURATION** | `/healthz` 200, `/models` 200; `/v1/chat/completions` 404 (endpoint desabilitado no gateway) |
-| OpenAI / Anthropic | **BLOCKED-CONFIGURATION** | exigem chave configurada; sem teste real |
+| Provedor           | Estado                    | Evidência                                                                                              |
+| ------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Ollama             | **OPERATIONAL**           | `/models` 200, 9 modelos; chat real via agente                                                         |
+| Headroom           | **OPERATIONAL**           | `/models` 200, 9 modelos; chat sintético 200 (~6,4 s)                                                  |
+| OmniRoute          | **OPERATIONAL**           | `/models` 200, 268 modelos; chat real 200 (`auto/best-coding` → `Beam-1.0-501B-A23B`, resposta `PONG`) |
+| Hermes             | **PASS-WITH-CONDITIONS**  | `/models` 200, 1 modelo; chat depende do gateway/sessão                                                |
+| OpenClaw           | **BLOCKED-CONFIGURATION** | `/healthz` 200, `/models` 200; `/v1/chat/completions` 404 (endpoint desabilitado no gateway)           |
+| OpenAI / Anthropic | **BLOCKED-CONFIGURATION** | exigem chave configurada; sem teste real                                                               |
 
 ---
 
@@ -304,8 +307,9 @@ npm run build
 (cd skills/vendor/addyosmani-agent-skills && sha256sum -c SHA256SUMS)
 ```
 
-Última validação registrada em 2026-10-27: backend **657/657**, frontend **109/109**,
-TypeScript sem erros, lint sem erros/avisos e build Vite/Nitro de produção OK. Veja o estado e as
+Última validação registrada em 2026-10-28: backend **679/679**, frontend **110/110**,
+TypeScript sem erros, lint sem erros/avisos e build Vite/Nitro de produção OK. O worker Playwright
+foi validado em projeto candidato isolado, sem alterar o container ativo. Veja o estado e as
 instruções operacionais de integração em
 [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md).
 O CI do GitHub Actions executa Ubuntu, Windows e build/inicialização do container; o job Windows
@@ -349,6 +353,7 @@ depende de `.gitattributes` para preservar LF nas skills.
 
 - [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md) — topologia, fluxo e componentes.
 - [`docs/CONFIGURACAO.md`](docs/CONFIGURACAO.md) — provedores, integrações, canais e variáveis.
+- [`docs/NAVEGADOR.md`](docs/NAVEGADOR.md) — worker Playwright, broker egress e smoke test isolado.
 - [`docs/BACKUP-E-RESTAURACAO.md`](docs/BACKUP-E-RESTAURACAO.md) — backup, retenção, RPO/RTO e restore.
 - [`docs/OPERACAO-SLO-E-INCIDENTES.md`](docs/OPERACAO-SLO-E-INCIDENTES.md) — SLOs propostos e runbook.
 - [`docs/RUNBOOK-RELEASE-2026-10-18.md`](docs/RUNBOOK-RELEASE-2026-10-18.md) — release/deploy.

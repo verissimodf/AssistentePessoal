@@ -1,128 +1,125 @@
-# Navegador (browser_action) — instalação, modos, limites e diagnóstico
+# Navegador Playwright — implantação e segurança
 
-> Capacidade de automação de páginas do J.A.R.V.I.S. Dois modos de execução, um contrato explícito
-> e **nenhuma shell arbitrária**. Toda navegação passa por **aprovação humana** no fluxo já
-> existente (o mesmo de `cli_agent`, `rea_analyze` e `openhands_task`).
+O `browser_action` é uma capacidade opt-in. A configuração padrão permanece desligada, cada ação
+gera uma aprovação humana e a execução gerenciada usa um worker isolado e um broker de egress com
+DNS fixado no IP efetivamente conectado. O sistema não oferece shell, JavaScript arbitrário,
+download, upload, cookies ou leitura de arquivos locais.
 
-## 1. Como o agente usa
+## Capacidade e aprovações
 
-Ferramenta `browser_action` (escopo `web`), com **lista fechada** de operações:
+| Operação     | Uso                          | Autorização adicional                                            |
+| ------------ | ---------------------------- | ---------------------------------------------------------------- |
+| `navigate`   | abrir uma URL                | `web`                                                            |
+| `extract`    | extrair texto ou seletor     | `web`                                                            |
+| `wait_for`   | aguardar seletor/página      | `web`                                                            |
+| `screenshot` | registrar tamanho da captura | `web`                                                            |
+| `click`      | clicar em seletor            | `web:write` + revisão e confirmação humana                       |
+| `fill`       | preencher seletor            | `web:write` + revisão, revelação autorizada e confirmação humana |
 
-| `op` | Parâmetros | Resultado |
-|---|---|---|
-| `navigate` | `url` | título, URL final, host |
-| `extract` | `url?`, `selector?` | trecho de texto (página inteira ou do seletor) |
-| `click` | `url?`, `selector` | URL final após o clique |
-| `fill` | `url?`, `selector`, `text` | URL final após o preenchimento |
-| `wait_for` | `url?`, `selector?`, `timeoutMs?` | confirma a espera |
-| `screenshot` | `url?` | apenas o **tamanho** da captura (o binário não é devolvido à conversa) |
+Texto de preenchimento é criptografado em repouso. A revisão mostra valor mascarado por padrão;
+revelar exige administrador verificado e reautenticação recente. A confirmação vincula o destino e
+o conteúdo revisados por fingerprint. Segredos não aparecem em listagens comuns, logs ou auditoria.
 
-Não existem — por decisão de projeto — operações de `eval`/JavaScript arbitrário, download, upload,
-execução de shell, leitura de arquivos locais, cookies ou storage. Pedido fora da lista é recusado
-com `unsupported_op` **antes** de virar aprovação.
+## Configuração no painel
 
-### Fluxo (idêntico ao restante do produto)
+Em **Configurações → Integrações → Navegador (Playwright)**:
 
-1. O agente chama `browser_action` → o pedido é **validado** (operação + destino) e vira uma
-   aprovação `pending` (`browser_action(requested)` na auditoria).
-2. A pessoa aprova ou nega no painel. O portão é **reavaliado na aprovação** (integração ligada).
-3. Aprovado → execução única (`browser_action(started)` → `…(done|error|unknown)`), com
-   `execution_evidence` (estado, verificação, duração) — nunca conteúdo sensível.
-4. Negado → nada é executado (`…(denied)`). Decisão repetida → `409 already_resolved`.
-5. **Aprovações não expiram automaticamente** e não são reexecutadas sozinhas (política vigente,
-   preservada por esta capacidade).
+- `enabled`: mantém a capacidade desligada até o operador habilitá-la.
+- `allowedHosts`: lista opcional, global e somente para administrador, de hosts DNS exatos. Até 100
+  nomes; não aceita curingas. Vazio permite qualquer destino público.
+- Endpoint HTTP e token são configurações legadas e não são usados. O painel permite limpar esses
+  valores antigos. Um endpoint legado faz a execução falhar fechada.
 
-## 2. Configuração (Configurações → Integrações → “Navegador (Playwright)”)
+O serviço principal precisa receber
+`JARVIS_BROWSER_WORKER_SOCKET=/run/jarvis-browser/worker/worker.sock`
+e montar o volume privado do runtime. Se não houver socket configurado, o modo fica
+`unavailable`; não ocorre fallback para Chromium dentro do processo do app.
 
-| Campo | Significado |
-|---|---|
-| `enabled` | liga/desliga a capacidade. **Padrão: desligada.** |
-| `command` (endereço) | **vazio → MODO LOCAL** (navegador dentro do container). **Preenchido → MODO REMOTO** (worker externo nesse endereço). |
-| `apiKey` | token do worker (modo remoto). Nunca é devolvido pela API (apenas `hasKey`). |
+## Topologia gerenciada
 
-O endereço do navegador **nunca** é fixo no código: vem desta configuração. Trocar de modo é trocar
-a configuração, sem alterar o loop do agente.
-
-## 3. Modo local (`enabled` sem endereço) — navegador no container
-
-```bash
-# dentro da imagem (ou no container), uma vez:
-cd /app/server
-npm install --no-audit --no-fund --no-save playwright-core@1.64.1
-npx --yes playwright-core@1.64.1 install --with-deps chromium
+```text
+Assistente (rede da aplicação)
+  └─ browser-worker-runtime (app somente leitura; worker.sock modo 0600)
+       └─ Playwright worker (network_mode: none, sem rede Docker)
+            └─ bridge 127.0.0.1:8899
+                 └─ browser-egress-runtime (worker somente leitura)
+                      └─ egress.sock (broker uid 1001, grupo 1000, modo 0620)
+                      └─ broker (somente rede browser-egress)
+                           └─ DNS público validado → IP fixado no dial
 ```
 
-No build da imagem existe a opção explícita:
+Os sockets usam volumes e permissões distintos: o diretório do worker é `1000:1000/0700`; o do
+broker é `1001:1000/0710`. O worker pode conectar ao socket egress pelo grupo, mas seu mount é
+somente leitura e ele não pode remover/substituir o socket. Worker e broker rodam como usuários
+não-root distintos, com filesystem somente leitura, capabilities removidas, limites de
+memória/CPU/PIDs e sem portas publicadas. O worker não tem Docker socket, interface de rede ou DNS
+próprio. A resolução DNS acontece no broker; ele rejeita a requisição se qualquer resposta for
+privada/reservada e conecta diretamente ao IP validado. HTTPS usa `CONNECT`, preservando o hostname
+para TLS SNI. HTTP usa `Host` canônico, remove credenciais de proxy e fecha cada conexão para obrigar
+validação individual por destino.
+
+O browser valida protocolo, porta, host e allowlist em cada navegação, redirect e recurso. O broker
+repete bloqueio de IP privado/reservado e restrição de porta no ponto de conexão; portas aceitas são
+80 e 443. A allowlist de hostname é aplicada no fluxo normal do Playwright, não pelo broker. Um
+worker comprometido poderia usar o proxy para qualquer host público nessas portas, embora continue
+sem acesso a endereços privados. Não trate a allowlist da aplicação como barreira de egress contra
+comprometimento do Chromium; enforcement de allowlist no broker permanece hardening pendente. A
+política é fail-closed para falhas de DNS, cabeçalhos inválidos/ambíguos, headers acima de 16 KiB e
+conexões sem cabeçalho completo após o timeout.
+
+## Candidata isolada e smoke test
+
+O compose de candidata usa projeto, rede interna, volume de dados e volume de sockets próprios. Não
+usa o volume de dados nem a rede Docker do Assistente em produção.
 
 ```bash
-docker build --build-arg INSTALL_BROWSER=1 -t assistente-pessoal:browser .
+rtk docker compose -f deploy/browser-candidate/compose.yml up -d --build
+rtk docker compose -f deploy/browser-candidate/compose.yml ps
+rtk docker exec jarvis-browser-candidate-browser-worker-1 node /app/scripts/browser-network-smoke.mjs
+rtk docker exec jarvis-browser-candidate-assistente-1 node -e 'const h=require("node:http");const q=h.request({socketPath:"/run/jarvis-browser/worker/worker.sock",path:"/health",method:"GET"},s=>{console.log(`worker_http=${s.statusCode}`);s.resume();s.on("end",()=>process.exit(s.statusCode===200?0:1));});q.on("error",e=>{console.error(e.code||"socket_error");process.exit(1);});q.end()'
 ```
 
-`INSTALL_BROWSER=0` (padrão) mantém a imagem enxuta; o modo local responde então
-`browser_unavailable` com a instrução acima — falha **explícita e acionável**, nunca silenciosa.
+O smoke candidato valida que TCP e DNS diretos falham no namespace do worker, que o broker recusa
+`169.254.169.254:80` e que Chromium alcança `https://example.com/` pelo proxy. Esse último passo faz
+uma requisição pública GET controlada. O teste unitário do proxy usa apenas fixtures loopback.
 
-**Topologia:** no modo local o navegador roda no **mesmo processo/container do JARVIS**, então
-`127.0.0.1` é o próprio container. Para alcançar algo do host seria preciso o DNS do gateway do
-Docker (`host.docker.internal` ou o IP da bridge) — e, de todo modo, destinos loopback/privados/
-metadados são **recusados pela política** (ver §5).
+Depois da avaliação da candidata, a configuração de serviços opt-in no compose principal usa o
+profile `browser` e a imagem `jarvis-browser-worker:playwright-1.64.1`. A integração deve continuar
+desligada até todos os checks do release serem aprovados; não habilite o profile durante uma
+atualização normal do serviço.
 
-## 4. Modo remoto (`enabled` com endereço) — worker externo autenticado
+Para remover somente os recursos descartáveis da candidata:
 
 ```bash
-# no host ou em um container/serviço separado:
-JARVIS_BROWSER_TOKEN="<token longo e aleatório>" \
-JARVIS_BROWSER_PORT=7788 JARVIS_BROWSER_BIND=127.0.0.1 \
-  node scripts/browser-worker.mjs
+rtk docker compose -f deploy/browser-candidate/compose.yml down --volumes --remove-orphans
 ```
 
-Contrato (o mesmo consumido por `server/browser.js`):
+Esse comando apaga o banco e os sockets da candidata; não use o compose de candidata com volumes de
+produção.
 
-| Rota | Corpo | Resposta |
-|---|---|---|
-| `POST /run` | `{ runId, op, url?, selector?, text?, timeoutMs? }` | `{ state, title?, finalUrl?, host?, text?, screenshotBytes?, error? }` |
-| `POST /cancel` | `{ runId }` | `{ cancelled }` |
-| `GET /health` | — | `{ ok, engine, mode }` |
+## Diagnóstico
 
-Autenticação por `Authorization: Bearer <token>` em `/run` e `/cancel`; **sem token o worker não
-inicia** (fail-closed) e o bind padrão é `127.0.0.1` (nunca `0.0.0.0` por omissão). Em Docker, o
-container do JARVIS alcança o worker pelo **nome do serviço na mesma rede** (ex.: `http://browser-worker:7788`),
-nunca por `127.0.0.1` — dentro do container, loopback é o próprio JARVIS.
+- `off`: integração desligada.
+- `managed`: socket gerenciado configurado; erro de socket significa worker indisponível e não
+  provoca fallback.
+- `unavailable`: navegador habilitado sem socket; configure o worker isolado.
+- `remote`: endpoint HTTP legado; a execução é recusada (`browser_untrusted_transport`).
 
-## 5. Segurança e limites
+O diagnóstico expõe apenas classificação de endpoint e presença de credencial, nunca tokens. Erros
+estáveis incluem `browser_disabled`, `browser_worker_required`, `browser_untrusted_transport`,
+`browser_unreachable`, `browser_protocol_error`, `browser_timeout` e `blocked_destination`.
 
-- **Destino:** `urlpolicy` (o mesmo módulo do `fetch_url`/`crawl_page`) recusa esquemas não-HTTP(S),
-  credenciais na URL, portas fora do padrão e IP literal de loopback/redes privadas/CGNAT/link-local
-  (**inclusive `169.254.169.254`**, metadados de cloud). Antes de navegar, o **nome também é
-  resolvido** e recusado se apontar para endereço bloqueado; no modo local há ainda interceptação
-  de requisições que revalida cada destino.
-- **Segredos:** nenhum cookie, header de autorização, token ou corpo de credencial é devolvido,
-  auditado ou registrado — a resposta do worker passa por redação antes de chegar à conversa.
-- **Isolamento:** cada execução usa um **contexto novo** (sem reaproveitar cookies/armazenamento) e
-  é fechada ao final; downloads desabilitados.
-- **Tempo e cancelamento:** teto de 60 s por operação (piso 1 s, configurável até o teto) e
-  cancelamento cooperativo (`POST /cancel` no worker; abort local no modo local).
-- **Limites conhecidos:** (a) verificação de DNS antes da navegação tem janela TOCTOU teórica —
-  mitigada pela rede isolada e pela lista fechada de operações; (b) `screenshot` não devolve imagem
-  à conversa, apenas tamanho; (c) páginas que exigem autenticação do usuário não são suportadas
-  (nenhuma credencial é injetada); (d) sites com desafios anti-bot podem falhar.
+## Testes e recuperação
 
-## 6. Diagnóstico
+```bash
+rtk node --test tests/browser-egress-proxy.test.mjs tests/browser-tool.test.mjs
+rtk npm --prefix server test
+rtk npm test
+rtk npm run lint
+rtk npm run build
+```
 
-- `GET /api/diagnostics` traz `integracao:navegador` (`detalhes.modo` = `off|local|remote`,
-  `endpoint` classificado — interno/externo — e `hasToken`, nunca o token) e `tool:browser_action`.
-- `GET /api/skills`/painel: a ferramenta aparece no inventário como qualquer outra, com portão,
-  dependências e limites.
-- Erros são códigos estáveis: `browser_disabled`, `unsupported_op`, `blocked_destination`,
-  `url_required`, `selector_required`, `selector_too_long`, `text_too_long`, `browser_unavailable`,
-  `browser_unreachable`, `browser_unauthorized`, `browser_protocol_error`, `browser_timeout`,
-  `browser_cancelled`, `browser_error`.
-- No painel, a aprovação aparece como qualquer outra; o estado final exibido vem do backend
-  (`done|error|interrupted|denied`), nunca de texto do modelo.
-
-## 7. Testes
-
-`tests/browser-tool.test.mjs` cobre: lista fechada de operações, política de destino (literal e por
-DNS), limites de seletor/texto/timeout, resolução de modo, contrato remoto (sucesso, 401, host
-inacessível, timeout, resposta fora do contrato), indisponibilidade do modo local, redação de
-segredos, e o **fluxo de aprovação** ponta a ponta (pendente → negado sem execução → aprovado com
-execução única → replay recusado → ownership isolado → auditoria/evidência correlacionadas).
+A migração v19 criptografa valores de `fill` existentes na mesma transação e exige backup
+verificado. A recuperação de chave e banco está em [RECUPERACAO.md](RECUPERACAO.md); nunca remova
+`master.key` para “corrigir” aprovações. A arquitetura e as fronteiras de rede estão descritas em
+[ARQUITETURA.md](ARQUITETURA.md).

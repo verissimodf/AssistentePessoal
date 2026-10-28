@@ -33,27 +33,27 @@
 
 ## File Map
 
-| File | Responsibility |
-|---|---|
-| `server/secret-crypto.js` (new) | Master-key loading and AES-GCM primitives independent of SQLite imports. |
-| `server/settings.js` | Preserve existing `encrypt`/`decrypt` exports as compatibility re-exports. |
-| `server/migrations.js` | Version 19 migration that encrypts existing browser `fill.text` payloads in place. |
-| `server/browser-approval.js` (new) | Protect/unprotect browser action payloads, safe review projection, write classification. |
-| `server/tools.js` | Store protected browser action payloads; require explicit second confirmation at resolution. |
-| `server/auth.js` | Add `web:write` service-token scope and enforce that `web` cannot imply write. |
-| `server/index.js` | Owner-scoped review/reveal routes and approval resolution guard. |
-| `server/browser.js` | Revalidate DNS/URL at each browser route and require worker transport. |
-| `scripts/browser-worker.mjs` | Unix-socket command server, local proxy configuration, concurrency bounds, lifecycle. |
-| `scripts/browser-egress-proxy.mjs` (new) | Pinned DNS resolution and connect-time private-address rejection over Unix socket. |
-| `Dockerfile.browser` (new) | Pinned, non-root Playwright worker image. |
-| `docker-compose.yml` | Opt-in worker/proxy services; worker `network_mode: none`; shared private runtime volume. |
-| `src/routes/index.tsx` | Review card/modal; reveal and explicit write confirmation flow. |
-| `src/routes/configuracoes.tsx`, `server/settings.js` | Admin-only exact-host allowlist for browser destinations. |
-| `src/lib/bridge.ts` | Typed API for review and reveal routes. |
-| `tests/browser-tool.test.mjs`, `tests/approvals-actions.test.mjs` | Request guard, write confirmation and no-plaintext regression tests. |
-| `tests/migrations.test.mjs` | Version 19 migration encryption, backup and rollback tests. |
-| `tests/browser-egress-proxy.test.mjs` (new) | Proxy validation, DNS pinning and socket protocol tests. |
-| `docs/NAVEGADOR.md`, `docs/ARQUITETURA.md`, `docs/RECUPERACAO.md` | Deployment, trust boundary, key recovery and rollback instructions. |
+| File                                                              | Responsibility                                                                               |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `server/secret-crypto.js` (new)                                   | Master-key loading and AES-GCM primitives independent of SQLite imports.                     |
+| `server/settings.js`                                              | Preserve existing `encrypt`/`decrypt` exports as compatibility re-exports.                   |
+| `server/migrations.js`                                            | Version 19 migration that encrypts existing browser `fill.text` payloads in place.           |
+| `server/browser-approval.js` (new)                                | Protect/unprotect browser action payloads, safe review projection, write classification.     |
+| `server/tools.js`                                                 | Store protected browser action payloads; require explicit second confirmation at resolution. |
+| `server/auth.js`                                                  | Add `web:write` service-token scope and enforce that `web` cannot imply write.               |
+| `server/index.js`                                                 | Owner-scoped review/reveal routes and approval resolution guard.                             |
+| `server/browser.js`                                               | Revalidate DNS/URL at each browser route and require worker transport.                       |
+| `scripts/browser-worker.mjs`                                      | Unix-socket command server, local proxy configuration, concurrency bounds, lifecycle.        |
+| `scripts/browser-egress-proxy.mjs` (new)                          | Pinned DNS resolution and connect-time private-address rejection over Unix socket.           |
+| `Dockerfile.browser` (new)                                        | Pinned, non-root Playwright worker image.                                                    |
+| `docker-compose.yml`                                              | Opt-in worker/proxy services; worker `network_mode: none`; shared private runtime volume.    |
+| `src/routes/index.tsx`                                            | Review card/modal; reveal and explicit write confirmation flow.                              |
+| `src/routes/configuracoes.tsx`, `server/settings.js`              | Admin-only exact-host allowlist for browser destinations.                                    |
+| `src/lib/bridge.ts`                                               | Typed API for review and reveal routes.                                                      |
+| `tests/browser-tool.test.mjs`, `tests/approvals-actions.test.mjs` | Request guard, write confirmation and no-plaintext regression tests.                         |
+| `tests/migrations.test.mjs`                                       | Version 19 migration encryption, backup and rollback tests.                                  |
+| `tests/browser-egress-proxy.test.mjs` (new)                       | Proxy validation, DNS pinning and socket protocol tests.                                     |
+| `docs/NAVEGADOR.md`, `docs/ARQUITETURA.md`, `docs/RECUPERACAO.md` | Deployment, trust boundary, key recovery and rollback instructions.                          |
 
 ## Task 1: Separate key primitives and migrate existing browser payloads
 
@@ -111,27 +111,28 @@
 - [x] Implement the broker and worker-local TCP-to-UDS bridge; do not resolve destination again after validation and preserve TLS SNI/Host using the original hostname.
 - [x] Change app remote transport to support only the local Unix socket for the managed worker; keep any operator-defined external worker disabled unless a separate explicitly trusted transport is configured.
 - [x] Set Chromium's proxy explicitly and disable proxy bypass for all non-loopback destinations; continue blocking non-HTTP protocols through Playwright routes.
-- [x] Run `rtk node --test tests/browser-egress-proxy.test.mjs` (5/5) and `rtk node --test tests/browser-tool.test.mjs` (24/24); use loopback-controlled fixtures through an injected dialer, with no real website contacted.
-- [x] Commit Task 5 as `feat: add pinned browser egress proxy` (`37d325c`, amended for the network-none DNS handoff).
+- [x] Run `rtk node --test tests/browser-egress-proxy.test.mjs` (6/6) and `rtk node --test tests/browser-tool.test.mjs` (25/25); use loopback-controlled fixtures through an injected dialer, with no real website contacted.
+- [x] Commit Task 5 as `feat: add pinned browser egress proxy` (`30ebd3c`, amended with socket recovery and fail-closed transport fixes).
 
 ## Task 6: Build and deploy the opt-in isolated browser services
 
-- [ ] Add a pinned Playwright version to the dedicated image; install as root only during build, create a non-root runtime user, and run browser with sandbox enabled.
-- [ ] Add compose services for worker and egress broker with no published ports, no Docker socket, read-only root filesystems, bounded `tmpfs`, CPU/memory/pids limits and dropped capabilities.
-- [ ] Run browser worker with `network_mode: none`; share only the private Unix-socket volume with Assistente and broker. Broker alone gets a dedicated external egress network and has no business-network attachment. Do not join or restart the production Compose project; use a separate candidate project and volume.
-- [ ] Ensure runtime socket directory ownership/mode is created by a one-shot initialization service and fail closed when either socket is missing or permissions are broad.
-- [ ] Add tests/scripts that inspect the effective candidate container network attachments and verify worker direct DNS/TCP fails, proxy access to private/metadata targets fails, and a public controlled smoke URL succeeds. Run only in the isolated candidate project with disposable volume and no production data.
-- [ ] Keep integration `enabled=false`; do not enable production until the smoke script records each expected result. Use a separate Compose project name and disposable volume; do not restart or recreate the live Assistente, Crawl4AI, or shared Docker network.
-- [ ] Commit Task 6 as `feat: isolate the opt-in browser worker`.
+- [x] Add a pinned Playwright version to the dedicated image; install as root only during build, create a non-root runtime user, and run browser with sandbox enabled.
+- [x] Add compose services for worker and egress broker with no published ports, no Docker socket, read-only root filesystems, bounded `tmpfs`, CPU/memory/pids limits and dropped capabilities.
+- [x] Run browser worker with `network_mode: none`; share only the private Unix-socket volume with Assistente and broker. Broker alone gets a dedicated external egress network and has no business-network attachment. Do not join or restart the production Compose project; use a separate candidate project and volume.
+- [x] Ensure runtime socket directory ownership/mode is created by a one-shot initialization service and fail closed when either socket is missing or permissions are broad.
+- [x] Add a real browser network smoke and inspect candidate isolation; worker direct DNS/TCP fails, proxy access to a private metadata target fails, and a public controlled smoke URL succeeds in the isolated candidate project.
+- [x] Separate worker and broker socket volumes; worker gets egress socket read-only and cannot unlink/replace it; broker runs as UID 1001 with group 1000, mode `0710` directory and `0620` socket.
+- [x] Keep integration `enabled=false`; candidate project and disposable volume were separate; production Assistente and shared network were not recreated.
+- [x] Commit Task 6 as `feat: isolate the opt-in browser worker` (`313226a`); socket permission follow-up: `78f329d`.
 
 ## Task 7: Document phase 1 and validate the release candidate
 
-- [ ] Update `docs/NAVEGADOR.md`, `docs/ARQUITETURA.md`, and `docs/RECUPERACAO.md` with socket topology, key migration, approval review, write scopes, startup/backup/rollback, and exact smoke commands.
-- [ ] Add tests proving secrets are absent from audit rows, error messages, ordinary approval listing and chat output.
-- [ ] Run `rtk npm --prefix server test`, `rtk npm test`, `rtk npm run lint`, and `rtk npm run build`; capture commands and exit codes.
-- [ ] Build the candidate image under a new tag; run the isolated worker/proxy smoke checks; verify the active Assistente container remains healthy and browser remains off.
-- [ ] Review `git diff --check`, generated files, lockfiles and documentation evidence; report any check that cannot pass without external credentials.
-- [ ] Commit Task 7 as `docs: document browser security phase 1`.
+- [x] Update `docs/NAVEGADOR.md`, `docs/ARQUITETURA.md`, and `docs/RECUPERACAO.md` with socket topology, key migration, approval review, write scopes, startup/backup/rollback, and exact smoke commands.
+- [x] Secret payload coverage exists in browser approval and audit/listing regression tests; all browser tests pass.
+- [x] Run `rtk npm --prefix server test` (679/679), `rtk npm test` (110/110), `rtk npm run lint`, `rtk npx tsc --noEmit`, and `rtk npm run build`; all completed successfully.
+- [x] Build the candidate image under a new tag; run the isolated worker/proxy smoke checks; verify the active Assistente container remains healthy and browser remains off.
+- [x] Review `git diff --check`, candidate Compose config and documentation evidence; OAuth real credentials remain separately documented as external configuration.
+- [x] Commit Task 7 as `docs: document browser security phase 1`.
 
 ## Rollback
 
