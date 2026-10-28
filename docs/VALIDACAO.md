@@ -25,7 +25,7 @@ imagem, validação do deploy e validação pendente contra provedores externos.
 | Compose                | `docker compose --profile stt config --quiet`                                    | **PASS**                                                                               |
 | Modelo STT             | revisão `5359861c739e955e79d9a303bcbc70fb988958b1`                               | SHA-256 `1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b`             |
 
-## Evidência do deploy 1.9.2
+## Evidência histórica do deploy 1.9.2
 
 | Item               | Resultado observado                                                                                                                                        |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -72,16 +72,36 @@ contexto da aplicação: `https://example.com/` concluiu e uma tentativa para `e
 o worker recebeu uma allowlist local vazia, foi bloqueada pelo broker (`{"publicPage":"ok","brokerAllowlist":"blocked"}`). O broker registra grants de curta duração pelo socket privado `policy.sock`, inacessível ao worker; diretório `1001:1000/0710`, socket `1001:1000/0620`, e o worker confirmou que não tem esse socket montado. O smoke do worker retornou
 `{"egressSocketMutation":"blocked","policyControlIsolation":"blocked","directTcp":"blocked","directDns":"blocked","privateTarget":"blocked"}`.
 
-Validações adicionais deste hardening: backend **681/681**, frontend **110/110**, ESLint sem erros,
-TypeScript sem erros, build frontend/SSR concluído e os dois Compose (`browser-candidate` e profile
-principal) validaram. Imagens `assistente-pessoal:browser-candidate` e
-`jarvis-browser-worker:playwright-1.64.1` foram reconstruídas e somente a candidata foi recriada; os
-três serviços ficaram `healthy`. O container ativo permaneceu `assistente-pessoal:1.9.2`,
-`running/healthy`, e a leitura somente leitura do banco confirmou `browser_enabled=false`. Nenhum
-deploy de schema 19 ou habilitação do navegador ocorreu em produção.
+Validações adicionais do hardening antes da publicação: backend **681/681**, frontend **110/110**,
+ESLint sem erros, TypeScript sem erros, build frontend/SSR concluído e os dois Compose
+(`browser-candidate` e profile principal) validados. Naquele momento, somente a candidata foi
+recriada; o container ativo permaneceu em 1.9.2 e `browser_enabled=false`.
 
 **Estado:** a lacuna de enforcement da allowlist no broker foi fechada e validada na candidata. A
-capacidade continua opt-in; habilitação e release exigem o processo de publicação normal.
+capacidade continua opt-in; a release 1.9.3 foi publicada e implantada conforme a seção seguinte,
+sem habilitar a integração em produção.
+
+## Deploy de produção 1.9.3 — 2026-10-28
+
+| Item                | Evidência pós-deploy                                                                                                                               |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Commit da imagem    | `c0d14f4d1abb21333b178cfbf3dd10f856260541` (`main`, publicado em `origin/main`)                                                                    |
+| CI                  | GitHub Actions run `40636274764`: jobs Ubuntu, Windows e Container concluídos com sucesso                                                          |
+| Imagem              | `assistente-pessoal:1.9.3`; ID `sha256:045258363946c7eda7c72dc20745649b49b9468e9354d2f6fcedfe0fa540f136`                                           |
+| Build               | `2026-10-28T05:09:05Z`; schema de build 19; `commitStatus=Registrado`                                                                              |
+| Gate de imagem      | `scripts/verificar-imagem-release.sh`: labels, build-info, API health e painel **APROVADOS**                                                       |
+| Migração            | v18 → v19 executada; backup verificado automaticamente antes da migração                                                                           |
+| Backup externo      | `/opt/laytech-ai/jarvis-data-backups/manual-2026-10-28T05-16-09-253Z-pre-v19`; manifesto SHA-256 conferido, diretório `0700`, banco e chave `0600` |
+| Ensaio de migração  | Cópia isolada do backup com rede desabilitada: schema 19, `integrity_check=ok`, zero violações FK e contagens preservadas                          |
+| Container           | `assistente-pessoal:1.9.3`, `running/healthy`, reinícios 0                                                                                         |
+| API e painel        | `/api/health` HTTP **200**, versão/commit/schema 1.9.3/c0d14f4/schema 19, `setupRequired=false`; painel HTTP **200**                               |
+| Banco após deploy   | schema 19, `integrity_check=ok`, `foreign_key_check=0`; 1 admin, 0 approvals, 0 approval actions antes/depois                                      |
+| Navegador           | `browser_enabled=false`; serviços do profile `browser` não iniciados                                                                               |
+| Rollback disponível | Imagem anterior `assistente-pessoal:1.9.2` preservada localmente; backup pré-v19 acima                                                             |
+
+O deploy recriou apenas o serviço `assistente`; os volumes de dados e a rede persistente foram
+mantidos. O profile Playwright segue opt-in. As evidências são verificações pontuais executadas em
+28/10/2026, não monitoramento contínuo.
 
 ## Histórico do deploy 1.9.1
 

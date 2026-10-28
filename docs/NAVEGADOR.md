@@ -91,10 +91,12 @@ acessar o socket de controle, e que o broker recusa `169.254.169.254:80`. O smok
 allowlist local deliberadamente vazia; o broker precisa bloqueá-la. São requisições GET públicas
 controladas. O teste unitário do proxy usa fixtures loopback.
 
-Depois da avaliação da candidata, a configuração de serviços opt-in no compose principal usa o
-profile `browser` e a imagem `jarvis-browser-worker:playwright-1.64.1`. A integração deve continuar
-desligada até todos os checks do release serem aprovados; não habilite o profile durante uma
-atualização normal do serviço.
+Depois da avaliação isolada, a release 1.9.3 foi implantada com a configuração de serviços opt-in
+no compose principal (`profile: browser`) e a imagem `jarvis-browser-worker:playwright-1.64.1`.
+A integração continua desligada por padrão e o profile não está ativo em produção. Para habilitar,
+um administrador deve iniciar explicitamente os serviços do profile e ativar a integração no painel,
+configurando uma allowlist global de hosts exatos. Não habilite o profile durante uma atualização
+normal do serviço.
 
 Para remover somente os recursos descartáveis da candidata:
 

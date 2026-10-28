@@ -1,14 +1,27 @@
 # 📋 Relatório de Auditoria Técnica e Homologação (Production Readiness)
 **Projeto:** J.A.R.V.I.S. (Assistente Pessoal Local)
-**Versão Atual:** 1.9.2
+**Versão Atual:** 1.9.3
 **Data do último release/deploy registrado:** 28 de Outubro de 2026
-**Status do Release:** ✅ **1.9.2 publicada em `origin/main` e implantada; container healthy, schema 18, OpenHands autenticado e Headroom 0.42.0 operacional.** OAuth real aguarda configuração de provedores.
-**Commit da imagem atual:** `02519578f2ea3877949cee67d9bdf9222457945e` (branch `main`)
+**Status do Release:** ✅ **1.9.3 publicada em `origin/main` e implantada; container healthy, schema 19, Playwright opt-in e desligado.** OAuth real aguarda configuração de provedores.
+**Commit da imagem atual:** `c0d14f4d1abb21333b178cfbf3dd10f856260541` (branch `main`)
 **Repositório Oficial:** `https://github.com/verissimodf/AssistentePessoal`
 
 ---
 
-## Estado atual — release 1.9.2 — 28/10/2026
+## Estado atual — release 1.9.3 — 28/10/2026
+
+| Item | Evidência pós-deploy |
+| --- | --- |
+| Versão / esquema | `1.9.3` / SQLite `19` |
+| Commit e CI | `c0d14f4d1abb21333b178cfbf3dd10f856260541`; run `40636274764` com jobs Ubuntu, Windows e Container aprovados |
+| Imagem | `assistente-pessoal:1.9.3`, ID `sha256:045258363946c7eda7c72dc20745649b49b9468e9354d2f6fcedfe0fa540f136` |
+| Container e health | `running/healthy`, reinícios 0; API HTTP 200 com versão/commit/schema; painel HTTP 200 |
+| Banco | migração v18→v19; integrity `ok`, zero violações FK; contagens de admins/aprovações preservadas |
+| Backup pré-migração | `/opt/laytech-ai/jarvis-data-backups/manual-2026-10-28T05-16-09-253Z-pre-v19`, manifesto SHA-256 verificado |
+| Playwright | worker e broker aprovados em candidata isolada; profile `browser` não iniciado em produção e `browser_enabled=false` |
+| Registro detalhado | [`docs/VALIDACAO.md`](docs/VALIDACAO.md) |
+
+## Histórico — release 1.9.2 — 28/10/2026
 
 | Item | Evidência local pós-deploy |
 | --- | --- |

@@ -14,7 +14,8 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O 
 - Compose principal ganha profile opt-in `browser`; configuração permanece desligada. O projeto de candidata usa volumes e rede interna próprios.
 - Instruções e evidência de candidato em `docs/NAVEGADOR.md`; rollback v19 em `docs/RECUPERACAO.md`.
 - Broker aplica allowlist exata com grants curtos emitidos pelo app via socket de controle privado; worker não monta esse socket e não pode ampliar a política.
-- Smoke de candidata exercita navegação real e tentativa de bypass da allowlist local; produção permanece desligada até release explícito.
+- Smoke da candidata exercita navegação real e tentativa de bypass da allowlist local; release 1.9.3 implantada com a capacidade ainda desligada por padrão.
+- Release 1.9.3 em produção: CI Ubuntu/Windows/Container aprovado, imagem verificada, migração v18→v19 ensaiada com cópia isolada e banco íntegro após deploy. Evidências e backup em `docs/VALIDACAO.md`.
 
 ## [1.9.1] — 2026-10-27
 
