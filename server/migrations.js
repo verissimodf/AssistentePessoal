@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { encrypt } from "./secret-crypto.js";
 
 /** Tables whose rows must survive every migration untouched. */
 export const PRESERVED = ["kv", "memories", "agents", "bots", "runs", "approvals", "audit"];
@@ -730,6 +731,35 @@ BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
       },
     ],
   },
+  {
+    version: 19,
+    name: "approval_actions: encrypt browser form payloads",
+    // Existing pending approvals remain usable, but their free-form browser input is encrypted
+    // before the application starts serving requests. The migration is transactional and has a
+    // verified pre-migration backup; malformed actions or a missing key fail closed.
+    apply(database, { encryptFn }) {
+      const rows = database.prepare("SELECT approval_id,action FROM approval_actions").all();
+      const update = database.prepare("UPDATE approval_actions SET action=? WHERE approval_id=?");
+      for (const row of rows) {
+        let action;
+        try {
+          action = JSON.parse(row.action);
+        } catch {
+          throw new Error("invalid_approval_action_json");
+        }
+        if (action?.kind !== "browser_action" || action?.params?.op !== "fill") continue;
+        if (action.params.text === undefined) continue;
+        if (typeof action.params.text !== "string") throw new Error("invalid_browser_fill_payload");
+        const plaintext = action.params.text;
+        const encryptedText = encryptFn(plaintext);
+        if (typeof encryptedText !== "string" || encryptedText === plaintext)
+          throw new Error("browser_payload_encryption_failed");
+        const { text: _plaintext, ...params } = action.params;
+        action.params = { ...params, encryptedText };
+        update.run(JSON.stringify(action), row.approval_id);
+      }
+    },
+  },
 ];
 
 const tableExists = (db, t) =>
@@ -896,7 +926,13 @@ export function migrate(db, dataDir, opts = {}) {
     const before = snapshot(db);
     db.exec("BEGIN IMMEDIATE");
     try {
-      db.exec(typeof m.sql === "function" ? m.sql(db) : m.sql);
+      if (typeof m.apply === "function") {
+        const encryptFn =
+          opts.encryptFn || ((text) => encrypt(text, { dataDir, createKey: false }));
+        m.apply(db, { dataDir, encryptFn });
+      } else {
+        db.exec(typeof m.sql === "function" ? m.sql(db) : m.sql);
+      }
       if (m.expect) assertObjects(db, m.expect); // objetos prometidos existem mesmo (antes do COMMIT)
       if (opts.failAfterSql === m.version) throw new Error("falha simulada");
       const after = snapshot(db);

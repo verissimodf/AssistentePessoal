@@ -243,6 +243,91 @@ test("v18 adiciona OAuth e preserva todos os vínculos ownership", () => {
   );
 });
 
+test("v19 encrypts pending browser fill text in place", () => {
+  const { db, dir } = legacyDb();
+  migrate(db, dir, { migrations: MIGRATIONS.slice(0, 18) });
+  const originalText = "FORM_SECRET_SENTINEL: enviar proposta confidencial";
+  const originalAction = {
+    kind: "browser_action",
+    params: {
+      op: "fill",
+      url: "https://example.com/submit",
+      selector: "#message",
+      text: originalText,
+    },
+    fingerprint: "fingerprint-v1",
+    correlation: "correlation-v1",
+  };
+  db.prepare(
+    "INSERT INTO approval_actions(approval_id,action,correlation_id,created_at) VALUES('a1',?,'correlation-v1','now')",
+  ).run(JSON.stringify(originalAction));
+  const beforeApproval = db.prepare("SELECT status FROM approvals WHERE id='a1'").get();
+  const beforeCount = db.prepare("SELECT COUNT(*) n FROM approval_actions").get().n;
+  const encryptFn = (text) => `enc_test:${Buffer.from(text, "utf8").toString("base64")}`;
+  const result = migrate(db, dir, { encryptFn });
+  assert.equal(result.to, 19);
+
+  const storedRow = db
+    .prepare("SELECT action,correlation_id FROM approval_actions WHERE approval_id='a1'")
+    .get();
+  assert.equal(storedRow.action.includes(originalText), false);
+  const stored = JSON.parse(storedRow.action);
+  assert.equal(stored.params.text, undefined);
+  assert.equal(
+    Buffer.from(stored.params.encryptedText.slice("enc_test:".length), "base64").toString("utf8"),
+    originalText,
+  );
+  assert.equal(stored.fingerprint, "fingerprint-v1");
+  assert.equal(storedRow.correlation_id, "correlation-v1");
+  assert.deepEqual(db.prepare("SELECT status FROM approvals WHERE id='a1'").get(), beforeApproval);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM approval_actions").get().n, beforeCount);
+
+  const backup = new DatabaseSync(result.backup, { readOnly: true });
+  assert.equal(
+    JSON.parse(
+      backup.prepare("SELECT action FROM approval_actions WHERE approval_id='a1'").get().action,
+    ).params.text,
+    originalText,
+  );
+  backup.close();
+  assert.equal(migrate(db, dir).backup, null);
+});
+
+test("v19 rollback preserves plaintext action if encryption fails", () => {
+  const { db, dir } = legacyDb();
+  migrate(db, dir, { migrations: MIGRATIONS.slice(0, 18) });
+  const originalText = "ROLLBACK_SECRET_SENTINEL";
+  const originalAction = {
+    kind: "browser_action",
+    params: {
+      op: "fill",
+      url: "https://example.com/submit",
+      selector: "#message",
+      text: originalText,
+    },
+    fingerprint: "fingerprint-v1",
+  };
+  db.prepare(
+    "INSERT INTO approval_actions(approval_id,action,correlation_id,created_at) VALUES('a1',?,NULL,'now')",
+  ).run(JSON.stringify(originalAction));
+  assert.throws(
+    () =>
+      migrate(db, dir, {
+        encryptFn: () => {
+          throw new Error("key unavailable");
+        },
+      }),
+    /desfeita.*key unavailable/,
+  );
+  assert.equal(currentVersion(db), 18);
+  assert.equal(
+    JSON.parse(
+      db.prepare("SELECT action FROM approval_actions WHERE approval_id='a1'").get().action,
+    ).params.text,
+    originalText,
+  );
+});
+
 test("failure mid-migration rolls back completely (no partial schema)", () => {
   const { db, dir } = legacyDb();
   const before = snapshotCounts(db);

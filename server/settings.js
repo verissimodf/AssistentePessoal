@@ -4,35 +4,15 @@
 // the machine. Pre-Phase-2 settings stay byte-for-byte in legacy_settings, inactive, until an
 // admin explicitly claims the whole block. Personal values can never weaken the global policy:
 // host/integrations/localVoiceUrl always come from the global record.
-import { createCipheriv, createDecipheriv, randomBytes, createHash } from "node:crypto";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
 import { DATA_DIR, db, now, audit } from "./db.js";
 import { AuthError } from "./auth.js";
+import { encrypt, decrypt, ensureMasterKey } from "./secret-crypto.js";
+export { encrypt, decrypt };
 
-const keyFile = join(DATA_DIR, "master.key");
-function masterKey() {
-  if (process.env.JARVIS_MASTER_KEY)
-    return createHash("sha256").update(process.env.JARVIS_MASTER_KEY).digest();
-  if (!existsSync(keyFile))
-    writeFileSync(keyFile, randomBytes(32).toString("hex"), { mode: 0o600 });
-  return Buffer.from(readFileSync(keyFile, "utf8").trim(), "hex");
-}
-const KEY = masterKey();
-
-export function encrypt(text) {
-  const iv = randomBytes(12);
-  const c = createCipheriv("aes-256-gcm", KEY, iv);
-  const enc = Buffer.concat([c.update(text, "utf8"), c.final()]);
-  return `enc:${iv.toString("base64")}:${c.getAuthTag().toString("base64")}:${enc.toString("base64")}`;
-}
-export function decrypt(value) {
-  if (typeof value !== "string" || !value.startsWith("enc:")) return value;
-  const [, iv, tag, data] = value.split(":");
-  const d = createDecipheriv("aes-256-gcm", KEY, Buffer.from(iv, "base64"));
-  d.setAuthTag(Buffer.from(tag, "base64"));
-  return Buffer.concat([d.update(Buffer.from(data, "base64")), d.final()]).toString("utf8");
-}
+// Preserve startup behavior for a new installation. Migrations run before this module loads and
+// explicitly refuse to create a replacement key when existing encrypted browser payloads exist.
+ensureMasterKey({ dataDir: DATA_DIR });
 
 export const isSecretField = (k) => /key|token|password|secret/i.test(k);
 
