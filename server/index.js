@@ -61,6 +61,7 @@ import { getCatalog, listSkills, matchSkillsForPrompt, loadSkill } from "./skill
 import { collectDiagnostics } from "./diagnostics.js";
 import { callTool, reaSlashCommand } from "./tools.js";
 import { remember, recall, updateMemory, resolveApproval } from "./tools.js";
+import { browserActionReview } from "./browser-approval.js";
 import {
   listDocuments,
   getDocument,
@@ -359,6 +360,30 @@ route("POST", "/api/approvals/:id", "session", ({ params, body, principal }) => 
     confirmWrite: body.confirmWrite === true,
     fingerprint: typeof body.fingerprint === "string" ? body.fingerprint : null,
   });
+});
+const pendingBrowserAction = (id) => {
+  const row = db.prepare("SELECT status FROM approvals WHERE id = ?").get(id);
+  if (!row || row.status !== "pending") notFound();
+  const stored = db.prepare("SELECT action FROM approval_actions WHERE approval_id = ?").get(id);
+  if (!stored) notFound();
+  let action;
+  try {
+    action = JSON.parse(stored.action);
+  } catch {
+    notFound();
+  }
+  if (action?.kind !== "browser_action") notFound();
+  return action;
+};
+route("GET", "/api/approvals/:id/review", "session", ({ params, principal }) => {
+  if (!owns(principal?.adminId, "approval", params.id)) notFound();
+  return { review: browserActionReview(pendingBrowserAction(params.id)) };
+});
+route("POST", "/api/approvals/:id/reveal", "session", ({ params, principal }) => {
+  if (!owns(principal?.adminId, "approval", params.id)) notFound();
+  if (!isVerifiedAdmin(principal) || !auth.hasRecentReauth(principal))
+    throw new AuthError(403, "reauth_required");
+  return { review: browserActionReview(pendingBrowserAction(params.id), { reveal: true }) };
 });
 // Evidência por execução (P0): mesmo portão de posse da aprovação — foreign/legacy/unknown → 404.
 // Só metadados técnicos (estado, código de saída, verificação); nunca conteúdo privado.

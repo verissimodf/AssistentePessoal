@@ -36,6 +36,30 @@ export function unprotectBrowserAction(action) {
   return executable;
 }
 
+export function browserActionReview(action, { reveal = false } = {}) {
+  if (action?.kind !== "browser_action" || !action.params)
+    throw new Error("browser_action_invalid");
+  const params = action.params;
+  const isFill = params.op === "fill";
+  let preview = null;
+  if (isFill) {
+    if (typeof params.encryptedText !== "string" || "text" in params)
+      throw new Error("browser_payload_invalid");
+    preview = reveal ? unprotectBrowserAction(action).params.text : "••••••••";
+  } else if (reveal) {
+    throw new Error("browser_reveal_not_applicable");
+  }
+  if (!action.fingerprint) throw new Error("browser_fingerprint_mismatch");
+  return {
+    operation: String(params.op || ""),
+    host: params.url ? new URL(params.url).host : null,
+    selector: params.selector || null,
+    hasText: isFill,
+    preview,
+    fingerprint: action.fingerprint,
+  };
+}
+
 export function normalizeBrowserHosts(value) {
   const entries = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
   const hosts = entries.map((item) => String(item).trim().toLowerCase()).filter(Boolean);

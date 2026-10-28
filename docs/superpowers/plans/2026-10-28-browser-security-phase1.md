@@ -87,12 +87,12 @@
 
 **Interfaces:** `GET /api/approvals/:id/review` requires `session`, owner match, and a pending browser action; it returns masked safe metadata. `POST /api/approvals/:id/reveal` additionally requires `isVerifiedAdmin(principal)` and recent reauthentication, returns the plaintext only with `Cache-Control: no-store`, and never audits the value.
 
-- [ ] Add failing HTTP tests for missing session, foreign owner, forged principal, service token, non-browser action, resolved approval, reveal without reauth, and successful owner reveal.
-- [ ] Add `src/test/browser-approval.test.tsx` proving a browser write opens review, defaults to masked text, requires explicit confirmation, and sends the reviewed fingerprint plus `confirmWrite`.
-- [ ] Implement owner-scoped review/reveal routes and route-level no-store response handling; do not add content to `/api/approvals` listing.
-- [ ] Implement a review modal using existing UI primitives; show destination, operation, selector and data preview, require a checkbox/typed confirmation for write actions, and never put revealed values into chat history or telemetry.
-- [ ] Run `rtk node --test tests/browser-tool.test.mjs` and `rtk npm test -- --run src/test/browser-approval.test.tsx`; verify reveal response has `Cache-Control: no-store`.
-- [ ] Commit Task 3 as `feat: add secure browser approval review`.
+- [x] Add HTTP tests for missing session, foreign owner, forged bearer, service token, non-browser action, resolved approval, reveal without reauth, and successful owner reveal.
+- [x] Add `src/test/browser-approval.test.tsx` proving a browser write opens review, defaults to masked text, requires explicit confirmation, and sends the reviewed fingerprint plus `confirmWrite`.
+- [x] Implement owner-scoped review/reveal routes and no-store response handling; do not add content to `/api/approvals` listing.
+- [x] Implement a review modal using existing UI primitives; show destination, operation, selector and data preview, require reauthentication to reveal values and a checkbox to confirm writes, and never put revealed values into chat history or telemetry.
+- [x] Run `rtk node --test tests/browser-tool.test.mjs` (20/20) and `rtk npm test -- --run src/test/browser-approval.test.tsx` (1/1); reveal response has `Cache-Control: no-store`.
+- [x] Commit Task 3 as `feat: add secure browser approval review`.
 
 ## Task 4: Enforce destination checks in Playwright
 

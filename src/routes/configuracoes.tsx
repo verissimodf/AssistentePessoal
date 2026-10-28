@@ -258,9 +258,9 @@ function SettingsPage() {
                     <Input
                       className="font-mono"
                       value={
-                        Array.isArray(v.allowedHosts)
-                          ? v.allowedHosts.join(", ")
-                          : String(v.allowedHosts ?? "")
+                        Array.isArray(v["allowedHosts"])
+                          ? (v["allowedHosts"] as string[]).join(", ")
+                          : String(v["allowedHosts"] ?? "")
                       }
                       placeholder="example.com, docs.example.com"
                       onChange={(e) =>

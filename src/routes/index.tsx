@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar3D, type AvatarState } from "@/components/Avatar3D";
+import { BrowserApprovalReview } from "@/components/BrowserApprovalReview";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -300,6 +301,32 @@ export function ChatPage() {
     }
   };
 
+  const applyBrowserDecision = (
+    result: { output: string; status?: string },
+    i: number,
+    k: number,
+    approve: boolean,
+  ) => {
+    setMsgs((current) =>
+      current.map((message, index) =>
+        index === i
+          ? {
+              ...message,
+              content: message.content + `\n\n\`\`\`\n${result.output}\n\`\`\``,
+              meta: {
+                ...message.meta,
+                pending: (message.meta?.pending || []).map((pending, position) =>
+                  position === k
+                    ? { ...pending, status: result.status || (approve ? "done" : "denied") }
+                    : pending,
+                ),
+              },
+            }
+          : message,
+      ),
+    );
+  };
+
   /** Exclusão com confirmação: o servidor verifica a propriedade e remove tudo em transação. */
   const doDelete = async () => {
     const target = deleteTarget;
@@ -449,14 +476,27 @@ export function ChatPage() {
                     >
                       <span className="hud-label">{t("pending_action")}</span>
                       <code className="font-mono text-accent">{p.command}</code>
-                      <Button size="sm" onClick={() => decide(p.id, true, i, k)}>
-                        <Check className="h-3 w-3" />
-                        {t("approve")}
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => decide(p.id, false, i, k)}>
-                        <X className="h-3 w-3" />
-                        {t("deny")}
-                      </Button>
+                      {/\bNavegador: (?:click|fill)\b/i.test(p.command) ? (
+                        <BrowserApprovalReview
+                          id={p.id}
+                          onDone={(result) => applyBrowserDecision(result, i, k, true)}
+                        />
+                      ) : (
+                        <>
+                          <Button size="sm" onClick={() => decide(p.id, true, i, k)}>
+                            <Check className="h-3 w-3" />
+                            {t("approve")}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => decide(p.id, false, i, k)}
+                          >
+                            <X className="h-3 w-3" />
+                            {t("deny")}
+                          </Button>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <div key={p.id} className="flex flex-wrap items-center gap-2 text-xs">

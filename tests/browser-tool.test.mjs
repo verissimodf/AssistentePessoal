@@ -28,6 +28,7 @@ const { createApp } = await import("../server/index.js");
 const { callTool, resolveApproval } = await import("../server/tools.js");
 const { auth, db } = await import("../server/db.js");
 const { updateSettings } = await import("../server/settings.js");
+const { assignNew } = await import("../server/ownership.js");
 
 const PW = "senha-muito-forte-1";
 const TOKEN = "token-de-worker-para-teste-123456";
@@ -43,6 +44,9 @@ const agentCtx = (principal) => ({
 });
 /** Sessão REAL: só `validateSession` produz principal verificado (anti-forja por WeakMap). */
 async function sourcePrincipal(username) {
+  return (await loginSession(username)).principal;
+}
+async function loginSession(username) {
   const r = await fetch(`${base}/api/auth/login`, {
     method: "POST",
     headers: { origin: ORIGIN, "content-type": "application/json" },
@@ -52,7 +56,7 @@ async function sourcePrincipal(username) {
   const sid = r.headers.get("set-cookie").split(";")[0].split("=")[1];
   const principal = auth.validateSession(sid);
   assert.ok(principal, "sessão válida");
-  return principal;
+  return { principal, cookie: `jarvis_sid=${sid}`, csrf: (await r.json()).csrf };
 }
 
 // ---- worker falso (contrato remoto) — loopback é o ENDEREÇO configurado, não o destino ----
@@ -613,9 +617,10 @@ test("browser fill stores ciphertext and executes only with the reviewed fingerp
   );
   const secretText = "valor confidencial do formulario";
   const ctx = agentCtx(principalA);
+  const sensitiveUrl = "https://example.com/?token=query-secret";
   await callTool(
     "browser_action",
-    { op: "fill", url: PUBLIC, selector: "#email", text: secretText },
+    { op: "fill", url: sensitiveUrl, selector: "#email", text: secretText },
     ctx,
   );
   const id = ctx.pending[0].id;
@@ -625,6 +630,11 @@ test("browser fill stores ciphertext and executes only with the reviewed fingerp
   assert.equal(stored.params.text, undefined, "texto em claro não persiste na ação");
   assert.match(stored.params.encryptedText, /^enc:/, "texto protegido em repouso");
   assert.equal(stored.fingerprint.length, 32);
+  assert.equal(
+    ctx.pending[0].command.includes("query-secret"),
+    false,
+    "URL completa não entra no resumo",
+  );
 
   const before = worker.hits.length;
   const service = {
@@ -673,4 +683,108 @@ test("browser click e fill não são autorizados pelo escopo web somente leitura
     assert.equal(db.prepare("SELECT COUNT(*) n FROM approvals").get().n, before);
     assert.equal(ctx.pending.length, 0);
   }
+});
+
+test("review/reveal é owner-scoped, pendente, exige reauth e não expõe payload em respostas comuns", async () => {
+  updateSettings(
+    { integrations: { browser: { enabled: true, command: workerBase, apiKey: TOKEN } } },
+    { adminId: null, allowGlobal: true },
+  );
+  const owner = await loginSession("ana");
+  const secretText = "segredo-review-nao-listar";
+  const ctx = agentCtx(owner.principal);
+  await callTool(
+    "browser_action",
+    { op: "fill", url: PUBLIC, selector: "#email", text: secretText },
+    ctx,
+  );
+  const id = ctx.pending[0].id;
+
+  const unauthenticated = await fetch(`${base}/api/approvals/${id}/review`);
+  assert.equal(unauthenticated.status, 401);
+  const token = auth.createServiceToken(owner.principal, {
+    name: "review-test",
+    scopes: ["web:write", "settings:read"],
+  }).token;
+  const service = await fetch(`${base}/api/approvals/${id}/review`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  assert.equal(service.status, 403, "service token não pode revisar/revelar conteúdo protegido");
+  const forged = await fetch(`${base}/api/approvals/${id}/review`, {
+    headers: { authorization: "Bearer jst_forjado" },
+  });
+  assert.equal(forged.status, 401, "principal forjado não é autenticado");
+
+  const maskedResponse = await fetch(`${base}/api/approvals/${id}/review`, {
+    headers: { cookie: owner.cookie },
+  });
+  assert.equal(maskedResponse.status, 200);
+  assert.equal(maskedResponse.headers.get("cache-control"), "no-store");
+  const masked = (await maskedResponse.json()).review;
+  assert.equal(masked.preview, "••••••••");
+  assert.equal(JSON.stringify(masked).includes(secretText), false);
+  const listing = await fetch(`${base}/api/approvals`, { headers: { cookie: owner.cookie } });
+  assert.equal(JSON.stringify(await listing.json()).includes(secretText), false);
+
+  const noReauth = await fetch(`${base}/api/approvals/${id}/reveal`, {
+    method: "POST",
+    headers: { cookie: owner.cookie, "x-jarvis-csrf": owner.csrf },
+  });
+  assert.equal(noReauth.status, 403);
+  const reauth = await fetch(`${base}/api/auth/reauth`, {
+    method: "POST",
+    headers: {
+      cookie: owner.cookie,
+      "x-jarvis-csrf": owner.csrf,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ password: PW }),
+  });
+  assert.equal(reauth.status, 200);
+  const revealedResponse = await fetch(`${base}/api/approvals/${id}/reveal`, {
+    method: "POST",
+    headers: { cookie: owner.cookie, "x-jarvis-csrf": owner.csrf },
+  });
+  assert.equal(revealedResponse.status, 200);
+  assert.equal(revealedResponse.headers.get("cache-control"), "no-store");
+  assert.equal((await revealedResponse.json()).review.preview, secretText);
+  const auditRows = db.prepare("SELECT kind, detail FROM audit ORDER BY id DESC LIMIT 20").all();
+  assert.equal(
+    JSON.stringify(auditRows).includes(secretText),
+    false,
+    "valor revelado não é auditado",
+  );
+
+  const other = auth.createAdmin(owner.principal, {
+    username: "bia",
+    password: PW,
+    currentPassword: PW,
+  });
+  adminB = other.id;
+  const foreign = await loginSession("bia");
+  const foreignReview = await fetch(`${base}/api/approvals/${id}/review`, {
+    headers: { cookie: foreign.cookie },
+  });
+  assert.equal(foreignReview.status, 404);
+
+  const nonBrowserId = `non-browser-${Date.now()}`;
+  db.prepare(
+    "INSERT INTO approvals (id, command, status, created_at) VALUES (?, ?, 'pending', ?)",
+  ).run(nonBrowserId, "Comando local", new Date().toISOString());
+  db.prepare("INSERT INTO approval_actions (approval_id, action, created_at) VALUES (?, ?, ?)").run(
+    nonBrowserId,
+    JSON.stringify({ kind: "run_command", command: "true" }),
+    new Date().toISOString(),
+  );
+  assignNew("approval", nonBrowserId, adminA);
+  const nonBrowserReview = await fetch(`${base}/api/approvals/${nonBrowserId}/review`, {
+    headers: { cookie: owner.cookie },
+  });
+  assert.equal(nonBrowserReview.status, 404);
+
+  await resolveApproval(id, false, owner.principal);
+  const resolved = await fetch(`${base}/api/approvals/${id}/review`, {
+    headers: { cookie: owner.cookie },
+  });
+  assert.equal(resolved.status, 404);
 });

@@ -541,6 +541,14 @@ export async function loadDiagnostics(): Promise<DiagnosticInventory | null> {
 
 // ---------- P0.1: aprovações, execuções (ledger) e auditoria (fonte de verdade = servidor) ----------
 export type ApprovalRow = { id: string; command: string; status: string; createdAt: string };
+export type BrowserApprovalReview = {
+  operation: string;
+  host: string | null;
+  selector: string | null;
+  hasText: boolean;
+  preview: string | null;
+  fingerprint: string;
+};
 export type ExecutionRow = {
   id: string;
   approvalId: string | null;

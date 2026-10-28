@@ -1371,7 +1371,8 @@ export async function callTool(name, input, ctx) {
         });
         return `Navegação recusada: ${v.reason}`;
       }
-      const summary = `Navegador: ${v.request.op}${v.request.url ? ` em ${v.request.url}` : ""}${v.request.selector ? ` (${v.request.selector})` : ""}`;
+      const destination = v.request.url ? new URL(v.request.url).host : "";
+      const summary = `Navegador: ${v.request.op}${destination ? ` em ${destination}` : ""}${v.request.selector ? ` (${v.request.selector})` : ""}`;
       const id = queueApproval(
         {
           command: summary,
