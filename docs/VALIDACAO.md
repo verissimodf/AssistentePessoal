@@ -1,4 +1,18 @@
-# Validação — release 1.9.3
+# Validação
+
+## Release 1.10.0 (2026-10-30)
+
+- Backend **688/688** (incluindo 7 novos em `tests/chat-stream.test.mjs`: authz do stream, recusa
+  do formato legado, status HTTP em validação pré-stream, persistência/idempotência idênticas ao
+  `/api/chat`, reflex "jev" e fallback, erro de provedor estruturado e citações persistidas via
+  `document_search`).
+- Sem migração nova (schema permanece **19**); `/api/health` em produção confirmou
+  `ok`, `version 1.10.0`, `commit 2a3085f`, `schemaVersion 19` e `commitStatus Registrado`.
+- Build e deploy da imagem `assistente-pessoal:1.10.0` com evidências do deploy em
+  `ee3d126`. Smoke: streaming NDJSON com eventos `reflex`/`progress`/`final` e `/api/chat`
+  intocado como fallback.
+
+## Release 1.9.3 (2026-10-28)
 
 Atualizado em 2026-10-28 para a publicação de 1.9.3. Distingue testes automatizados, smoke de
 imagem, validação do deploy e validação pendente contra provedores externos.

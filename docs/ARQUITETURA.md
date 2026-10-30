@@ -1,6 +1,6 @@
 # 🏛️ Arquitetura do Sistema e Fluxo de Dados
 
-Documento atualizado para a release **1.9.3** (esquema SQLite **19**). Descreve a topologia real,
+Documento atualizado para a release **1.10.0** (esquema SQLite **19**). Descreve a topologia real,
 os componentes e os limites de confiança. Para configuração, ver `docs/CONFIGURACAO.md`.
 
 ---
@@ -48,6 +48,7 @@ de voz e painel no mesmo container e encerra o conjunto se um componente morrer.
 | Settings            | `server/settings.js`                                                                                                                           | configuração pessoal/global, AES-256-GCM, proveniência                                                       |
 | Ownership           | `server/ownership.js`                                                                                                                          | isolamento por administrador e transferência explícita                                                       |
 | LLM/router          | `server/llm.js`                                                                                                                                | providers, fallback, timeouts, telemetria, testes de provider                                                |
+| Reflex              | `server/reflex.js`                                                                                                                             | classificador advisory pré-resposta (opt-in); registra rota/confiança/latência em `meta.reflex` — nunca gatilha nem autoriza |
 | Agentes/ferramentas | `server/tools.js`, `server/bots.js`                                                                                                            | tool calling, autonomia, aprovações, auditoria                                                               |
 | Fila de scheduler   | `server/jobs.js`                                                                                                                               | jobs SQLite idempotentes, payload cifrado, leases e recovery sem replay cego                                 |
 | Retenção de memória | `server/memory-retention.js`                                                                                                                   | política opt-in por admin, quarentena, restore e purga limitada                                              |
@@ -76,6 +77,18 @@ de voz e painel no mesmo container e encerra o conjunto se um componente morrer.
 5. A resposta é persistida na conversa; a auditoria registra metadados (nunca prompt/conteúdo).
 6. TTS (quando habilitado) passa pela ponte local; a ponte valida tamanho/voz, chama `/voice/speak`
    ou `/voice/clone` no `xtts-service` e devolve WAV sem expor mensagens internas. O painel reproduz.
+
+### Fluxo do chat em streaming (1.10.0)
+
+- `POST /api/chat/stream` (NDJSON, `application/x-ndjson`) emite `reflex` (rota classificada,
+  apenas quando o JEV Reflex está habilitado), `progress` (etapas e ferramenta em execução) e
+  `final` (a troca completa persistida). Validação de sessão/CSRF/escopo idêntica ao `/api/chat`,
+  que permanece intocado como fallback do cliente.
+- Cada chamada a `document_search` registra em `meta.citations` um snapshot da fonte no instante da
+  resposta (documento, chunk, modo e score) — a referência sobrevive a edição/exclusão posterior
+  do documento. O painel exibe em bloco "Fontes".
+- O JEV Reflex é advisory: opt-in por administrador, em falha do roteador o chat segue normal com
+  fonte "fallback" identificada; canais externos (Telegram/bots) não passam pelo Reflex.
 
 ### Fluxo de e-mail AgentMail
 
@@ -135,7 +148,8 @@ escopo. O CSRF é obrigatório em toda mutação com cookie.
 ## 6. Dados e migrações
 
 - SQLite nativo (`node:sqlite`) em WAL, `busy_timeout=5000`, transações `BEGIN IMMEDIATE`.
-- `PRAGMA user_version` é a versão do schema; a release 1.9.2 usa **19**. As v16–v18 adicionam
+- `PRAGMA user_version` é a versão do schema; a release 1.10.0 usa **19** (a 1.10.0 não teve
+  migração — novos dados em `conversation_messages.meta`, JSON livre). As v16–v18 adicionam
   fila durável de scheduler, políticas de retenção e conexões OAuth com backup verificado e
   preservação das linhas anteriores. A v15 cria o ledger
   idempotente `bot_schedule_claims`; v14 adicionou `agentmail_inboxes` e ownership explícito.
@@ -179,3 +193,7 @@ escopo. O CSRF é obrigatório em toda mutação com cookie.
 - Compose ativo: `docker-compose.yml` (serviço `assistente`), imagem `assistente-pessoal:<sha>`.
 - Rollback: `IMAGE_TAG=<tag-anterior> docker compose -f docker-compose.yml up -d --no-build`,
   mantendo banco + `master.key` compatíveis. Runbook: `docs/RUNBOOK-RELEASE-2026-10-18.md`.
+- Atualização assistida por tag (`scripts/update-release.sh`, `npm run update:release`): exige
+  serviço parado, faz backup tar verificado de `data/`, checkout de tag, testes em banco
+  temporário e build idêntico ao Dockerfile, com instruções exatas de reversão. Nunca inicia o
+  serviço.

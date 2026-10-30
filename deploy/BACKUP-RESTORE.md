@@ -78,7 +78,7 @@ sqlite3 "file:$BK/jarvis.db?mode=ro" "PRAGMA user_version; PRAGMA integrity_chec
 
 ## Limitações conhecidas
 
-- Este runbook é operacional; a política completa (RPO/RTO, cifragem, off-host, retenção e restore drill) está em [`docs/BACKUP-E-RESTAURACAO.md`](../docs/BACKUP-E-RESTAURACAO.md). O timer systemd **está instalado/habilitado**; em 2026-10-25 ele falhava porque o script não tinha bit de execução (`203/EXEC`), corrigido localmente com `chmod 755` e validado em 2026-10-26.
+- Este runbook é operacional; a política completa (RPO/RTO, cifragem, off-host, retenção e restore drill) está em [`docs/RECUPERACAO.md`](../docs/RECUPERACAO.md) (a versão 1.8.2 foi arquivada em [`docs/historico/`](../docs/historico/README.md)). O timer systemd **está instalado/habilitado**; em 2026-10-25 ele falhava porque o script não tinha bit de execução (`203/EXEC`), corrigido localmente com `chmod 755` e validado em 2026-10-26.
 
 - O destino fica no **mesmo disco** (`/opt`). Protege contra erro humano e corrupção lógica, **não** contra falha do disco — replicar para outro host/volume quando houver.
 - Não há backup do `-wal` em tempo real: `VACUUM INTO` já consolida o conteúdo confirmado.

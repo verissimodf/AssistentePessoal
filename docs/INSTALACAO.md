@@ -1,6 +1,10 @@
-# Guia de Instalação e Configuração — J.A.R.V.I.S. (v1.7.8)
+# Guia de Instalação e Configuração — J.A.R.V.I.S.
 
-Este guia cobre o passo a passo completo para instalação, configuração de permissões, execução em segundo plano e inicialização automática como serviço persistente tanto em **Windows 10/11** quanto em **Servidores Linux (Ubuntu, Debian, CentOS, RHEL)**.
+> **Atualizado para a 1.10.0.** Em produção, a via recomendada é **Docker Compose**
+> (`docker-compose.yml`) com atualização assistida por `npm run update:release` — ver
+> `docs/IMPLANTACAO.md` e `docs/RUNBOOK-RELEASE-2026-10-18.md`. Este guia cobre a instalação
+> manual: permissões, execução em segundo plano e inicialização automática como serviço
+> persistente tanto em **Windows 10/11** quanto em **Servidores Linux (Ubuntu, Debian, CentOS, RHEL)**.
 
 ---
 

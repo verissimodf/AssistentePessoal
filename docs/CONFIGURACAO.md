@@ -157,7 +157,8 @@ configuração global cifrada; as variáveis `AGENTMAIL_API_KEY`, `AGENTMAIL_WEB
   Prefira as ferramentas integradas do Jarvis para preservar esses controles.
 
 O estado implantado e a pendência de reivindicação desta instalação estão em
-[`HOMOLOGACAO_STATUS.md`](../HOMOLOGACAO_STATUS.md) e [`INTEGRACOES-LAYTECH.md`](../INTEGRACOES-LAYTECH.md).
+[`INTEGRACOES-LAYTECH.md`](../INTEGRACOES-LAYTECH.md) e [`docs/RUNBOOK-RELEASE-2026-10-18.md`](RUNBOOK-RELEASE-2026-10-18.md)
+(homologação da 1.9.3 arquivada em [`historico/HOMOLOGACAO_STATUS-1.9.3.md`](historico/HOMOLOGACAO_STATUS-1.9.3.md)).
 
 ## Voz
 

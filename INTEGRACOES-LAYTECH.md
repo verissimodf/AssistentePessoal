@@ -1,8 +1,8 @@
 # Integrações LayTech — estado operacional
 
-Atualizado em **2026-10-27** após publicação e rebuild da release **1.8.2**. A topologia do container foi
-verificada agora; os resultados dos demais provedores abaixo continuam sendo a fotografia de
-**2026-10-26** e não foram retestados neste fluxo.
+Atualizado em **2026-10-30** após publicação e deploy da release **1.10.0**. A topologia do container foi
+verificada agora (`/api/health` ok, versão 1.10.0, schema 19, commit `2a3085f`); os resultados dos
+demais provedores abaixo continuam sendo a fotografia de **2026-10-26** e não foram retestados neste fluxo.
 
 ## 1. Topologia atual
 
@@ -10,7 +10,7 @@ verificada agora; os resultados dos demais provedores abaixo continuam sendo a f
 | --- | --- | --- |
 | API | `http://<ip-interno>:7777` (rede Docker) | sem porta publicada no host |
 | Painel | `http://<ip-interno>:8090` (rede Docker) | público via `https://jarvis.laytech.com.br` |
-| Container | `assistente-pessoal` | `assistente-pessoal:1.8.2`, `healthy`, `restarts=0`, versão 1.8.2, schema 15, commit publicado `88a3ce5` |
+| Container | `assistente-pessoal` | `assistente-pessoal:1.10.0`, versão 1.10.0, schema 19, commit publicado `2a3085f`, digest `sha256:bf877ef8623905f4b9265dba8961c585da8fe9cd68e08590aa9ad35982ffa3c3` |
 | Digest da imagem | SHA-256 | `sha256:98ee1d6b5758dd6a61368729717390dc6969bd2437e82fadb3f8331eaafce700` (rebuild 1.8.2) |
 | Nginx | `nginx-app:80` | recebe do túnel Cloudflare |
 | Cloudflare | `jarvis.laytech.com.br` | TLS/HSTS no edge |

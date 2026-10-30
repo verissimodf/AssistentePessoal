@@ -1,15 +1,22 @@
 # Roadmap de evolução
 
-Atualizado após a release **1.8.2** (27/10/2026). O roadmap registra o que foi operacionalizado e
+Atualizado após a release **1.10.0** (30/10/2026). O roadmap registra o que foi operacionalizado e
 separa lacunas restantes de evoluções condicionais; nenhuma sugestão vira funcionalidade ativa sem
 validar necessidade, segurança, operação e recuperação.
 
-## Fechamento operacional da 1.8.2
+## Fechamento operacional do ciclo 1.8.0 → 1.10.0 (26/10 a 30/10/2026)
 
-- [x] Inbox AgentMail reivindicada explicitamente; zero eventos sem owner. Nenhum corpo de mensagem foi lido.
-- [x] Commit `88a3ce55` publicado; imagem 1.8.2 reconstruída com SHA completo, schema 15 e metadados verificados.
-- [x] Backend 636/636, frontend 109/109, avaliação offline 86/86, TypeScript, build e smoke do container aprovados.
-- [x] Migração v14→v15 concluída com backup verificado, integridade SQLite e FKs sem erros.
+- [x] **1.8.0–1.8.2:** AgentMail server-side com webhook Svix verificado, ownership explícito de
+  inboxes (v13/v14), avaliação offline de fluxos agênticos no CI e hardening do scheduler (v15).
+- [x] **1.9.0–1.9.3:** fila SQLite durável e idempotente (v16), retenção de memória opt-in com
+  quarentena (v17), OAuth Gmail/Graph por PKCE (v18), STT local whisper.cpp como profile isolado,
+  TTS validado com XTTS e navegador Playwright em worker sem rede com broker egress pinado (v19).
+- [x] **1.10.0:** streaming NDJSON do chat (`/api/chat/stream`), citações com snapshot pontual
+  (`meta.citations`), JEV Reflex advisory opt-in e atualização assistida por tag
+  (`npm run update:release`). Sem migração nova (schema 19).
+- [x] Backend **688/688**, frontend **109/109**, avaliação offline, TypeScript, build e smoke do
+  container aprovados. Deploy de produção verificado: imagem `assistente-pessoal:1.10.0`,
+  commit `2a3085f`, health `ok`, schema 19.
 
 ## Pendências operacionais
 
@@ -39,32 +46,40 @@ validar necessidade, segurança, operação e recuperação.
 - [ ] **Portão de release — parcial:** CI executa migração/testes e smoke descartável; o script verifica
   metadados OCI/build-info/API/painel. Ainda falta ensaio automatizado de rollback da aplicação com DB
   compatível, sem dados reais.
-- [ ] **Ciclo de vida de memória — parcial:** corrigir, apagar e exportar JSON por admin foi entregue;
-  auditoria guarda apenas metadados e atualização descarta embedding antigo. Retenção automática segue
-  desativada até definir período e consentimento explícito do administrador.
+- [ ] **Ciclo de vida de memória:** corrigir, apagar e exportar JSON por admin entregue; política
+  opt-in de retenção com prévia, quarentena restaurável e purga em lotes entregue na 1.9.0 (v17).
+  A retenção automática permanece desativada por padrão — exige consentimento explícito do
+  administrador.
 - [ ] **Qualidade do RAG — parcial:** painel mostra trecho, documento, bloco, modo, relevância e motivo do
   fallback; estados de indexação existentes e corpus sintético cobrem fallback/injeção. Falta métrica
   offline comparável de precisão/recall.
 - [ ] **Captura de conhecimento opt-in — parcial:** guardar memória manualmente já exige ação explícita;
   resumo de documento/conversa com prévia editável e confirmação antes de persistir ainda não existe.
-- [ ] **Calendário e tarefas — parcial:** ICS somente leitura já é suportado; CRUD local de tarefas e OAuth
-  Google/Microsoft não foram implementados. Sem requisitos de escrita/credenciais, manter ICS read-only.
+- [ ] **Calendário — parcial:** ICS somente leitura já é suportado; CRUD local de tarefas não foi
+  implementado. OAuth de e-mail (Gmail/Microsoft Graph, PKCE, escopos de envio opcionais com
+  confirmação manual) foi entregue na 1.9.0 (v18); OAuth de calendário continua sem requisito de
+  produto — manter ICS read-only.
 - [x] **Política de conectores de e-mail:** manter IMAP/SMTP como opções avançadas e AgentMail server-side
   para a integração por webhook; envio continua sob D9. OAuth Gmail/Microsoft não será adicionado sem
   requisito de produto e validação de credenciais/escopos.
-- [ ] **Fila local de tarefas longas:** o ledger do scheduler fornece dedupe, mas não é uma fila durável
-  de jobs. Adotar fila SQLite somente se medições mostrarem que execução atual não atende; então adicionar
-  cancelamento, retomada e idempotência de efeitos por ferramenta.
-- [ ] **Voz conversacional local — parcial:** TTS local opcional já funciona; STT local e streaming ainda
-  não foram validados com um motor/host disponível. Não habilitar captura ou persistência de áudio sem
+- [x] **Fila local de tarefas longa — durável:** entregue na 1.9.0 (v16): fila SQLite
+  idempotente com payload cifrado, leases e recovery conservador. Pendente apenas a retomada
+  automática (idempotência por ferramenta + reconciliação explícita, item abaixo).
+- [ ] **Voz conversacional local — parcial:** TTS local validado com XTTS (1.9.1) e STT local por
+  whisper.cpp entregue como perfil Docker isolado e opt-in (1.9.0). Streaming de voz ainda não foi
+  validado com um motor/host em produção. Não habilitar captura ou persistência de áudio sem
   indicador e consentimento.
 
-## Decisões atualizadas em 2026-10-27
+## Decisões atualizadas em 2026-10-30
 
-- Sem retenção automática de memória por padrão; primeiro definir período por administrador, preview e confirmação antes de remover dados.
-- Sem OAuth de terceiros nesta fase; ICS read-only e IMAP/SMTP/AgentMail existentes cobrem os fluxos disponíveis.
-- Sem Redis ou novo serviço de jobs: falta evidência de que o scheduler atual exija infraestrutura externa.
-- Sem STT local ativo: o container homologado não inclui motor de reconhecimento de fala local.
+- Sem retenção automática de memória por padrão; política opt-in entregue na 1.9.0 mantém período
+  por administrador, preview e confirmação antes de remover dados.
+- OAuth de terceiros entregue para **e-mail** (Gmail/Graph, Authorization Code + PKCE, tokens
+  cifrados) na 1.9.0; calendário permanece ICS read-only até haver requisito de produto.
+- Sem Redis ou novo serviço de jobs: a fila durável da 1.9.0 (v16) usa SQLite com payload cifrado
+  e leases; nenhuma infraestrutura externa foi adicionada.
+- STT local existe como perfil Docker opt-in e não faz parte do container homologado de produção;
+  sem captura ou persistência de áudio sem indicador e consentimento.
 
 
 ## Regras para priorização

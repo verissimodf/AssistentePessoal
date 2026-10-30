@@ -32,4 +32,4 @@ Selecione **Configurações → Voz → Transcrição local**. O áudio é limit
 
 ## Recuperação e validação
 
-As migrações fazem backup verificado antes de mudar schema. Antes de restaurar, pare o serviço e recupere em conjunto banco, `master.key` e backups necessários; siga [`BACKUP-E-RESTAURACAO.md`](BACKUP-E-RESTAURACAO.md). Testes automatizados cobrem ownership, idempotência, recovery seguro, quarentena, state/PKCE e validação de áudio. Não substituem OAuth real nem validação de qualidade com amostra de voz consentida.
+As migrações fazem backup verificado antes de mudar schema. Antes de restaurar, pare o serviço e recupere em conjunto banco, `master.key` e backups necessários; siga [`RECUPERACAO.md`](RECUPERACAO.md). Testes automatizados cobrem ownership, idempotência, recovery seguro, quarentena, state/PKCE e validação de áudio. Não substituem OAuth real nem validação de qualidade com amostra de voz consentida.

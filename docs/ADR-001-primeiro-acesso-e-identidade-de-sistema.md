@@ -15,7 +15,7 @@ redefinida. Nenhuma migração aplicada.
 O Gate F do G9 exige: zero contas antigas cadastradas ou autenticáveis, zero sessões/tokens
 válidos, `setupRequired=true` e a tela oficial de primeiro acesso.
 
-A tentativa de execução direta (relatada em `docs/ENTREGA-G9-2026-10-25.md`) falhou em três
+A tentativa de execução direta (relatada em `docs/historico/ENTREGA-G9-2026-10-25.md`) falhou em três
 controles de integridade. Este ADR formaliza o conflito, especifica as opções e apresenta a prova
 isolada da opção recomendada.
 
@@ -27,7 +27,7 @@ isolada da opção recomendada.
 | Migrações versionadas e checagem de dados preservados | `server/migrations.js:11` (`PRESERVED`), `:522` (`migrate`) |
 | Bootstrap / `setupRequired` / login | `server/auth.js:107-150`, `:231` |
 | Rotas e health | `server/index.js:216` |
-| Bloqueio reproduzido | `docs/ENTREGA-G9-2026-10-25.md` §7.2 |
+| Bloqueio reproduzido | `docs/historico/ENTREGA-G9-2026-10-25.md` §7.2 |
 | Backup usado na prova | `/opt/laytech-ai/backups/g9-pre-deploy-20261025T051816Z` |
 
 ---
@@ -45,7 +45,7 @@ isolada da opção recomendada.
 | F5 | `ownership` **aceita** `DELETE` (só UPDATE é bloqueado) | trigger é `BEFORE UPDATE` |
 | F6 | `admins` **não** está em `PRESERVED`; `memories`, `agents`, `approvals`, `audit` estão | `server/migrations.js:11` |
 | F7 | `setupRequired = COUNT(admins WHERE active=1) === 0`; login exige `active=1` | `server/auth.js:108`, `:231` |
-| F8 | O backup só restaura com `master.key` | `docs/BACKUP-E-RESTAURACAO.md` |
+| F8 | O backup só restaura com `master.key` | `docs/RECUPERACAO.md` |
 
 ### 2.2 Consequências diretas
 
@@ -272,7 +272,7 @@ enfraquecido para obter PASS.
 ## 9. Backup, recuperação e rollback
 
 - Backup obrigatório **antes** da operação: `.backup` do SQLite + `master.key`, ambos `600`,
-  diretório `700`, fora do repositório (`docs/BACKUP-E-RESTAURACAO.md`).
+  diretório `700`, fora do repositório (`docs/historico/BACKUP-E-RESTAURACAO.md`).
 - Rollback: parar o serviço, restaurar `jarvis.db` + `master.key`, remover `-shm`/`-wal`, subir.
 - Ensaio de rollback **já executado** (§6.3).
 - A operação não altera `ownership`, `conversations` nem `admin_settings`; logo o rollback só é

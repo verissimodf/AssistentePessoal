@@ -24,7 +24,7 @@ acontecem quando o provedor/integração correspondente está configurado e habi
 > [`docs/VALIDACAO.md`](docs/VALIDACAO.md).
 > O worker isolado e o broker aplicam a allowlist exata; a integração permanece desligada até
 > habilitação deliberada pelo operador. Uso e smoke test: [`docs/NAVEGADOR.md`](docs/NAVEGADOR.md).
-> Ver [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md) e
+> Ver [`docs/RUNBOOK-RELEASE-2026-10-18.md`](docs/RUNBOOK-RELEASE-2026-10-18.md) e
 > [`reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md`](reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md).
 
 ---
@@ -205,7 +205,7 @@ de exploração.
 - SQLite nativo em WAL, esquema **18** (`PRAGMA user_version`), migrações versionadas com backup
   verificado antes de alterar o schema.
 - Backup consistente: `VACUUM INTO` (ou `.backup`) do banco **e** cópia de `master.key`; sem a
-  chave o serviço não inicia. Ver [`docs/BACKUP-E-RESTAURACAO.md`](docs/BACKUP-E-RESTAURACAO.md) e
+  chave o serviço não inicia. Ver [`docs/RECUPERACAO.md`](docs/RECUPERACAO.md) e
   o runbook de deploy [`deploy/BACKUP-RESTORE.md`](deploy/BACKUP-RESTORE.md).
 - O timer `jarvis-data-backup.timer` está instalado/habilitado; o script `deploy/backup-data.sh`
   (modo executável corrigido) mantém os 7 backups mais recentes no mesmo disco, com checksums de
@@ -315,7 +315,7 @@ npm run build
 TypeScript sem erros, lint sem erros/avisos e build Vite/Nitro de produção OK. O worker Playwright
 foi validado em projeto candidato isolado, sem alterar o container ativo. Veja o estado e as
 instruções operacionais de integração em
-[`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md).
+[`docs/RUNBOOK-RELEASE-2026-10-18.md`](docs/RUNBOOK-RELEASE-2026-10-18.md).
 O CI do GitHub Actions executa Ubuntu, Windows e build/inicialização do container; o job Windows
 depende de `.gitattributes` para preservar LF nas skills.
 
@@ -358,10 +358,9 @@ depende de `.gitattributes` para preservar LF nas skills.
 - [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md) — topologia, fluxo e componentes.
 - [`docs/CONFIGURACAO.md`](docs/CONFIGURACAO.md) — provedores, integrações, canais e variáveis.
 - [`docs/NAVEGADOR.md`](docs/NAVEGADOR.md) — worker Playwright, broker egress e smoke test isolado.
-- [`docs/BACKUP-E-RESTAURACAO.md`](docs/BACKUP-E-RESTAURACAO.md) — backup, retenção, RPO/RTO e restore.
+- [`docs/RECUPERACAO.md`](docs/RECUPERACAO.md) — backup, migrações, rollback e restore.
 - [`docs/OPERACAO-SLO-E-INCIDENTES.md`](docs/OPERACAO-SLO-E-INCIDENTES.md) — SLOs propostos e runbook.
 - [`docs/RUNBOOK-RELEASE-2026-10-18.md`](docs/RUNBOOK-RELEASE-2026-10-18.md) — release/deploy.
-- [`HOMOLOGACAO_STATUS.md`](HOMOLOGACAO_STATUS.md) — homologação e histórico.
 - [`reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md`](reports/JARVIS-AGENT-SKILLS-INTEGRATION-02.md) — evidência 1.7.8.
 
 ---
