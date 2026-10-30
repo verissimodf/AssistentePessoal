@@ -265,7 +265,7 @@ test("v19 encrypts pending browser fill text in place", () => {
   const beforeCount = db.prepare("SELECT COUNT(*) n FROM approval_actions").get().n;
   const encryptFn = (text) => `enc_test:${Buffer.from(text, "utf8").toString("base64")}`;
   const result = migrate(db, dir, { encryptFn });
-  assert.equal(result.to, 19);
+  assert.equal(result.to, targetVersion());
 
   const storedRow = db
     .prepare("SELECT action,correlation_id FROM approval_actions WHERE approval_id='a1'")

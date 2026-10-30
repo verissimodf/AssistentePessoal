@@ -50,6 +50,7 @@ de voz e painel no mesmo container e encerra o conjunto se um componente morrer.
 | LLM/router          | `server/llm.js`                                                                                                                                | providers, fallback, timeouts, telemetria, testes de provider                                                |
 | Reflex              | `server/reflex.js`                                                                                                                             | classificador advisory pré-resposta (opt-in); registra rota/confiança/latência em `meta.reflex` — nunca gatilha nem autoriza |
 | Agentes/ferramentas | `server/tools.js`, `server/bots.js`                                                                                                            | tool calling, autonomia, aprovações, auditoria                                                               |
+| Workforce           | `server/workforce.js`                                                                                                                          | especialistas persistentes (v20), runs duráveis, orçamento hierárquico, delegação, reconciliação de `unknown` |
 | Fila de scheduler   | `server/jobs.js`                                                                                                                               | jobs SQLite idempotentes, payload cifrado, leases e recovery sem replay cego                                 |
 | Retenção de memória | `server/memory-retention.js`                                                                                                                   | política opt-in por admin, quarentena, restore e purga limitada                                              |
 | OAuth de e-mail     | `server/oauth.js`                                                                                                                              | Gmail/Graph, Authorization Code + PKCE, refresh token cifrado e envio opcional                               |
@@ -148,8 +149,11 @@ escopo. O CSRF é obrigatório em toda mutação com cookie.
 ## 6. Dados e migrações
 
 - SQLite nativo (`node:sqlite`) em WAL, `busy_timeout=5000`, transações `BEGIN IMMEDIATE`.
-- `PRAGMA user_version` é a versão do schema; a release 1.10.0 usa **19** (a 1.10.0 não teve
-  migração — novos dados em `conversation_messages.meta`, JSON livre). As v16–v18 adicionam
+- `PRAGMA user_version` é a versão do schema; a evolução Fase 1 (branch
+  `evolution/phase-1-agent-workforce-20261030`) adiciona a migração **20** — tabelas
+  `agent_definitions`/`agent_runs` da Workforce, com ownership estendido. Em `main`, a release
+  1.10.0 usa **19** (a 1.10.0 não teve migração — novos dados em `conversation_messages.meta`,
+  JSON livre). As v16–v18 adicionam
   fila durável de scheduler, políticas de retenção e conexões OAuth com backup verificado e
   preservação das linhas anteriores. A v15 cria o ledger
   idempotente `bot_schedule_claims`; v14 adicionou `agentmail_inboxes` e ownership explícito.

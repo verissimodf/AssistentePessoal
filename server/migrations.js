@@ -760,6 +760,141 @@ BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
       }
     },
   },
+  {
+    // Fase 1 da evolução (docs/evolution/phase-1): Workforce de agentes. Tabelas novas — a
+    // legada `agents` (store JSON, PRESERVED) permanece intocada. O ownership é recriado para
+    // estender o CHECK com os tipos novos; linhas existentes são preservadas integralmente.
+    version: 20,
+    name: "workforce: persistent agent definitions and runs with hierarchical budgets",
+    sql: `
+CREATE TABLE IF NOT EXISTS agent_definitions (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'specialist' CHECK (role IN ('orchestrator','specialist','worker')),
+  description TEXT NOT NULL DEFAULT '',
+  version INTEGER NOT NULL DEFAULT 1,
+  instructions TEXT NOT NULL DEFAULT '',
+  instruction_ref TEXT,
+  instruction_checksum TEXT,
+  model_preferences TEXT NOT NULL DEFAULT '{}',
+  permitted_tools TEXT NOT NULL DEFAULT '[]',
+  permission_scopes TEXT NOT NULL DEFAULT '[]',
+  resource_budget TEXT NOT NULL DEFAULT '{}',
+  execution_limits TEXT NOT NULL DEFAULT '{}',
+  enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_definitions_owner ON agent_definitions(owner_admin_id);
+
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id TEXT PRIMARY KEY,
+  definition_id TEXT NOT NULL REFERENCES agent_definitions(id) ON DELETE CASCADE,
+  definition_version INTEGER NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  parent_run_id TEXT REFERENCES agent_runs(id) ON DELETE SET NULL,
+  correlation_id TEXT NOT NULL,
+  idempotency_key TEXT,
+  objective TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','awaiting_approval','completed','failed','cancelled','unknown')),
+  depth INTEGER NOT NULL DEFAULT 0 CHECK (depth >= 0),
+  budget_json TEXT NOT NULL DEFAULT '{}',
+  usage_json TEXT NOT NULL DEFAULT '{}',
+  result_json TEXT,
+  error_code TEXT,
+  checkpoint_json TEXT,
+  evidence_ids TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_runs_idem ON agent_runs(owner_admin_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_agent_runs_owner ON agent_runs(owner_admin_id, status);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_parent ON agent_runs(parent_run_id);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_corr ON agent_runs(correlation_id);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v19;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v19;
+DROP TABLE ownership_v19;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "agent_definitions",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "name",
+          "role",
+          "description",
+          "version",
+          "instructions",
+          "instruction_ref",
+          "instruction_checksum",
+          "model_preferences",
+          "permitted_tools",
+          "permission_scopes",
+          "resource_budget",
+          "execution_limits",
+          "enabled",
+          "metadata",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "agent_runs",
+        type: "table",
+        columns: [
+          "id",
+          "definition_id",
+          "definition_version",
+          "owner_admin_id",
+          "parent_run_id",
+          "correlation_id",
+          "idempotency_key",
+          "objective",
+          "status",
+          "depth",
+          "budget_json",
+          "usage_json",
+          "result_json",
+          "error_code",
+          "checkpoint_json",
+          "evidence_ids",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
 ];
 
 const tableExists = (db, t) =>

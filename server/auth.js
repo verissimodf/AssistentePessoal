@@ -33,6 +33,12 @@ export const SCOPES = [
   "documents:read",
   "documents:write",
   "skills:read",
+  // Workforce (evolução Fase 1): catálogo de especialistas e execução/delegação de runs.
+  // Nunca concedidos a bots por padrão (fora de BOT_SCOPES); delegação de agente não herda
+  // estes escopos — o conjunto efetivo de cada run é calculado no backend.
+  "workforce:read",
+  "workforce:write",
+  "workforce:run",
 ];
 /** Scopes reserved for a human admin session — never grantable to a token. */
 export const ADMIN_ONLY = [
@@ -75,6 +81,10 @@ export const TOOL_SCOPES = {
   // D9: a ferramenta só enfileira aprovação humana (nunca dispara a API de envio diretamente).
   agentmail_read_email: "comms:read",
   agentmail_send_email: "comms:send",
+  // Workforce (evolução Fase 1): delegação a especialistas. O escopo precisa estar no conjunto
+  // EFETIVO calculado pelo backend para o run (delegação nunca amplia privilégio); os limites
+  // (profundidade, filhos, orçamento) são verificados em server/workforce.js.
+  delegate_agent: "workforce:run",
 };
 
 /** Loopback sources (all local processes look identical here). */

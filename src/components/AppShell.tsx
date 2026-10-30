@@ -8,6 +8,7 @@ import {
   LogOut,
   Mail,
   MessageSquare,
+  Network,
   Settings,
   Users,
   Search,
@@ -30,6 +31,7 @@ export function AppShell() {
     { to: "/rascunhos", label: "E-mail", icon: Mail },
     { to: "/agentes", label: t("nav_agents"), icon: Users },
     { to: "/bots", label: t("nav_bots"), icon: Bot },
+    { to: "/workforce", label: t("nav_workforce"), icon: Network },
     { to: "/configuracoes", label: t("nav_settings"), icon: Settings },
   ] as const;
   return (

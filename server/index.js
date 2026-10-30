@@ -81,6 +81,20 @@ import {
 } from "./conversations.js";
 import { evaluateReflex } from "./reflex.js";
 import { runBot, listRuns, startScheduler, triggerByText, auditLegacyBlocked } from "./bots.js";
+import {
+  createDefinition,
+  listDefinitions,
+  getDefinition,
+  updateDefinition,
+  deleteDefinition,
+  listTemplates,
+  startRun,
+  getRun,
+  listRuns as listWorkforceRuns,
+  cancelWorkforceRun,
+  reconcileRun,
+  recoverWorkforceRuns,
+} from "./workforce.js";
 import { listScheduledJobs } from "./jobs.js";
 import {
   memoryRetentionPolicy,
@@ -893,6 +907,99 @@ route("GET", "/api/bots/:id/runs", "bots:read", ({ params, principal }) => {
   return listRuns(params.id, me(principal));
 });
 route("GET", "/api/jobs", "bots:read", ({ principal }) => listScheduledJobs(me(principal)));
+
+// ---------- Workforce (evolução Fase 1, docs/evolution/phase-1) ----------
+// AgentDefinition/AgentRun persistentes com orçamento hierárquico e reconciliação. Toda rota
+// passa pelo dispatcher (sessão/escopo/CSRF) e toda leitura/escrita respeita ownership.
+const workforceError = (e) => {
+  const code = e?.message || "workforce_error";
+  const map = {
+    workforce_name_invalid: 400,
+    workforce_role_invalid: 400,
+    workforce_tools_invalid: 400,
+    workforce_scopes_invalid: 400,
+    workforce_owner_required: 403,
+    workforce_agent_disabled: 409,
+    workforce_definition_active_runs: 409,
+    workforce_reconcile_required: 409,
+    workforce_reconcile_not_unknown: 409,
+    workforce_reconcile_no_evidence: 409,
+    workforce_objective_required: 400,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+route("GET", "/api/workforce/templates", "workforce:read", () => listTemplates());
+route("GET", "/api/workforce/agents", "workforce:read", ({ principal }) =>
+  listDefinitions(me(principal)),
+);
+route("POST", "/api/workforce/agents", "workforce:write", ({ body, principal }) => {
+  const adminId = me(principal);
+  if (!adminId) throw new AuthError(403, "owner_required");
+  try {
+    return createDefinition(adminId, body || {});
+  } catch (e) {
+    throw workforceError(e);
+  }
+});
+route("GET", "/api/workforce/agents/:id", "workforce:read", ({ params, principal }) => {
+  const def = getDefinition(me(principal), params.id);
+  if (!def) notFound();
+  return def;
+});
+route("PUT", "/api/workforce/agents/:id", "workforce:write", ({ params, body, principal }) => {
+  try {
+    const out = updateDefinition(me(principal), params.id, body || {});
+    if (!out) notFound();
+    return out;
+  } catch (e) {
+    throw workforceError(e);
+  }
+});
+route("DELETE", "/api/workforce/agents/:id", "workforce:write", ({ params, principal }) => {
+  try {
+    if (!deleteDefinition(me(principal), params.id)) notFound();
+    return { ok: true };
+  } catch (e) {
+    throw workforceError(e);
+  }
+});
+route("POST", "/api/workforce/agents/:id/run", "workforce:run", ({ params, body, principal }) => {
+  const started = startRun({
+    adminId: me(principal),
+    definitionId: params.id,
+    objective: body?.objective,
+    idempotencyKey: body?.idempotency_key ?? null,
+    principal,
+  });
+  if (started.error === "not_found") notFound();
+  if (started.error) throw workforceError(new Error(started.error));
+  return { run: started.run, deduplicated: !!started.deduplicated };
+});
+route("GET", "/api/workforce/runs", "workforce:read", ({ query, principal }) =>
+  listWorkforceRuns(me(principal), {
+    limit: query?.limit,
+    offset: query?.offset,
+    status: query?.status,
+    definitionId: query?.definition_id,
+  }),
+);
+route("GET", "/api/workforce/runs/:id", "workforce:read", ({ params, principal }) => {
+  const run = getRun(me(principal), params.id);
+  if (!run) notFound();
+  return run;
+});
+route("POST", "/api/workforce/runs/:id/cancel", "workforce:run", ({ params, principal }) => {
+  const out = cancelWorkforceRun(me(principal), params.id);
+  if (out.error === "not_found") notFound();
+  if (out.error) throw workforceError(new Error(out.error));
+  return out.run || out;
+});
+route("POST", "/api/workforce/runs/:id/reconcile", "session", ({ params, body, principal }) => {
+  const out = reconcileRun(me(principal), params.id, { decision: body?.decision ?? null });
+  if (out.error === "not_found") notFound();
+  if (out.error) throw workforceError(new Error(out.error));
+  return out;
+});
 // Cancelamento cooperativo de uma execução em andamento (checado entre passos do loop).
 route("POST", "/api/runs/:id/cancel", "bots:run", ({ params, principal }) => {
   if (!owns(me(principal), "run", params.id)) notFound();
@@ -1395,6 +1502,7 @@ if (isMain && !process.env.JARVIS_NO_LISTEN) {
   });
   setInterval(() => auth.purgeAttempts(), 3600_000).unref();
   startScheduler();
+  recoverWorkforceRuns();
   // P2: inbound messages run as the admin whose own settings hold the channel credentials.
   const activeAdmins = () =>
     db

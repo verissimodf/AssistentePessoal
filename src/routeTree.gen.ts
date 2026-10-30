@@ -18,6 +18,7 @@ import { Route as ExecucoesRouteImport } from './routes/execucoes'
 import { Route as MemoriaRouteImport } from './routes/memoria'
 import { Route as RascunhosRouteImport } from './routes/rascunhos'
 import { Route as VisaoGeralRouteImport } from './routes/visao-geral'
+import { Route as WorkforceRouteImport } from './routes/workforce'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -64,6 +65,11 @@ const VisaoGeralRoute = VisaoGeralRouteImport.update({
   path: '/visao-geral',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkforceRoute = WorkforceRouteImport.update({
+  id: '/workforce',
+  path: '/workforce',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/memoria': typeof MemoriaRoute
   '/rascunhos': typeof RascunhosRoute
   '/visao-geral': typeof VisaoGeralRoute
+  '/workforce': typeof WorkforceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -86,6 +93,7 @@ export interface FileRoutesByTo {
   '/memoria': typeof MemoriaRoute
   '/rascunhos': typeof RascunhosRoute
   '/visao-geral': typeof VisaoGeralRoute
+  '/workforce': typeof WorkforceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -98,6 +106,7 @@ export interface FileRoutesById {
   '/memoria': typeof MemoriaRoute
   '/rascunhos': typeof RascunhosRoute
   '/visao-geral': typeof VisaoGeralRoute
+  '/workforce': typeof WorkforceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,6 +120,7 @@ export interface FileRouteTypes {
     | '/memoria'
     | '/rascunhos'
     | '/visao-geral'
+    | '/workforce'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
     | '/memoria'
     | '/rascunhos'
     | '/visao-geral'
+    | '/workforce'
   id:
     | '__root__'
     | '/'
@@ -133,6 +144,7 @@ export interface FileRouteTypes {
     | '/memoria'
     | '/rascunhos'
     | '/visao-geral'
+    | '/workforce'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -145,6 +157,7 @@ export interface RootRouteChildren {
   MemoriaRoute: typeof MemoriaRoute
   RascunhosRoute: typeof RascunhosRoute
   VisaoGeralRoute: typeof VisaoGeralRoute
+  WorkforceRoute: typeof WorkforceRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -212,6 +225,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VisaoGeralRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workforce': {
+      id: '/workforce'
+      path: '/workforce'
+      fullPath: '/workforce'
+      preLoaderRoute: typeof WorkforceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -225,6 +245,7 @@ const rootRouteChildren: RootRouteChildren = {
   MemoriaRoute: MemoriaRoute,
   RascunhosRoute: RascunhosRoute,
   VisaoGeralRoute: VisaoGeralRoute,
+  WorkforceRoute: WorkforceRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -852,3 +852,179 @@ export async function getRouterTelemetry(): Promise<ProviderTelemetry | null> {
     return null;
   }
 }
+
+// ---------- agent workforce ----------
+export type WorkforceRole = "orchestrator" | "specialist" | "worker";
+export type WorkforceRunStatus =
+  "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "unknown";
+export type WorkforceVerification = "verified" | "unverified" | "partial" | "none";
+
+export type WorkforceDefinition = {
+  id: string;
+  name: string;
+  role: WorkforceRole;
+  description: string;
+  version: number;
+  instructions: string;
+  model_preferences: { provider: string | null; model: string | null };
+  permitted_tools: string[];
+  permission_scopes: string[];
+  resource_budget: {
+    max_depth: number;
+    max_children: number;
+    max_tree_runs: number;
+    max_tool_calls: number;
+    max_model_calls: number;
+    max_tokens: number | null;
+    runtime_ms: number;
+    max_retries: number;
+    max_concurrent_children: number;
+  };
+  execution_limits: Record<string, unknown>;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkforceRunChild = {
+  id: string;
+  definition: string | null;
+  status: string;
+  verification: string;
+  depth: number;
+  created_at: string;
+};
+
+export type WorkforceRun = {
+  id: string;
+  definition_id: string;
+  parent_run_id: string | null;
+  correlation_id: string;
+  objective: string;
+  status: WorkforceRunStatus;
+  depth: number;
+  usage: { tool_calls?: number; model_calls?: number; estimated_tokens?: number };
+  result: {
+    status: string;
+    output: string;
+    tool_names: string[];
+    children: { id: string; definition: string; status: string }[];
+    limitations: string[];
+  } | null;
+  error_code: string | null;
+  verification: WorkforceVerification;
+  definition: { name: string; role: string } | null;
+  children: WorkforceRunChild[];
+  created_at: string;
+  finished_at: string | null;
+};
+
+export type WorkforceTemplate = {
+  key: string;
+  name: string;
+  role: WorkforceRole;
+  description: string;
+  permitted_tools: string[];
+  permission_scopes: string[];
+};
+
+export type WorkforceDefinitionBody = Omit<Partial<WorkforceDefinition>, "resource_budget"> & {
+  name: string;
+  resource_budget?: Partial<WorkforceDefinition["resource_budget"]>;
+};
+
+export async function listWorkforceAgents(): Promise<WorkforceDefinition[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<WorkforceDefinition[]>("/api/workforce/agents");
+  } catch {
+    return null;
+  }
+}
+
+export async function createWorkforceAgent(
+  body: WorkforceDefinitionBody,
+): Promise<WorkforceDefinition | null> {
+  if (!(await ping())) return null;
+  return await api<WorkforceDefinition>("/api/workforce/agents", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updateWorkforceAgent(
+  id: string,
+  body: WorkforceDefinitionBody,
+): Promise<WorkforceDefinition | null> {
+  if (!(await ping())) return null;
+  return await api<WorkforceDefinition>(`/api/workforce/agents/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteWorkforceAgent(id: string): Promise<{ ok: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: boolean }>(`/api/workforce/agents/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function runWorkforceAgent(
+  id: string,
+  objective: string,
+): Promise<{ run: WorkforceRun; deduplicated: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ run: WorkforceRun; deduplicated: boolean }>(
+    `/api/workforce/agents/${encodeURIComponent(id)}/run`,
+    { method: "POST", body: JSON.stringify({ objective }) },
+  );
+}
+
+export async function listWorkforceRuns(): Promise<{
+  items: WorkforceRun[];
+  has_more: boolean;
+} | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<{ items: WorkforceRun[]; has_more: boolean }>("/api/workforce/runs?limit=50");
+  } catch {
+    return null;
+  }
+}
+
+export async function getWorkforceRun(id: string): Promise<WorkforceRun | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<WorkforceRun>(`/api/workforce/runs/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function cancelWorkforceRun(id: string): Promise<WorkforceRun | null> {
+  if (!(await ping())) return null;
+  return await api<WorkforceRun>(`/api/workforce/runs/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+  });
+}
+
+export async function reconcileWorkforceRun(
+  id: string,
+  decision?: string,
+): Promise<WorkforceRun | null> {
+  if (!(await ping())) return null;
+  return await api<WorkforceRun>(`/api/workforce/runs/${encodeURIComponent(id)}/reconcile`, {
+    method: "POST",
+    body: JSON.stringify({ decision: decision ?? null }),
+  });
+}
+
+export async function listWorkforceTemplates(): Promise<WorkforceTemplate[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<WorkforceTemplate[]>("/api/workforce/templates");
+  } catch {
+    return null;
+  }
+}

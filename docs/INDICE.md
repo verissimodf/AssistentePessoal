@@ -65,6 +65,7 @@ entrega, especificações superadas e fotografias de releases anteriores estão 
 | Documento | Para quê |
 |---|---|
 | [`evolution/phase-0/README.md`](evolution/phase-0/README.md) | Fase 0 — arquitetura e segurança da evolução: inventário, alvo, contratos, ameaças, ADRs, backlog |
+| [`evolution/phase-1/README.md`](evolution/phase-1/README.md) | Fase 1 — Agent Workforce: definições, runs, orçamento hierárquico, delegação e reconciliação |
 
 ## Histórico
 

@@ -240,6 +240,22 @@ export const TOOL_META = {
     limites: ["Somente leitura; restrito estritamente ao diretório do Hub de Skills."],
     testes: ["tests/skills-hub.test.mjs"],
   },
+  delegate_agent: {
+    nome: "Delegação a especialista (Workforce)",
+    portao:
+      "Escopo workforce:run no conjunto EFETIVO calculado pelo backend (interseção escopos pedidos ∩ escopos do run pai — delegação nunca amplia privilégio). Profundidade, nº de especialistas, árvore e orçamento verificados em transação; o resultado volta como dado não confiável, nunca como autorização.",
+    deps: "Tabelas agent_definitions/agent_runs (schema 20) e definição habilitada com ownership.",
+    limites: [
+      "Sub-orçamento nunca supera o orçamento restante do pai; excedentes são recusados com código tipado.",
+      "Efeitos externos do especialista seguem D9 normalmente.",
+      "Run interrompido vira `unknown` e só sai por reconciliação auditada — nunca re-executa cego.",
+    ],
+    testes: [
+      "tests/workforce-core.test.mjs",
+      "tests/workforce-security.test.mjs",
+      "tests/workforce-migration.test.mjs",
+    ],
+  },
 };
 
 const PROVIDER_NOMES = {
