@@ -2,6 +2,20 @@
 
 Todas as mudanças notáveis neste projeto serão documentadas neste arquivo. O formato é baseado no [Keep a Changelog](https://keepachangelog.com) e este projeto adere ao [Semantic Versioning](https://semver.org).
 
+## [1.10.0] — 2026-10-30
+
+### Adicionado
+
+- Streaming de progresso no chat do painel (`POST /api/chat/stream`, NDJSON): eventos `reflex` (rota da mensagem), `progress` (etapas/ferramentas em execução) e `final` (troca completa persistida). O `/api/chat` continua intocado como fallback transparente do cliente (demo/rede/build antigo).
+- Citações com snapshot pontual (`meta.citations`): cada `document_search` registra a fonte usada (documento, chunk, modo e score) **no instante da resposta** — a referência sobrevive a edições ou exclusão posterior do documento. Exibida no painel em bloco "Fontes".
+- JEV Reflex (advisory, **opt-in** por administrador em Configurações → Preferências): classificador pré-resposta registrado em `meta.reflex` (rota vault/communication/task/general/insufficient, confiança, latência, modelo). Nunca gatilha, bloqueia ou autoriza nada; em qualquer falha do roteador o chat segue normal com fonte "fallback" explicitamente identificada. Canais externos (Telegram/bots) não passam pelo Reflex.
+- Botão de cancelamento do chat durante o processamento (remove o placeholder ao vivo; sem marca de falha) e progresso ao vivo (etapas e ferramenta em chamada) no painel.
+- `npm run update:release` (`scripts/update-release.sh`): atualização assistida por tag com **backup tar verificado** de `data/` antes de tocar o código, teste de serviço parado via health ping, dependências/testes/build idênticos ao Dockerfile e instruções exatas de reversão. Nunca inicia o serviço.
+
+### Validação
+
+- Backend **688/688** (incluindo 7 novos em `tests/chat-stream.test.mjs`: authz do stream, recusa do formato legado, status HTTP em validação pré-stream, persistência/idempotência idênticas ao `/api/chat`, reflex "jev" e fallback, erro de provedor estruturado e citações persistidas via `document_search`).
+
 ## [1.9.3] — 2026-10-28
 
 ### Segurança — Playwright

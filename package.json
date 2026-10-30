@@ -1,6 +1,6 @@
 {
   "name": "assistente-pessoal-jarvis-frontend",
-  "version": "1.9.3",
+  "version": "1.10.0",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -13,7 +13,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "eval:agents": "node scripts/evaluate-agent-flows.mjs",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "update:release": "scripts/update-release.sh"
   },
   "overrides": {
     "rolldown": "1.2.1",
