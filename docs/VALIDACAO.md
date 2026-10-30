@@ -81,6 +81,29 @@ recriada; o container ativo permaneceu em 1.9.2 e `browser_enabled=false`.
 capacidade continua opt-in; a release 1.9.3 foi publicada e implantada conforme a seção seguinte,
 sem habilitar a integração em produção.
 
+## Deploy de produção 1.10.0 — 2026-10-30
+
+| Item                | Evidência pós-deploy                                                                                                                                                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Commit da imagem    | `2a3085f50944aca581c4405b9e8b5b34a4d93cbf` (`main`, `v1.10.0` em `origin/main`)                                                                                                                                                                        |
+| Imagem              | `assistente-pessoal:1.10.0`; ID `sha256:bf877ef8623905f4b9265dba8961c585da8fe9cd68e08590aa9ad35982ffa3c3`                                                                                                                                              |
+| Build               | `2026-10-30T15:26:24Z`; schema de build 19; `commitStatus=Registrado`                                                                                                                                                                                  |
+| Gate de imagem      | `scripts/verificar-imagem-release.sh`: labels, build-info, API health e painel **APROVADOS**                                                                                                                                                           |
+| Migração            | **nenhuma** — schema permanece 19; novos dados (`citations`/`reflex`) em `conversation_messages.meta` (JSON livre, v13+)                                                                                                                               |
+| Backup externo      | `/opt/laytech-ai/jarvis-data-backups/manual-2026-10-30T12-26-18-792Z-pre-1.10.0`: cópia `VACUUM INTO` verificada pela rotina `backupAndVerify` do próprio servidor + `master.key`; manifesto SHA-256 conferido, diretório `0700`, banco e chave `0600` |
+| Container           | `assistente-pessoal:1.10.0`, `running/healthy`, reinícios **0**                                                                                                                                                                                        |
+| API e painel        | `/api/health` HTTP **200** com `version 1.10.0`, `commit 2a3085f`, `schema 19`, `setupRequired=false`; painel HTTP **200** via nginx                                                                                                                   |
+| Banco após deploy   | schema 19, `integrity_check=ok`, `foreign_key_check=0`; 1 admin preservado                                                                                                                                                                             |
+| Novas rotas         | `POST /api/chat/stream` **verificada no choke-point**: sem sessão → `401 {"error":"unauthenticated"}` (NDJSON nunca aberto)                                                                                                                            |
+| `/api/chat`         | intocado (formato legado `messages` e fluxo persistente idênticos; fallback do painel)                                                                                                                                                                 |
+| Rollback disponível | Imagem anterior `assistente-pessoal:1.9.3` preservada localmente; backup externo acima                                                                                                                                                                 |
+
+O deploy recriou apenas o serviço `assistente` (`up -d --no-build`); os volumes de dados e a rede
+persistente foram mantidos. O profile Playwright segue opt-in (`browser_enabled=false`). Streaming
+NDJSON usa `x-accel-buffering: no` para atravessar o Nginx sem buffer; o JEV Reflex fica
+desligado por padrão (opt-in por administrador em Configurações → Preferências). Evidências são
+verificações pontuais de 30/10/2026.
+
 ## Deploy de produção 1.9.3 — 2026-10-28
 
 | Item                | Evidência pós-deploy                                                                                                                               |

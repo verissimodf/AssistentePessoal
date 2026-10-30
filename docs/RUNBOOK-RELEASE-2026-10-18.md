@@ -2,13 +2,13 @@
 
 ## Release implantada — 1.10.0 (2026-10-30)
 
-| Item | Valor |
-| --- | --- |
-| Versão | `1.10.0` (`package.json`) |
-| Esquema | `19` (`PRAGMA user_version`; sem migração — novos dados em `conversation_messages.meta`, JSON livre) |
-| Compose ativo | `docker-compose.yml` (serviço `assistente`) |
-| Build args | `BUILD_VERSION`, `BUILD_COMMIT`, `BUILD_COMMIT_STATUS`, `SCHEMA_VERSION`, `BUILD_TIME`, `RELEASE_BUILD=1` |
-| Novidades | Streaming NDJSON do chat (`/api/chat/stream`), citações pontuais (`meta.citations`), JEV Reflex advisory opt-in e `npm run update:release` (atualização por tag com backup verificado) |
+| Item                  | Valor                                                                                                                                                                                                                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Versão                | `1.10.0` (`package.json`)                                                                                                                                                                                                                                                                                     |
+| Esquema               | `19` (`PRAGMA user_version`; sem migração — novos dados em `conversation_messages.meta`, JSON livre)                                                                                                                                                                                                          |
+| Compose ativo         | `docker-compose.yml` (serviço `assistente`)                                                                                                                                                                                                                                                                   |
+| Build args            | `BUILD_VERSION`, `BUILD_COMMIT`, `BUILD_COMMIT_STATUS`, `SCHEMA_VERSION`, `BUILD_TIME`, `RELEASE_BUILD=1`                                                                                                                                                                                                     |
+| Novidades             | Streaming NDJSON do chat (`/api/chat/stream`), citações pontuais (`meta.citations`), JEV Reflex advisory opt-in e `npm run update:release` (atualização por tag com backup verificado)                                                                                                                        |
 | Atualização assistida | `scripts/update-release.sh`: exige serviço parado (health ping), backup tar verificado de `data/`, checkout de tag, testes em banco temporário, build idêntico ao Dockerfile e instruções de reversão — launcher completo do deploy segue manual (build + `verificar-imagem-release.sh` + `up -d --no-build`) |
 
 ```bash
@@ -34,13 +34,13 @@ permanece idêntico (fallback do painel).
 
 ## Release implantada — 1.8.1 (2026-10-27)
 
-| Item | Valor |
-| --- | --- |
-| Versão | `1.8.1` (`package.json`) |
-| Esquema | `14` (`PRAGMA user_version`, ownership explícito da inbox AgentMail) |
-| Compose ativo | `docker-compose.yml` (serviço `assistente`) |
-| Build args | `BUILD_VERSION`, `BUILD_COMMIT`, `BUILD_COMMIT_STATUS`, `SCHEMA_VERSION`, `BUILD_TIME`, `RELEASE_BUILD=1` |
-| Health | `/api/health` expõe `version`, `commit`, `commitStatus`, `schemaVersion`, `schemaVersionBuild`, `buildTime` |
+| Item          | Valor                                                                                                       |
+| ------------- | ----------------------------------------------------------------------------------------------------------- |
+| Versão        | `1.8.1` (`package.json`)                                                                                    |
+| Esquema       | `14` (`PRAGMA user_version`, ownership explícito da inbox AgentMail)                                        |
+| Compose ativo | `docker-compose.yml` (serviço `assistente`)                                                                 |
+| Build args    | `BUILD_VERSION`, `BUILD_COMMIT`, `BUILD_COMMIT_STATUS`, `SCHEMA_VERSION`, `BUILD_TIME`, `RELEASE_BUILD=1`   |
+| Health        | `/api/health` expõe `version`, `commit`, `commitStatus`, `schemaVersion`, `schemaVersionBuild`, `buildTime` |
 
 ```bash
 cd /opt/laytech-ai/AssistentePessoal
@@ -84,15 +84,15 @@ de teste descartável.
 
 ## 1. Identidade do release
 
-| Item | Valor | Como foi obtido |
-| --- | --- | --- |
-| Branch | `main` | `git branch --show-current` |
-| Commit | `1972e00b4e2d2a88516df7e29fd2227260bfa5d6` | `git rev-parse HEAD` |
-| Versão (`APP_VERSION`) | `1.0.0` | `node -p 'require("./package.json").version'` (fonte versionada; **não inventada**) |
-| Build-time do candidato validado | `2026-10-18T16:53:26Z` | `server/build-info.json` dentro da imagem |
-| Digest da imagem candidata validada (`p0.3-rc2`) | `sha256:bf71660a914606adb97f381862b02650efab2ab56c08bb58e6dc94f1541527d4` | `docker inspect assistente-pessoal:p0.3-rc2` |
-| Labels OCI | `org.opencontainers.image.revision=1972e00b…`, `org.opencontainers.image.version=1.0.0` | `docker inspect … --format '{{json .Config.Labels}}'` |
-| Produção atual | imagem `assistente-pessoal:1.2.2-gigabrain1`, esquema **10**, `integrity_check=ok`, `healthy` | inspeção só-leitura em 2026-10-18 |
+| Item                                             | Valor                                                                                         | Como foi obtido                                                                     |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Branch                                           | `main`                                                                                        | `git branch --show-current`                                                         |
+| Commit                                           | `1972e00b4e2d2a88516df7e29fd2227260bfa5d6`                                                    | `git rev-parse HEAD`                                                                |
+| Versão (`APP_VERSION`)                           | `1.0.0`                                                                                       | `node -p 'require("./package.json").version'` (fonte versionada; **não inventada**) |
+| Build-time do candidato validado                 | `2026-10-18T16:53:26Z`                                                                        | `server/build-info.json` dentro da imagem                                           |
+| Digest da imagem candidata validada (`p0.3-rc2`) | `sha256:bf71660a914606adb97f381862b02650efab2ab56c08bb58e6dc94f1541527d4`                     | `docker inspect assistente-pessoal:p0.3-rc2`                                        |
+| Labels OCI                                       | `org.opencontainers.image.revision=1972e00b…`, `org.opencontainers.image.version=1.0.0`       | `docker inspect … --format '{{json .Config.Labels}}'`                               |
+| Produção atual                                   | imagem `assistente-pessoal:1.2.2-gigabrain1`, esquema **10**, `integrity_check=ok`, `healthy` | inspeção só-leitura em 2026-10-18                                                   |
 
 > O candidato validado em isolamento (`p0.3-rc2`) foi construído com a correção do `Dockerfile`
 > ainda no working tree; essa correção foi **commitada nesta release (P0.3.1)** e a imagem
@@ -130,10 +130,10 @@ echo "integridade=$integridade"   # tem de ser "ok"
 **Não remova nenhum backup existente.** Backups atuais (registrados para preservação de
 evidência):
 
-| Ficheiro | SHA-256 | Esquema |
-| --- | --- | --- |
-| `jarvis-2026-10-18T04-47-06-450Z-pre-v10.db` | `a5033be42cf0f0beec08085531dec47f1f5e6ac18530fd5cec5bec8621554092` | 9 |
-| `jarvis-2026-10-18T05-31-47-693Z-pre-painel-p0-1.db` | `35ea462a68cfeffb48c70e349fc97966511b3b19450f742a3cf44e2a7003b926` | 10 |
+| Ficheiro                                             | SHA-256                                                            | Esquema |
+| ---------------------------------------------------- | ------------------------------------------------------------------ | ------- |
+| `jarvis-2026-10-18T04-47-06-450Z-pre-v10.db`         | `a5033be42cf0f0beec08085531dec47f1f5e6ac18530fd5cec5bec8621554092` | 9       |
+| `jarvis-2026-10-18T05-31-47-693Z-pre-painel-p0-1.db` | `35ea462a68cfeffb48c70e349fc97966511b3b19450f742a3cf44e2a7003b926` | 10      |
 
 ## 4. Janela e impacto esperado
 
@@ -186,9 +186,9 @@ Linha de referência **antes** do deploy (2026-10-18, leitura só-leitura): esqu
 Com uma conta de teste **criada para o efeito** (nunca com credenciais reais de produção):
 
 1. Login no painel; 2. `GET /api/session-focus` → 200 do próprio; 3. gravar foco e recarregar →
-persiste; 4. `GET /api/settings/provenance` → origens visíveis, **sem valores**; 5. aba
-Execuções → ledger real; 6. `POST /api/auth/logout` com CSRF → sessão revogada.
-Sem credenciais de teste, este passo fica **bloqueado** — não substituir por simulação.
+   persiste; 4. `GET /api/settings/provenance` → origens visíveis, **sem valores**; 5. aba
+   Execuções → ledger real; 6. `POST /api/auth/logout` com CSRF → sessão revogada.
+   Sem credenciais de teste, este passo fica **bloqueado** — não substituir por simulação.
 
 ## 7. Correção incluída nesta release (metadados na imagem final)
 
@@ -277,16 +277,16 @@ Regras:
 
 ## 11. Evidências deste release (ensaios reais, sem tocar em produção)
 
-| Ensaio | Resultado | Onde |
-| --- | --- | --- |
-| Migração v10 → v11 em cópia do banco real | esquema 11, `integrity=ok`, `fk=0`, contagens preservadas, isolamento por dono (A vê / B vazio; FK e PK recusadas) | ensaio isolado 2026-10-18 |
-| Falha da migração → rollback | framework hook (`failAfterSql`) desfez tudo: esquema continuou 10, contagens iguais, sem tabela parcial | idem |
-| Restauração conforme `docs/RECUPERACAO.md` | backup + master.key → serviço sobe, 401 sem sessão, migra 10→11 com backup verificado, fonte intacta | idem |
-| Build candidato | labels OCI + build-info com SHA exato; `p0.3-rc1` sem metadados (corrigido em `p0.3-rc2`) | `docker build` + inspeção |
-| E2E de navegador (instância isolada da fonte) | **8/8 pass** (2 execuções) | `scripts/e2e-navegador.sh` |
-| E2E de navegador (contra a **imagem candidata**) | **8/8 pass**, com versão `1.0.0` e SHA reais visíveis no painel | `scripts/e2e-navegador.mjs` + contentor `p0.3-rc2` |
-| Segurança em E2E isolado | 8 pass: 401 anónimo, CSRF 403 auditado (`authz.csrf_rejected`), origem não confiável 403, isolamento entre 2 admins, aprovações 401/404 uniforme | contentor descartável |
-| Replay/concorrência de aprovações | **blocked** em E2E (exige provedor OpenHands real); coberto por `tests/approvals-actions.test.mjs` | — |
-| Regressão de testes | backend **424/424**, painel **57/57**, build do painel ok | `node --test`, `vitest run` |
-| Migração v11 com asserção de esquema (P0.3.1) | VIEW homónima → aborta com "asserção de esquema" e rollback completo (esquema 10, sem tabela parcial) | `tests/migration-assert-v11.test.mjs` + ensaio isolado |
-| Imagem candidata final (pré-deploy) | 11 verificações APROVADAS: labels OCI (revision/version/created), build-info com SHA exato, health `version=1.0.0/commit=<SHA>/mode=production`, painel 200 | `scripts/verificar-imagem-release.sh` |
+| Ensaio                                           | Resultado                                                                                                                                                   | Onde                                                   |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Migração v10 → v11 em cópia do banco real        | esquema 11, `integrity=ok`, `fk=0`, contagens preservadas, isolamento por dono (A vê / B vazio; FK e PK recusadas)                                          | ensaio isolado 2026-10-18                              |
+| Falha da migração → rollback                     | framework hook (`failAfterSql`) desfez tudo: esquema continuou 10, contagens iguais, sem tabela parcial                                                     | idem                                                   |
+| Restauração conforme `docs/RECUPERACAO.md`       | backup + master.key → serviço sobe, 401 sem sessão, migra 10→11 com backup verificado, fonte intacta                                                        | idem                                                   |
+| Build candidato                                  | labels OCI + build-info com SHA exato; `p0.3-rc1` sem metadados (corrigido em `p0.3-rc2`)                                                                   | `docker build` + inspeção                              |
+| E2E de navegador (instância isolada da fonte)    | **8/8 pass** (2 execuções)                                                                                                                                  | `scripts/e2e-navegador.sh`                             |
+| E2E de navegador (contra a **imagem candidata**) | **8/8 pass**, com versão `1.0.0` e SHA reais visíveis no painel                                                                                             | `scripts/e2e-navegador.mjs` + contentor `p0.3-rc2`     |
+| Segurança em E2E isolado                         | 8 pass: 401 anónimo, CSRF 403 auditado (`authz.csrf_rejected`), origem não confiável 403, isolamento entre 2 admins, aprovações 401/404 uniforme            | contentor descartável                                  |
+| Replay/concorrência de aprovações                | **blocked** em E2E (exige provedor OpenHands real); coberto por `tests/approvals-actions.test.mjs`                                                          | —                                                      |
+| Regressão de testes                              | backend **424/424**, painel **57/57**, build do painel ok                                                                                                   | `node --test`, `vitest run`                            |
+| Migração v11 com asserção de esquema (P0.3.1)    | VIEW homónima → aborta com "asserção de esquema" e rollback completo (esquema 10, sem tabela parcial)                                                       | `tests/migration-assert-v11.test.mjs` + ensaio isolado |
+| Imagem candidata final (pré-deploy)              | 11 verificações APROVADAS: labels OCI (revision/version/created), build-info com SHA exato, health `version=1.0.0/commit=<SHA>/mode=production`, painel 200 | `scripts/verificar-imagem-release.sh`                  |
