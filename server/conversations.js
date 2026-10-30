@@ -189,6 +189,33 @@ function buildMeta(out) {
       .slice(0, META_PENDING_MAX)
       .map((p) => ({ id: cap(p.id, 64), command: cap(p.command, 300) }));
   }
+  if (Array.isArray(out?.citations) && out.citations.length) {
+    // Fontes preservadas no momento da resposta: a citação de meta sobrevive a edições do
+    // documento que vieram depois (índice do chunk + modo + score são do instante da busca).
+    meta.citations = out.citations.slice(0, 10).map((c) => ({
+      documentId: cap(c.documentId, 64),
+      name: cap(c.name, 160),
+      chunk_index: Math.max(0, Number(c.chunk_index) || 0),
+      search_mode: cap(c.search_mode, 16),
+      score: Math.min(1, Math.max(0, Number(c.score) || 0)),
+    }));
+  }
+  if (
+    out?.reflex &&
+    typeof out.reflex === "object" &&
+    (out.reflex.source === "jev" || out.reflex.source === "fallback")
+  ) {
+    meta.reflex = {
+      source: cap(out.reflex.source, 16),
+      ...(out.reflex.route ? { route: cap(out.reflex.route, 16) } : {}),
+      ...(out.reflex.reason ? { reason: cap(out.reflex.reason, 32) } : {}),
+      ...(Number.isFinite(Number(out.reflex.confidence))
+        ? { confidence: Math.min(1, Math.max(0, Number(out.reflex.confidence))) }
+        : {}),
+      ...(out.reflex.model ? { model: cap(out.reflex.model, 64) } : {}),
+      latencyMs: Math.max(0, Number(out.reflex.latencyMs) || 0),
+    };
+  }
   return Object.keys(meta).length ? JSON.stringify(meta) : null;
 }
 
@@ -352,6 +379,8 @@ export async function chatExchange(
     reply,
     reasoning: out.reasoning || "",
     tools: out.tools || [],
+    citations: Array.isArray(out.citations) ? out.citations : [],
+    reflex: parsed.reflex || null,
     pending: withPendingStatus(parsed.pending || []),
     assistantMessageId: aid,
   };

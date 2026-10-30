@@ -285,7 +285,11 @@ export function attemptTimeoutMs(remainingMs) {
 
 /**
  * Run an agent: model ↔ tools loop.
- * @returns {{reply, reasoning, tools, pending}}
+ * @param {(e: {type: "step", step: number, tools: number} | {type: "tool", step: number, name: string}) => void} [onProgress]
+ *   Callback ADVISORY de progresso (sem conteúdo, para streaming do painel): nunca transporta
+ *   texto de mensagem nem saída de ferramenta — só contadores e nomes declarados.
+ * @param {unknown[]} [return.citations] — evidências de document_search desta execução.
+ * @returns {{reply, reasoning, tools, pending, citations}}
  */
 export async function runAgent({
   agentId,
@@ -297,6 +301,7 @@ export async function runAgent({
   runId = null,
   deadlineMs = RUN_DEFAULT_DEADLINE_MS,
   maxToolCalls = RUN_DEFAULT_MAX_TOOL_CALLS,
+  onProgress = null,
 }) {
   if (!principal)
     throw new Error("runAgent requires a principal (identity responsible for this run)");
@@ -313,7 +318,13 @@ export async function runAgent({
   if (runId) activeRuns.set(runId, state);
   const stop = (reply) => {
     if (runId) activeRuns.delete(runId);
-    return { reply, reasoning: reasoning.join("\n\n"), tools: used, pending };
+    return {
+      reply,
+      reasoning: reasoning.join("\n\n"),
+      tools: used,
+      pending,
+      citations: ctx.citations.slice(0, 20),
+    };
   };
   const lastUser = [...messages].reverse().find((m) => m.role === "user")?.content || "";
   const mem = adminId ? await recall(lastUser, 5, adminId).catch(() => []) : [];
@@ -338,7 +349,14 @@ export async function runAgent({
   const used = [],
     pending = [],
     reasoning = [];
-  const ctx = { autonomy, pending, principal, correlation: runId || uid() };
+  // Evidências de busca de documentos desta execução (consumidas em meta.citations).
+  const ctx = { autonomy, pending, principal, correlation: runId || uid(), citations: [] };
+  const emit = (evt) => {
+    if (onProgress)
+      try {
+        onProgress(evt);
+      } catch {} // progresso NUNCA quebra o run
+  };
   let toolCalls = 0;
   const seen = new Map();
 
@@ -451,6 +469,7 @@ export async function runAgent({
     // com a mesma resposta graciosa do cheque acima, em vez de propagar AbortError.
     let modelResult;
     try {
+      emit({ type: "step", step, tools: toolCalls });
       modelResult = await callModel(convo);
     } catch (err) {
       if (state.cancelled) return stop("Execução cancelada pelo usuário.");
@@ -480,6 +499,7 @@ export async function runAgent({
           output = `Erro: ${e.message}`;
         }
       }
+      emit({ type: "tool", step, name: c.name });
       used.push({ name: c.name, input: c.input, output });
       results.push({ c, output });
     }

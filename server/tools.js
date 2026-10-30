@@ -1269,6 +1269,19 @@ export async function callTool(name, input, ctx) {
       return readCalendar(adminId);
     case "document_search": {
       const r = await searchDocuments(adminId, input.query);
+      // Evidência estruturada para meta.citations (trecho preservado no momento da resposta —
+      // a citação sobrevive a edições/exclusões posteriores do documento). Falhar aqui de
+      // nada quebra a busca: é apenas registro de origem.
+      if (ctx?.citations) {
+        for (const x of r.slice(0, 5))
+          ctx.citations.push({
+            documentId: String(x.document_id || x.id || ""),
+            name: String(x.name || x.filename || ""),
+            chunk_index: Number(x.chunk_index || 0),
+            search_mode: String(x.search_mode || "lexical"),
+            score: Number(x.score || 0),
+          });
+      }
       if (!r.length) return "Nenhum documento relevante.";
       return r
         .map((x) => {

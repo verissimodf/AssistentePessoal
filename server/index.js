@@ -79,6 +79,7 @@ import {
   chatExchange,
   deleteConversation,
 } from "./conversations.js";
+import { evaluateReflex } from "./reflex.js";
 import { runBot, listRuns, startScheduler, triggerByText, auditLegacyBlocked } from "./bots.js";
 import { listScheduledJobs } from "./jobs.js";
 import {
@@ -475,7 +476,13 @@ route("POST", "/api/chat", "chat", async ({ body, principal }) => {
         clientMsgId: body.clientMsgId,
         agentId: body.agentId,
       },
-      (args) => runAgent({ ...args, autonomy: "confirm", principal }),
+      async (args) => {
+        // JEV Reflex (advisory, opt-in): classificação pré-resposta registrada em meta.reflex.
+        // NUNCA altera o fluxo do cérebro; qualquer falha vira "fallback" e o chat segue igual.
+        const reflex = await evaluateReflex(me(principal), String(body.message || ""));
+        const r = await runAgent({ ...args, autonomy: "confirm", principal });
+        return reflex ? { ...r, reflex } : r;
+      },
     );
   }
   // Formato legado `messages` (MCP/scripts): também aceita "/rea …" de forma determinística.
@@ -501,6 +508,63 @@ route("POST", "/api/chat", "chat", async ({ body, principal }) => {
     autonomy: "confirm",
     principal,
   });
+});
+
+// Chat com streaming de progresso (NDJSON): mesmas regras de persistência/idempotência do
+// /api/chat, com eventos ao vivo (reflex, steps/ferramentas) e um evento `final` com a troca
+// completa após persistir. /api/chat intocado (fallback do cliente cobre qualquer falha).
+// Erros ANTES do primeiro evento propagam o status HTTP correto (400/404/502) ao dispatcher.
+route("POST", "/api/chat/stream", "chat", async ({ body, principal, req, res }) => {
+  if (body.messages !== undefined) throw new AuthError(400, "stream_unsupported_legacy");
+  let opened = false;
+  const open = () => {
+    if (opened) return;
+    opened = true;
+    res.writeHead(200, {
+      "content-type": "application/x-ndjson",
+      "cache-control": "no-store",
+      // Firewall de buffer: proxies (nginx/Cloudflare) não segurar os eventos NDJSON.
+      "x-accel-buffering": "no",
+    });
+  };
+  const write = (obj) => {
+    open();
+    res.write(`${JSON.stringify(obj)}\n`);
+  };
+  try {
+    const ax = await chatExchange(
+      me(principal),
+      {
+        conversationId: body.conversationId ?? null,
+        message: body.message,
+        clientMsgId: body.clientMsgId,
+        agentId: body.agentId,
+      },
+      async (args) => {
+        const reflex = await evaluateReflex(me(principal), String(body.message || ""));
+        if (reflex) write({ type: "reflex", reflex });
+        const r = await runAgent({
+          ...args,
+          autonomy: "confirm",
+          principal,
+          onProgress: (e) =>
+            write({ type: "progress", step: e.step, tool: e.type === "tool" ? e.name : undefined }),
+        });
+        return reflex ? { ...r, reflex } : r;
+      },
+    );
+    write({ type: "final", exchange: ax });
+    res.end();
+    return { __stream: true };
+  } catch (e) {
+    if (!opened) throw e; // validação/execução antes do stream: status HTTP correto
+    write({
+      type: "error",
+      code: (e && typeof e.code === "string" && e.code) || "provider_error",
+    });
+    res.end();
+    return { __stream: true };
+  }
 });
 
 // ---------- Fase H: histórico de conversas (dono = admin_id; "não existe" e "não é sua" = 404) ----------
@@ -1265,6 +1329,7 @@ export function createApp(opts = {}) {
         req,
         res,
       });
+      if (out?.__stream) return; // resposta já concluída pelo handler (NDJSON de progresso)
       const extra = res.setCookie ? { "set-cookie": res.setCookie } : undefined;
       if (out?.__redirect) {
         res.writeHead(303, {

@@ -34,6 +34,9 @@ export const PERSONAL_DEFAULTS = {
     sensitivity: 6,
     hotkey: "Ctrl+Shift+J",
   },
+  // JEV Reflex (advisory, opt-in — server/reflex.js): classificador pré-resposta.
+  // Off = custo zero. `model` vazio usa o modelo padrão do provedor ollama do admin.
+  reflex: { enabled: false, model: "", threshold: 0.8 },
 };
 export const GLOBAL_DEFAULTS = {
   host: { enabled: false, allowlist: "ls, dir, git status, code ., start, xdg-open" },
@@ -47,7 +50,7 @@ export function classifyKey(path) {
   const [top, sub] = path.split(".");
   if (top === "host" || top === "integrations") return "global";
   if (top === "voice") return sub === "localVoiceUrl" ? "global" : "personal";
-  if (top === "providers" || top === "comms") return "personal";
+  if (top === "providers" || top === "comms" || top === "reflex") return "personal";
   if (top === "general")
     return sub === undefined || PERSONAL_GENERAL.includes(sub) ? "personal" : "unclassified";
   return "unclassified";
@@ -68,6 +71,7 @@ export function personalPart(s = {}) {
   }
   if (s.providers && typeof s.providers === "object") out.providers = s.providers;
   if (s.comms && typeof s.comms === "object") out.comms = s.comms;
+  if (s.reflex && typeof s.reflex === "object") out.reflex = s.reflex;
   return out;
 }
 
@@ -168,6 +172,7 @@ function compose(personal, global, walk) {
     general: { ...PERSONAL_DEFAULTS.general, ...(p.general || {}) },
     providers: withProviderDefaults(p.providers),
     comms: p.comms || {},
+    reflex: { ...PERSONAL_DEFAULTS.reflex, ...(p.reflex || {}) },
     voice: { ...PERSONAL_DEFAULTS.voice, ...(p.voice || {}), localVoiceUrl: g.localVoiceUrl },
     integrations: g.integrations || {},
     host: g.host,
