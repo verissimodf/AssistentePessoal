@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import {
   Check,
+  FileText,
   History,
   Mic,
   Plus,
@@ -31,12 +32,15 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import {
   api,
   chatConversation,
+  chatConversationStream,
   deleteConversation,
   listConversations,
   loadSettings,
   openConversation,
+  type Citation,
   type ConversationSummary,
   type PendingAction,
+  type ReflexRun,
   type Settings,
   type ToolCall,
 } from "@/lib/bridge";
@@ -72,6 +76,10 @@ type Meta = {
   reasoning?: string | undefined;
   tools?: ToolCall[] | undefined;
   pending?: PendingAction[] | undefined;
+  citations?: Citation[] | undefined;
+  reflex?: ReflexRun | undefined;
+  /** Progresso ao vivo do streaming (placeholder), ex.: "Chamando document_search". */
+  progress?: string | undefined;
 };
 type Msg = {
   role: "user" | "assistant";
@@ -79,6 +87,8 @@ type Msg = {
   meta?: Meta | undefined;
   clientMsgId?: string | undefined;
   failed?: boolean | undefined;
+  /** Placeholder do streaming: a resposta anda chegando; `meta.progress` mostra o passo. */
+  placeholder?: boolean | undefined;
 };
 
 export function ChatPage() {
@@ -139,6 +149,8 @@ export function ChatPage() {
               reasoning: m.meta.reasoning,
               tools: m.meta.tools,
               pending: m.meta.pending,
+              citations: m.meta.citations,
+              reflex: m.meta.reflex,
             };
           return msg;
         }),
@@ -196,16 +208,50 @@ export function ChatPage() {
     }
   };
 
+  const streamAbortRef = useRef<AbortController | null>(null);
+
   const send = async (text: string, viaVoice = false, retry?: Msg) => {
     const content = text.trim();
     if (!content || state === "thinking") return;
     const clientMsgId = retry?.clientMsgId || newClientMsgId();
     if (retry) setMsgs((m) => m.map((x) => (x === retry ? { ...x, failed: false } : x)));
     else setMsgs((m) => [...m, { role: "user", content, clientMsgId }]);
+    // Placeholder do streaming: mostra o progresso ao vivo e é removido quando a resposta final
+    // chega (ou no cancelamento — sem marca de falha).
+    setMsgs((m) => [...m, { role: "assistant", content: "", placeholder: true, meta: {} }]);
     setInput("");
     setState("thinking");
     try {
-      const r = await chatConversation(activeId, content, clientMsgId, pin || undefined);
+      const ac = new AbortController();
+      streamAbortRef.current = ac;
+      const r =
+        (await chatConversationStream(
+          activeId,
+          content,
+          clientMsgId,
+          pin || undefined,
+          (e) => {
+            if (e.type !== "progress") return;
+            setMsgs((m) =>
+              m.map((x) =>
+                x.placeholder
+                  ? {
+                      ...x,
+                      meta: {
+                        ...x.meta,
+                        progress: e.tool
+                          ? `${t("chat_tool")}: ${e.tool}`
+                          : `${t("chat_step")} ${e.step}`,
+                      },
+                    }
+                  : x,
+              ),
+            );
+          },
+          ac.signal,
+        )) ||
+        // Stream indisponível (demo, rede ou build antigo): fallback no /api/chat, como antes.
+        (await chatConversation(activeId, content, clientMsgId, pin || undefined));
       if (r.conversation) {
         const conv = r.conversation;
         setActiveId(conv.id);
@@ -214,34 +260,47 @@ export function ChatPage() {
         setConvs((prev) => [conv, ...prev.filter((c) => c.id !== conv.id)]);
       }
       setMsgs((m) => [
-        ...m,
+        ...m.filter((x) => !x.placeholder),
         {
           role: "assistant",
           content: r.reply,
-          meta: { reasoning: r.reasoning, tools: r.tools, pending: r.pending },
+          meta: {
+            reasoning: r.reasoning,
+            tools: r.tools,
+            pending: r.pending,
+            citations: r.citations,
+            reflex: r.reflex ?? undefined,
+          },
         },
       ]);
       if (viaVoice) {
         setState("speaking");
-        const ac = new AbortController();
-        abortCtrlRef.current = ac;
+        const vAc = new AbortController();
+        abortCtrlRef.current = vAc;
         const voiceStart = performance.now();
-        await speak(r.reply, sl, settings?.voice?.tts || "browser", setLevel, ac.signal);
+        await speak(r.reply, sl, settings?.voice?.tts || "browser", setLevel, vAc.signal);
         const voiceLatency = Math.round(performance.now() - voiceStart);
         api("/api/router/telemetry/voice", {
           method: "POST",
           body: JSON.stringify({ latencyMs: voiceLatency, isBargeIn: false }),
         }).catch(() => {});
       }
-    } catch {
-      // A mensagem do usuário foi preservada no servidor; oferecer retry com o MESMO id (sem duplicar).
-      setMsgs((m) =>
-        m.map((x) =>
-          x.clientMsgId === clientMsgId && x.role === "user" ? { ...x, failed: true } : x,
-        ),
-      );
-      toast.error(t("send_failed"));
+    } catch (e) {
+      if ((e as Error).name === "AbortError") {
+        // Cancelamento: some o placeholder, sem marca de falha. O run do servidor continua e é
+        // persistido — a troca aparece ao reabrir a conversa.
+        setMsgs((m) => m.filter((x) => !x.placeholder));
+      } else {
+        // A mensagem do usuário foi preservada no servidor; oferecer retry com o MESMO id (sem duplicar).
+        setMsgs((m) =>
+          m.map((x) =>
+            x.clientMsgId === clientMsgId && x.role === "user" ? { ...x, failed: true } : x,
+          ),
+        );
+        toast.error(t("send_failed"));
+      }
     } finally {
+      streamAbortRef.current = null;
       setState("idle");
     }
   };
@@ -465,9 +524,48 @@ export function ChatPage() {
                     ))}
                   </details>
                 )}
-                <div className="prose prose-sm prose-invert max-w-none text-foreground">
-                  <ReactMarkdown>{m.content}</ReactMarkdown>
-                </div>
+                {m.placeholder ? (
+                  <p className="animate-pulse text-sm text-muted-foreground">
+                    {m.meta?.progress || t("chat_thinking")}
+                  </p>
+                ) : (
+                  <div className="prose prose-sm prose-invert max-w-none text-foreground">
+                    <ReactMarkdown>{m.content}</ReactMarkdown>
+                  </div>
+                )}
+                {!!m.meta?.citations?.length && (
+                  <details className="text-xs text-muted-foreground">
+                    <summary className="hud-label flex cursor-pointer items-center gap-2">
+                      <FileText className="h-3 w-3" />
+                      {t("chat_sources")} ({m.meta.citations.length})
+                    </summary>
+                    <ul className="mt-1 space-y-1">
+                      {m.meta.citations.map((c, k) => (
+                        <li key={k}>
+                          {c.name} · chunk #{c.chunk_index} · {c.search_mode} ·{" "}
+                          {Math.round((c.score || 0) * 100)}%
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+                {m.meta?.reflex && (
+                  <details className="text-xs text-muted-foreground">
+                    <summary className="hud-label cursor-pointer">{t("chat_reflex")}</summary>
+                    {m.meta.reflex.source === "jev" && m.meta.reflex.route ? (
+                      <p className="mt-1">
+                        {t("reflex_route")}: {t(`reflex_route_${m.meta.reflex.route}` as TKey)} ·{" "}
+                        {t("chat_reflex_confidence")}:{" "}
+                        {Math.round((m.meta.reflex.confidence || 0) * 100)}% ·{" "}
+                        {Math.round(m.meta.reflex.latencyMs || 0)} ms
+                      </p>
+                    ) : (
+                      <p className="mt-1">
+                        {t("chat_reflex_fallback")}: {m.meta.reflex.reason}
+                      </p>
+                    )}
+                  </details>
+                )}
                 {m.meta?.pending?.map((p, k) =>
                   !p.status || p.status === "pending" ? (
                     <div
@@ -553,9 +651,21 @@ export function ChatPage() {
             rows={1}
             className="max-h-40 min-h-10 flex-1 resize-none rounded-md border border-input bg-secondary px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
           />
-          <Button type="submit" size="icon" disabled={state === "thinking"} aria-label={t("send")}>
-            <Send className="h-4 w-4" />
-          </Button>
+          {state === "thinking" ? (
+            <Button
+              type="button"
+              size="icon"
+              variant="outline"
+              onClick={() => streamAbortRef.current?.abort()}
+              aria-label={t("cancel_run")}
+            >
+              <Square className="h-4 w-4" />
+            </Button>
+          ) : (
+            <Button type="submit" size="icon" aria-label={t("send")}>
+              <Send className="h-4 w-4" />
+            </Button>
+          )}
         </form>
       </section>
 

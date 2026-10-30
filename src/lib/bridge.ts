@@ -390,6 +390,13 @@ export type Settings = {
     [key: string]: unknown;
   };
   host: { enabled: boolean; allowlist: string; [key: string]: unknown };
+  /** JEV Reflex (advisory, opt-in — Configurações → Preferências). */
+  reflex?: {
+    enabled?: boolean;
+    model?: string;
+    threshold?: number;
+    [key: string]: unknown;
+  };
 };
 export const DEFAULT_SETTINGS: Settings = {
   general: { agentName: "Jarvis", language: "pt" },
@@ -404,6 +411,7 @@ export const DEFAULT_SETTINGS: Settings = {
     hotkey: "Ctrl+Shift+J",
   },
   host: { enabled: false, allowlist: "ls, dir, git status, code ., start, xdg-open" },
+  reflex: { enabled: false, model: "" },
 };
 
 export async function loadSettings(): Promise<Settings> {
@@ -420,6 +428,28 @@ export async function saveSettings(s: Settings) {
 // ---------- chat & histórico de conversas (Fase H: fonte da verdade no servidor) ----------
 export type ToolCall = { name: string; input: unknown; output?: string };
 export type PendingAction = { id: string; command: string; status?: string };
+/** Fonte preservada no momento da resposta (document_search; sobrevive a edições do documento). */
+export type Citation = {
+  documentId: string;
+  name: string;
+  chunk_index: number;
+  search_mode: string;
+  score: number;
+};
+/** JEV Reflex (advisory, opt-in): decisão pré-resposta registrada; nunca gatilha/bloqueia. */
+export type ReflexRun = {
+  source: "jev" | "fallback";
+  route?: string;
+  confidence?: number;
+  reason?: string;
+  model?: string;
+  latencyMs: number;
+};
+export type ChatStreamEvent =
+  | { type: "reflex"; reflex: ReflexRun }
+  | { type: "progress"; step: number; tool?: string }
+  | { type: "final"; exchange: ChatExchange }
+  | { type: "error"; code: string };
 export type ChatReply = {
   reply: string;
   reasoning?: string;
@@ -438,13 +468,21 @@ export type ConversationMessage = {
   role: "user" | "assistant";
   content: string;
   created_at: string;
-  meta?: { reasoning?: string; tools?: ToolCall[]; pending?: PendingAction[] } | null;
+  meta?: {
+    reasoning?: string;
+    tools?: ToolCall[];
+    pending?: PendingAction[];
+    citations?: Citation[];
+    reflex?: ReflexRun;
+  } | null;
 };
 export type ChatExchange = ChatReply & {
   conversation: ConversationSummary | null;
   userMessage?: { id: string; content: string; created_at: string };
   assistantMessageId?: string;
   duplicate?: boolean;
+  citations?: Citation[];
+  reflex?: ReflexRun | null;
 };
 
 /** Conversas do administrador, mais recentes primeiro (vazio no modo demonstração). */
@@ -493,6 +531,80 @@ export async function chatConversation(
     tools: [],
     pending: [],
   };
+}
+
+/**
+ * Envio com STREAMING de progresso (/api/chat/stream, NDJSON): os eventos ao vivo chegam por
+ * `onEvent` (reflex/progress) e a troca PERSISTIDA completa chega no evento `final`.
+ *
+ * Retornos:
+ *  - `ChatExchange`        → sucesso (evento final recebido; use-o como no chatConversation);
+ *  - `null`                → stream indisponível: chame o fallback `chatConversation(...)`;
+ *  - `Error("stream_incomplete:")` or `("stream_incomplete:<code>")` → o stream começou, mas
+ *    não terminou (o run falhou): NÃO rode o fallback (evita reexecutar um run já a meio);
+ *    propague para o Fluxo de retry da interface (clientMsgId idempotente).
+ *
+ * O POST /api/chat continua sendo a fonte de verdade para compatibilidade/demonstração.
+ */
+export async function chatConversationStream(
+  conversationId: string | null,
+  message: string,
+  clientMsgId: string,
+  agentId: string | undefined,
+  onEvent: (e: ChatStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<ChatExchange | null> {
+  if (!(await ping())) return null;
+  const h: Record<string, string> = { "content-type": "application/json" };
+  if (csrf) h["x-jarvis-csrf"] = csrf;
+  let res: Response;
+  try {
+    res = await fetch(`${bridgeUrl()}/api/chat/stream`, {
+      method: "POST",
+      headers: h,
+      body: JSON.stringify({
+        conversationId: conversationId ?? undefined,
+        message,
+        clientMsgId,
+        agentId,
+      }),
+      credentials: "include",
+      ...(signal ? { signal } : {}),
+    });
+  } catch {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    return null; // rede falhou antes do stream: fallback normal
+  }
+  if (!res.ok || !res.body) return null; // (ex.: 401/404/502/rota ausente em build antigo) — fallback
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let exchange: ChatExchange | null = null;
+  let lastError = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let ev: ChatStreamEvent;
+      try {
+        ev = JSON.parse(line);
+      } catch {
+        continue; // linha parcial/corrompida: em vez de mentir, ignora
+      }
+      if (ev.type === "final") exchange = ev.exchange;
+      else if (ev.type === "error") lastError = ev.code;
+      onEvent(ev);
+    }
+  }
+  if (!exchange) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    throw new Error(`stream_incomplete:${lastError}`); // run falhou no meio: propagar para retry
+  }
+  return exchange;
 }
 
 // --- Fase I: Diagnóstico Operacional (somente leitura, sessão administrativa) -------------

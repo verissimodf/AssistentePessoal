@@ -64,12 +64,12 @@ function SettingsPage() {
   if (!s) return null;
 
   const set = (
-    section: "general" | "providers" | "integrations" | "comms" | "voice" | "host",
+    section: "general" | "providers" | "integrations" | "comms" | "voice" | "host" | "reflex",
     key: string,
     value: unknown,
   ) => setS({ ...s, [section]: { ...s[section], [key]: value } });
   const setNested = (
-    section: "general" | "providers" | "integrations" | "comms" | "voice" | "host",
+    section: "general" | "providers" | "integrations" | "comms" | "voice" | "host" | "reflex",
     id: string,
     key: string,
     value: unknown,
@@ -484,6 +484,26 @@ function SettingsPage() {
                 className="font-mono"
                 value={s.host.allowlist}
                 onChange={(e) => set("host", "allowlist", e.target.value)}
+              />
+            </Field>
+          </div>
+          {/* JEV Reflex — ADVISORY e opt-in: nunca gatilha/bloqueia nada; falha vira "fallback".
+              Canais (Telegram/bots/voz) não passam por aqui: só o chat do painel. */}
+          <div className="hud-panel space-y-4 p-4 md:col-span-2">
+            <div className="flex items-center justify-between">
+              <span className="font-display">{t("s_reflex")}</span>
+              <Switch
+                checked={!!s.reflex?.enabled}
+                onCheckedChange={(c) => set("reflex", "enabled", c)}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">{t("s_reflex_help")}</p>
+            <Field label={t("s_reflex_model")}>
+              <Input
+                className="font-mono"
+                placeholder={t("default_model")}
+                value={s.reflex?.model ?? ""}
+                onChange={(e) => set("reflex", "model", e.target.value)}
               />
             </Field>
           </div>

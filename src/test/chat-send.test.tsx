@@ -20,6 +20,8 @@ const listMock = vi.fn();
 const openMock = vi.fn();
 const delMock = vi.fn();
 const chat = vi.fn();
+// O painel chama o stream primeiro e usa chatConversation só como fallback (`||`);
+// alias no mesmo mock cobre o caminho real em ambos os cenários.
 vi.mock("@/lib/bridge", () => ({
   api: (...a: unknown[]) => apiMock(...a),
   loadSettings: (...a: unknown[]) => settingsMock(...a),
@@ -27,6 +29,7 @@ vi.mock("@/lib/bridge", () => ({
   openConversation: (...a: unknown[]) => openMock(...a),
   deleteConversation: (...a: unknown[]) => delMock(...a),
   chatConversation: (...a: unknown[]) => chat(...a),
+  chatConversationStream: (...a: unknown[]) => chat(...a),
 }));
 
 vi.mock("@/components/Avatar3D", () => ({ Avatar3D: () => null }));
@@ -147,9 +150,11 @@ describe("envio de mensagem no painel (incidente PONG)", () => {
     await waitFor(() => expect(listMock).toHaveBeenCalled());
     type("PONG");
     clickSend();
-    clickSend(); // segundo clique durante o envio
+    // Durante o envio os botões se trocam: "Enviar" some (nada a reenviar de propósito —
+    // sem clique e sem enter) e "Cancelar resposta" toma o lugar no formulário.
+    expect(screen.queryByRole("button", { name: SEND })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancelar resposta" })).toBeInTheDocument();
     expect(chat).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: SEND })).toBeDisabled();
     resolveIt(exchange());
     await waitFor(() => expect(screen.getByText("PONG recebido")).toBeInTheDocument());
     expect(chat).toHaveBeenCalledTimes(1);
