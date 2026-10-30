@@ -1123,6 +1123,220 @@ BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
       },
     ],
   },
+  {
+    // Fase 3 da evolução (docs/evolution/phase-3): Workflow & Behavior Studio. Definições
+    // versionadas/imutáveis, execuções persistentes por nó, eventos, aprovações D9 e
+    // políticas comportamentais. SEM terceira fila: o motor executa in-process com estado
+    // persistido e recuperação no boot (ADR-WF-001). Ownership recriado com os tipos wf_*.
+    version: 22,
+    name: "workflow studio: versioned definitions, durable runs, node executions, events and behavior policies",
+    sql: `
+CREATE TABLE IF NOT EXISTS wf_definitions (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published')),
+  current_version INTEGER NOT NULL DEFAULT 0,
+  allowed_tools TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS wf_definition_versions (
+  id TEXT PRIMARY KEY,
+  definition_id TEXT NOT NULL REFERENCES wf_definitions(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  graph TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (definition_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS wf_runs (
+  id TEXT PRIMARY KEY,
+  definition_id TEXT NOT NULL REFERENCES wf_definitions(id) ON DELETE CASCADE,
+  definition_version INTEGER NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  objective TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','waiting_approval','waiting_dependency','completed','failed','cancelled','unknown')),
+  budget_json TEXT NOT NULL DEFAULT '{}',
+  usage_json TEXT NOT NULL DEFAULT '{}',
+  error_code TEXT,
+  idempotency_key TEXT,
+  created_at TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wf_runs_idem ON wf_runs(owner_admin_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_wf_runs_owner ON wf_runs(owner_admin_id, status);
+
+CREATE TABLE IF NOT EXISTS wf_node_executions (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES wf_runs(id) ON DELETE CASCADE,
+  node_id TEXT NOT NULL,
+  node_type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','waiting_approval','waiting_dependency','completed','failed','cancelled','skipped','unknown')),
+  attempt INTEGER NOT NULL DEFAULT 0,
+  input_json TEXT,
+  output_json TEXT,
+  error_code TEXT,
+  approval_id TEXT,
+  agent_run_id TEXT,
+  wake_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (run_id, node_id)
+);
+CREATE INDEX IF NOT EXISTS idx_wf_nodes_run ON wf_node_executions(run_id, status);
+
+CREATE TABLE IF NOT EXISTS wf_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL REFERENCES wf_runs(id) ON DELETE CASCADE,
+  at TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  node_id TEXT,
+  detail TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_wf_events_run ON wf_events(run_id, id);
+
+CREATE TABLE IF NOT EXISTS wf_policies (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  version INTEGER NOT NULL DEFAULT 1,
+  priority INTEGER NOT NULL DEFAULT 0,
+  scope TEXT NOT NULL CHECK (scope IN ('tool','workflow','agent')),
+  target TEXT NOT NULL DEFAULT '*',
+  conditions TEXT NOT NULL DEFAULT '[]',
+  effect TEXT NOT NULL CHECK (effect IN ('allow','deny','require_approval')),
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS wf_policy_revisions (
+  id TEXT PRIMARY KEY,
+  policy_id TEXT NOT NULL REFERENCES wf_policies(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  snapshot TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (policy_id, version)
+);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v21;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run','kh_library','kh_notebook','kh_source','wf_definition','wf_run','wf_policy')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v21;
+DROP TABLE ownership_v21;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "wf_definitions",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "name",
+          "description",
+          "status",
+          "current_version",
+          "allowed_tools",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "wf_definition_versions",
+        type: "table",
+        columns: ["id", "definition_id", "version", "graph", "created_at"],
+        primaryKey: ["id"],
+      },
+      {
+        table: "wf_runs",
+        type: "table",
+        columns: [
+          "id",
+          "definition_id",
+          "definition_version",
+          "owner_admin_id",
+          "objective",
+          "status",
+          "budget_json",
+          "usage_json",
+          "error_code",
+          "idempotency_key",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "wf_node_executions",
+        type: "table",
+        columns: [
+          "id",
+          "run_id",
+          "node_id",
+          "node_type",
+          "status",
+          "attempt",
+          "input_json",
+          "output_json",
+          "error_code",
+          "approval_id",
+          "agent_run_id",
+          "wake_at",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "wf_policies",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "name",
+          "description",
+          "version",
+          "priority",
+          "scope",
+          "target",
+          "conditions",
+          "effect",
+          "enabled",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
 ];
 
 const tableExists = (db, t) =>

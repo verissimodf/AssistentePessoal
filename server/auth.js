@@ -44,6 +44,11 @@ export const SCOPES = [
   // só obtêm via definição (interseção calculada no backend).
   "kh:read",
   "kh:write",
+  // Workflow Studio (evolução Fase 3): definições/versões/execução de workflows. Políticas
+  // comportamentais são administradas por sessão verificada (access "session"), sem escopo.
+  "workflow:read",
+  "workflow:write",
+  "workflow:run",
 ];
 /** Scopes reserved for a human admin session — never grantable to a token. */
 export const ADMIN_ONLY = [

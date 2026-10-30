@@ -1285,3 +1285,283 @@ export async function khTransform(body: {
     body: JSON.stringify(body),
   });
 }
+
+// ---------- Workflow Studio (Fase 3: workflows duráveis com grafo versionado) ----------
+export type WfNodeType =
+  | "start"
+  | "end"
+  | "agent"
+  | "tool"
+  | "condition"
+  | "transform"
+  | "knowledge_search"
+  | "approval"
+  | "wait"
+  | "subworkflow";
+
+export type WfGraphNode = {
+  id: string;
+  type: WfNodeType | string;
+  config?: Record<string, unknown>;
+};
+export type WfGraphEdge = { from: string; to: string; when?: "true" | "false" | string };
+export type WfGraph = { nodes: WfGraphNode[]; edges: WfGraphEdge[] };
+
+export type WfDefinition = {
+  id: string;
+  name: string;
+  description: string | null;
+  status: "draft" | "published";
+  current_version: number;
+  allowed_tools: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type WfDefinitionVersion = { version: number; created_at: string; graph: WfGraph | null };
+
+export type WfRunStatus =
+  | "queued"
+  | "running"
+  | "waiting_approval"
+  | "waiting_dependency"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "unknown";
+
+export type WfNodeExecution = {
+  id: string;
+  node_id: string;
+  node_type: string;
+  status: string;
+  attempt: number;
+  output: unknown;
+  error_code: string | null;
+  approval_id: string | null;
+  agent_run_id: string | null;
+  wake_at: string | null;
+};
+
+export type WfRunEvent = {
+  id: number;
+  at: string;
+  kind: string;
+  node_id: string | null;
+  detail: Record<string, unknown>;
+};
+
+export type WfRun = {
+  id: string;
+  definition_id: string;
+  definition_version: number;
+  status: WfRunStatus;
+  objective: string;
+  error_code: string | null;
+  budget: Record<string, unknown>;
+  usage: Record<string, number>;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  nodes: WfNodeExecution[];
+  events: WfRunEvent[];
+};
+
+/** Item de listagem: o servidor não inclui nodes/events no índice (só no detalhe). */
+export type WfRunSummary = Omit<WfRun, "nodes" | "events">;
+
+export type WfBody = {
+  name?: string;
+  description?: string;
+  allowed_tools?: string[];
+  graph?: WfGraph;
+};
+
+export async function listWorkflows(): Promise<WfDefinition[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<WfDefinition[]>("/api/workflows");
+  } catch {
+    return null;
+  }
+}
+
+export async function createWorkflow(body: WfBody): Promise<WfDefinition | null> {
+  if (!(await ping())) return null;
+  return await api<WfDefinition>("/api/workflows", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updateWorkflow(id: string, body: WfBody): Promise<WfDefinition | null> {
+  if (!(await ping())) return null;
+  return await api<WfDefinition>(`/api/workflows/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteWorkflow(id: string): Promise<{ ok: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: boolean }>(`/api/workflows/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+/** Publica a versão de trabalho atual — ela se torna imutável. */
+export async function publishWorkflow(id: string): Promise<WfDefinition | null> {
+  if (!(await ping())) return null;
+  return await api<WfDefinition>(`/api/workflows/${encodeURIComponent(id)}/publish`, {
+    method: "POST",
+  });
+}
+
+export async function listWorkflowVersions(id: string): Promise<WfDefinitionVersion[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<WfDefinitionVersion[]>(`/api/workflows/${encodeURIComponent(id)}/versions`);
+  } catch {
+    return null;
+  }
+}
+
+export async function runWorkflow(
+  id: string,
+  objective: string,
+  idempotencyKey?: string,
+): Promise<{ run: WfRun; deduplicated: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ run: WfRun; deduplicated: boolean }>(
+    `/api/workflows/${encodeURIComponent(id)}/run`,
+    {
+      method: "POST",
+      body: JSON.stringify({ objective, idempotency_key: idempotencyKey || undefined }),
+    },
+  );
+}
+
+export async function listWorkflowRuns(query?: {
+  limit?: number;
+  status?: string;
+  definition_id?: string;
+}): Promise<{ items: WfRunSummary[]; has_more: boolean } | null> {
+  if (!(await ping())) return null;
+  const params = new URLSearchParams();
+  if (query?.limit) params.set("limit", String(query.limit));
+  if (query?.status) params.set("status", query.status);
+  if (query?.definition_id) params.set("definition_id", query.definition_id);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  try {
+    return await api<{ items: WfRunSummary[]; has_more: boolean }>(`/api/workflow-runs${qs}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function getWorkflowRun(id: string): Promise<WfRun | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<WfRun>(`/api/workflow-runs/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function cancelWorkflowRun(id: string): Promise<WfRun | null> {
+  if (!(await ping())) return null;
+  return await api<WfRun>(`/api/workflow-runs/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+  });
+}
+
+export async function reconcileWorkflowRun(
+  id: string,
+): Promise<{ outcome: string; run: WfRun } | null> {
+  if (!(await ping())) return null;
+  return await api<{ outcome: string; run: WfRun }>(
+    `/api/workflow-runs/${encodeURIComponent(id)}/reconcile`,
+    { method: "POST" },
+  );
+}
+
+// ---------- Policy Studio (Fase 3: políticas comportamentais avaliadas no servidor) ----------
+export type PolicyScope = "tool" | "workflow" | "agent";
+export type PolicyEffect = "allow" | "deny" | "require_approval";
+export type PolicyOp = "eq" | "ne" | "in" | "not_in" | "exists";
+
+export type PolicyCondition = { field: string; op: PolicyOp; value?: unknown };
+
+export type Policy = {
+  id: string;
+  name: string;
+  description: string | null;
+  version: number;
+  priority: number;
+  scope: PolicyScope;
+  target: string;
+  conditions: PolicyCondition[];
+  effect: PolicyEffect;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PolicyBody = {
+  name?: string;
+  description?: string;
+  scope?: PolicyScope;
+  target?: string;
+  conditions?: PolicyCondition[];
+  effect?: PolicyEffect;
+  priority?: number;
+  enabled?: boolean;
+};
+
+export type PolicySimResult = { decision: string; matched: string | null; reason?: string | null };
+
+export async function listPolicies(): Promise<Policy[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<Policy[]>("/api/policies");
+  } catch {
+    return null;
+  }
+}
+
+export async function createPolicy(body: PolicyBody): Promise<Policy | null> {
+  if (!(await ping())) return null;
+  return await api<Policy>("/api/policies", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updatePolicy(id: string, body: PolicyBody): Promise<Policy | null> {
+  if (!(await ping())) return null;
+  return await api<Policy>(`/api/policies/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deletePolicy(id: string): Promise<{ ok: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: boolean }>(`/api/policies/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+/** Avalia políticas sobre o contexto informado SEM executar nada — decisão explicada. */
+export async function simulatePolicy(body: {
+  kind: PolicyScope;
+  target: string;
+  tool?: string | undefined;
+  scope?: string | undefined;
+}): Promise<PolicySimResult | null> {
+  if (!(await ping())) return null;
+  return await api<PolicySimResult>("/api/policies/simulate", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}

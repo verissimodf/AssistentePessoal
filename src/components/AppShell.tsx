@@ -5,12 +5,14 @@ import {
   Bot,
   Brain,
   FileText,
+  GitBranch,
   LayoutDashboard,
   LogOut,
   Mail,
   MessageSquare,
   Network,
   Settings,
+  ShieldCheck,
   Users,
   Search,
 } from "lucide-react";
@@ -34,6 +36,8 @@ export function AppShell() {
     { to: "/bots", label: t("nav_bots"), icon: Bot },
     { to: "/workforce", label: t("nav_workforce"), icon: Network },
     { to: "/knowledge", label: t("nav_knowledge"), icon: BookOpen },
+    { to: "/workflows", label: t("nav_workflows"), icon: GitBranch },
+    { to: "/policies", label: t("nav_policies"), icon: ShieldCheck },
     { to: "/configuracoes", label: t("nav_settings"), icon: Settings },
   ] as const;
   return (

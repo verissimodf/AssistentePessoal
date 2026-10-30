@@ -26,12 +26,14 @@ INSERT INTO memories VALUES ('m1','prefere café','pref',NULL,'2026-01-01');
 }
 
 test("v21 é a migração de topo e sobe do zero até o schema alvo", () => {
-  assert.equal(targetVersion(), 21);
+  assert.ok(targetVersion() >= 21);
+  const V21 = MIGRATIONS.find((m) => m.version === 21);
+  assert.ok(V21, "migração v21 do Knowledge Hub presente");
   const { db, dir } = legacyDb();
   const r = migrate(db, dir);
   assert.equal(r.from, 0);
-  assert.equal(r.to, 21);
-  assert.equal(currentVersion(db), 21);
+  assert.ok(r.to >= 21);
+  assert.equal(currentVersion(db), r.to);
   for (const t of [
     "kh_libraries",
     "kh_notebooks",

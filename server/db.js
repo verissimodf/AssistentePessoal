@@ -105,6 +105,7 @@ export const AUDIT_REASONS = new Set([
   // Portões já existentes cujo motivo era descartado (lacuna fechada junto com o navegador):
   "integration_disabled",
   "channel_disabled",
+  "policy_denied",
   // Navegador (browser_action): recusas e falhas SEMPRE vêm de constantes do código (nunca de
   // texto do usuário/modelo), por isso podem entrar no conjunto fechado de motivos auditáveis.
   "blocked_destination",

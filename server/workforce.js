@@ -14,6 +14,7 @@ import { assignNew, owns, dropOwnership, tx } from "./ownership.js";
 import { SCOPES, ADMIN_ONLY, isVerifiedAdmin } from "./auth.js";
 import { TOOL_DEFS } from "./tools.js";
 import { cancelRun } from "./llm.js";
+import { evaluatePolicies } from "./policies.js";
 
 // ---------- limites e orçamentos ----------
 
@@ -473,6 +474,12 @@ export function startRun({
   const def = getDefinition(adminId, definitionId);
   if (!def) return { error: "not_found" };
   if (!def.enabled) return { error: "workforce_agent_disabled" };
+  // Policy engine (Fase 3): políticas de agente avaliadas no backend. require_approval não
+  // tem caminho D9 para início de agente → negação fail-closed (ADR-WF-002).
+  const pv = evaluatePolicies(adminId, { kind: "agent", target: definitionId, admin: adminId });
+  if (pv.decision === "deny") return { error: "workforce_policy_denied" };
+  if (pv.decision === "require_approval")
+    return { error: "workforce_require_approval_unsupported" };
   const text = String(objective || "").trim();
   if (!text) return { error: "workforce_objective_required" };
   if (idempotencyKey) {

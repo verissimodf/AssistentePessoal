@@ -361,6 +361,7 @@ depende de `.gitattributes` para preservar LF nas skills.
 - [`docs/evolution/phase-0/`](docs/evolution/phase-0/README.md) — Fase 0 da evolução: arquitetura, contratos e modelo de ameaças.
 - [`docs/evolution/phase-1/`](docs/evolution/phase-1/README.md) — Fase 1 da evolução: Agent Workforce (especialistas, orçamento, delegação).
 - [`docs/evolution/phase-2/`](docs/evolution/phase-2/README.md) — Fase 2 da evolução: Personal Knowledge Hub (acervo, pesquisa híbrida, respostas fundamentadas).
+- [`docs/evolution/phase-3/`](docs/evolution/phase-3/README.md) — Fase 3 da evolução: Workflow & Behavior Studio (workflows duráveis, D9, políticas).
 - [`docs/RECUPERACAO.md`](docs/RECUPERACAO.md) — backup, migrações, rollback e restore.
 - [`docs/OPERACAO-SLO-E-INCIDENTES.md`](docs/OPERACAO-SLO-E-INCIDENTES.md) — SLOs propostos e runbook.
 - [`docs/RUNBOOK-RELEASE-2026-10-18.md`](docs/RUNBOOK-RELEASE-2026-10-18.md) — release/deploy.

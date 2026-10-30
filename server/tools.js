@@ -1063,6 +1063,23 @@ export async function callTool(name, input, ctx) {
     audit("authz.tool_denied", { tool: name, reason: "no_owner", principal: who(ctx.principal) });
     return "Permissão negada: esta execução não tem um administrador proprietário válido.";
   }
+  // Policy engine (evolução Fase 3): decisões comportamentais do backend — complementa
+  // can()/D9, nunca os contorna. Deny prevalece; require_approval força o caminho D9
+  // (ferramentas sem caminho de aprovação são negadas — ADR-WF-002).
+  const { toolPolicyVerdict } = await import("./policies.js");
+  const pv = toolPolicyVerdict(adminId, { tool: name, scope, principal: ctx.principal });
+  if (pv.decision === "deny") {
+    audit("authz.tool_denied", {
+      tool: name,
+      scope,
+      reason: "policy_denied",
+      principal: who(ctx.principal),
+    });
+    return pv.reason === "tool_has_no_approval_path"
+      ? "Execução negada pela política: esta ferramenta não suporta aprovação humana."
+      : "Execução negada pela política de comportamento.";
+  }
+  if (pv.force_approval && ctx.autonomy === "full") ctx.autonomy = "confirm";
   const s = getSettings(adminId);
   switch (name) {
     case "web_search":

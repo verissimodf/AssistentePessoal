@@ -17,8 +17,10 @@ import { Route as DocumentosRouteImport } from './routes/documentos'
 import { Route as ExecucoesRouteImport } from './routes/execucoes'
 import { Route as KnowledgeRouteImport } from './routes/knowledge'
 import { Route as MemoriaRouteImport } from './routes/memoria'
+import { Route as PoliciesRouteImport } from './routes/policies'
 import { Route as RascunhosRouteImport } from './routes/rascunhos'
 import { Route as VisaoGeralRouteImport } from './routes/visao-geral'
+import { Route as WorkflowsRouteImport } from './routes/workflows'
 import { Route as WorkforceRouteImport } from './routes/workforce'
 
 const IndexRoute = IndexRouteImport.update({
@@ -61,6 +63,11 @@ const MemoriaRoute = MemoriaRouteImport.update({
   path: '/memoria',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PoliciesRoute = PoliciesRouteImport.update({
+  id: '/policies',
+  path: '/policies',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RascunhosRoute = RascunhosRouteImport.update({
   id: '/rascunhos',
   path: '/rascunhos',
@@ -69,6 +76,11 @@ const RascunhosRoute = RascunhosRouteImport.update({
 const VisaoGeralRoute = VisaoGeralRouteImport.update({
   id: '/visao-geral',
   path: '/visao-geral',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkflowsRoute = WorkflowsRouteImport.update({
+  id: '/workflows',
+  path: '/workflows',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WorkforceRoute = WorkforceRouteImport.update({
@@ -86,8 +98,10 @@ export interface FileRoutesByFullPath {
   '/execucoes': typeof ExecucoesRoute
   '/knowledge': typeof KnowledgeRoute
   '/memoria': typeof MemoriaRoute
+  '/policies': typeof PoliciesRoute
   '/rascunhos': typeof RascunhosRoute
   '/visao-geral': typeof VisaoGeralRoute
+  '/workflows': typeof WorkflowsRoute
   '/workforce': typeof WorkforceRoute
 }
 export interface FileRoutesByTo {
@@ -99,8 +113,10 @@ export interface FileRoutesByTo {
   '/execucoes': typeof ExecucoesRoute
   '/knowledge': typeof KnowledgeRoute
   '/memoria': typeof MemoriaRoute
+  '/policies': typeof PoliciesRoute
   '/rascunhos': typeof RascunhosRoute
   '/visao-geral': typeof VisaoGeralRoute
+  '/workflows': typeof WorkflowsRoute
   '/workforce': typeof WorkforceRoute
 }
 export interface FileRoutesById {
@@ -113,8 +129,10 @@ export interface FileRoutesById {
   '/execucoes': typeof ExecucoesRoute
   '/knowledge': typeof KnowledgeRoute
   '/memoria': typeof MemoriaRoute
+  '/policies': typeof PoliciesRoute
   '/rascunhos': typeof RascunhosRoute
   '/visao-geral': typeof VisaoGeralRoute
+  '/workflows': typeof WorkflowsRoute
   '/workforce': typeof WorkforceRoute
 }
 export interface FileRouteTypes {
@@ -128,8 +146,10 @@ export interface FileRouteTypes {
     | '/execucoes'
     | '/knowledge'
     | '/memoria'
+    | '/policies'
     | '/rascunhos'
     | '/visao-geral'
+    | '/workflows'
     | '/workforce'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -141,8 +161,10 @@ export interface FileRouteTypes {
     | '/execucoes'
     | '/knowledge'
     | '/memoria'
+    | '/policies'
     | '/rascunhos'
     | '/visao-geral'
+    | '/workflows'
     | '/workforce'
   id:
     | '__root__'
@@ -154,8 +176,10 @@ export interface FileRouteTypes {
     | '/execucoes'
     | '/knowledge'
     | '/memoria'
+    | '/policies'
     | '/rascunhos'
     | '/visao-geral'
+    | '/workflows'
     | '/workforce'
   fileRoutesById: FileRoutesById
 }
@@ -168,8 +192,10 @@ export interface RootRouteChildren {
   ExecucoesRoute: typeof ExecucoesRoute
   KnowledgeRoute: typeof KnowledgeRoute
   MemoriaRoute: typeof MemoriaRoute
+  PoliciesRoute: typeof PoliciesRoute
   RascunhosRoute: typeof RascunhosRoute
   VisaoGeralRoute: typeof VisaoGeralRoute
+  WorkflowsRoute: typeof WorkflowsRoute
   WorkforceRoute: typeof WorkforceRoute
 }
 
@@ -231,6 +257,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MemoriaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/policies': {
+      id: '/policies'
+      path: '/policies'
+      fullPath: '/policies'
+      preLoaderRoute: typeof PoliciesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/rascunhos': {
       id: '/rascunhos'
       path: '/rascunhos'
@@ -243,6 +276,13 @@ declare module '@tanstack/react-router' {
       path: '/visao-geral'
       fullPath: '/visao-geral'
       preLoaderRoute: typeof VisaoGeralRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workflows': {
+      id: '/workflows'
+      path: '/workflows'
+      fullPath: '/workflows'
+      preLoaderRoute: typeof WorkflowsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/workforce': {
@@ -264,8 +304,10 @@ const rootRouteChildren: RootRouteChildren = {
   ExecucoesRoute: ExecucoesRoute,
   KnowledgeRoute: KnowledgeRoute,
   MemoriaRoute: MemoriaRoute,
+  PoliciesRoute: PoliciesRoute,
   RascunhosRoute: RascunhosRoute,
   VisaoGeralRoute: VisaoGeralRoute,
+  WorkflowsRoute: WorkflowsRoute,
   WorkforceRoute: WorkforceRoute,
 }
 export const routeTree = rootRouteImport

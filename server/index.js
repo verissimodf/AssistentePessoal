@@ -116,6 +116,31 @@ import {
   recoverKhJobs,
   KH_LIMITS,
 } from "./knowledge.js";
+import {
+  createDefinition as createWfDefinition,
+  listDefinitions as listWfDefinitions,
+  getDefinition as getWfDefinition,
+  updateDefinition as updateWfDefinition,
+  publishDefinition,
+  deleteDefinition as deleteWfDefinition,
+  getDefinitionVersion,
+  startWorkflowRun,
+  getWfRun,
+  listWfRuns,
+  cancelWfRun,
+  reconcileWfRun,
+  recoverWfRuns,
+  tickWfRuns,
+  validateGraph,
+} from "./workflow.js";
+import {
+  createPolicy,
+  listPolicies,
+  getPolicy,
+  updatePolicy,
+  deletePolicy,
+  evaluatePolicies,
+} from "./policies.js";
 import { listScheduledJobs } from "./jobs.js";
 import {
   memoryRetentionPolicy,
@@ -1193,6 +1218,150 @@ route("POST", "/api/kh/ask", "kh:read", async ({ body, principal }) => {
     throw khError(e);
   }
 });
+
+// ---------- Workflow Studio (evolução Fase 3, docs/evolution/phase-3) ----------
+const wfError = (e) => {
+  const msg = String(e?.message || "wf_error");
+  if (msg.startsWith("wf_graph_invalid")) return new AuthError(400, msg.slice(0, 80));
+  const map = {
+    wf_owner_required: 403,
+    wf_name_required: 400,
+    wf_not_published: 409,
+    wf_definition_active_runs: 409,
+    wf_policy_denied: 403,
+    wf_require_approval_unsupported: 403,
+    wf_reconcile_required: 409,
+    wf_reconcile_not_unknown: 409,
+    wf_policy_denied_code: 403,
+  };
+  return new AuthError(map[msg] || 400, msg.slice(0, 60));
+};
+route("GET", "/api/workflows", "workflow:read", ({ principal }) =>
+  listWfDefinitions(me(principal)),
+);
+route("POST", "/api/workflows", "workflow:write", ({ body, principal }) => {
+  try {
+    return createWfDefinition(me(principal), body || {});
+  } catch (e) {
+    throw wfError(e);
+  }
+});
+route("GET", "/api/workflows/:id", "workflow:read", ({ params, principal }) => {
+  const def = getWfDefinition(me(principal), params.id);
+  if (!def) notFound();
+  return def;
+});
+route("PUT", "/api/workflows/:id", "workflow:write", ({ params, body, principal }) => {
+  try {
+    const out = updateWfDefinition(me(principal), params.id, body || {});
+    if (!out) notFound();
+    return out;
+  } catch (e) {
+    throw wfError(e);
+  }
+});
+route("POST", "/api/workflows/:id/publish", "workflow:write", ({ params, principal }) => {
+  try {
+    const out = publishDefinition(me(principal), params.id);
+    if (!out) notFound();
+    return out;
+  } catch (e) {
+    throw wfError(e);
+  }
+});
+route("DELETE", "/api/workflows/:id", "workflow:write", ({ params, principal }) => {
+  try {
+    if (!deleteWfDefinition(me(principal), params.id)) notFound();
+    return { ok: true };
+  } catch (e) {
+    throw wfError(e);
+  }
+});
+route("GET", "/api/workflows/:id/versions", "workflow:read", ({ params, principal }) => {
+  if (!getWfDefinition(me(principal), params.id)) notFound();
+  const rows = db
+    .prepare(
+      "SELECT version, created_at FROM wf_definition_versions WHERE definition_id = ? ORDER BY version",
+    )
+    .all(params.id);
+  return rows.map((r) => ({
+    ...r,
+    graph: getDefinitionVersion(me(principal), params.id, r.version).graph,
+  }));
+});
+route("POST", "/api/workflows/:id/run", "workflow:run", async ({ params, body, principal }) => {
+  const out = await startWorkflowRun(me(principal), params.id, {
+    objective: body?.objective,
+    idempotencyKey: body?.idempotency_key ?? null,
+    principal,
+  });
+  if (out.error === "not_found") notFound();
+  if (out.error) throw wfError(new Error(out.error));
+  return { run: out.run, deduplicated: !!out.deduplicated };
+});
+route("GET", "/api/workflow-runs", "workflow:read", ({ query, principal }) =>
+  listWfRuns(me(principal), {
+    limit: query?.limit,
+    offset: query?.offset,
+    status: query?.status || null,
+    definitionId: query?.definition_id || null,
+  }),
+);
+route("GET", "/api/workflow-runs/:id", "workflow:read", ({ params, principal }) => {
+  const run = getWfRun(me(principal), params.id);
+  if (!run) notFound();
+  return run;
+});
+route("POST", "/api/workflow-runs/:id/cancel", "workflow:run", ({ params, principal }) => {
+  const out = cancelWfRun(me(principal), params.id);
+  if (out.error === "not_found") notFound();
+  if (out.error) throw wfError(new Error(out.error));
+  return out.run || out;
+});
+route("POST", "/api/workflow-runs/:id/reconcile", "session", ({ params, principal }) => {
+  const out = reconcileWfRun(me(principal), params.id);
+  if (out.error === "not_found") notFound();
+  if (out.error) throw wfError(new Error(out.error));
+  return out;
+});
+
+// ---------- Policy Studio (evolução Fase 3) — administração por sessão verificada ----------
+route("GET", "/api/policies", "session", ({ principal }) => listPolicies(me(principal)));
+route("POST", "/api/policies", "session", ({ body, principal }) => {
+  try {
+    return createPolicy(me(principal), body || {});
+  } catch (e) {
+    throw wfError(e);
+  }
+});
+route("GET", "/api/policies/:id", "session", ({ params, principal }) => {
+  const p = getPolicy(me(principal), params.id);
+  if (!p) notFound();
+  return p;
+});
+route("PUT", "/api/policies/:id", "session", ({ params, body, principal }) => {
+  try {
+    const out = updatePolicy(me(principal), params.id, body || {});
+    if (!out) notFound();
+    return out;
+  } catch (e) {
+    throw wfError(e);
+  }
+});
+route("DELETE", "/api/policies/:id", "session", ({ params, principal }) => {
+  if (!deletePolicy(me(principal), params.id)) notFound();
+  return { ok: true };
+});
+route("POST", "/api/policies/simulate", "session", ({ body, principal }) => {
+  // Simulação SEM executar ações: avalia contexto informado e explica a decisão.
+  const out = evaluatePolicies(me(principal), {
+    kind: body?.kind === "workflow" ? "workflow" : body?.kind === "agent" ? "agent" : "tool",
+    target: String(body?.target || "*"),
+    tool: body?.tool,
+    scope: body?.scope,
+  });
+  return out;
+});
 // Cancelamento cooperativo de uma execução em andamento (checado entre passos do loop).
 route("POST", "/api/runs/:id/cancel", "bots:run", ({ params, principal }) => {
   if (!owns(me(principal), "run", params.id)) notFound();
@@ -1697,6 +1866,9 @@ if (isMain && !process.env.JARVIS_NO_LISTEN) {
   startScheduler();
   recoverWorkforceRuns();
   recoverKhJobs();
+  recoverWfRuns();
+  // Tick do Workflow Studio: retoma runs de aprovações resolvidas e waits expirados.
+  setInterval(() => tickWfRuns().catch(() => {}), 20_000).unref();
   // P2: inbound messages run as the admin whose own settings hold the channel credentials.
   const activeAdmins = () =>
     db
