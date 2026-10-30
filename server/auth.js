@@ -39,6 +39,11 @@ export const SCOPES = [
   "workforce:read",
   "workforce:write",
   "workforce:run",
+  // Knowledge Hub (evolução Fase 2): leitura/pesquisa do acervo e escrita (criar
+  // bibliotecas/notebooks/fontes/notas). Bots legados não recebem; especialistas da Workforce
+  // só obtêm via definição (interseção calculada no backend).
+  "kh:read",
+  "kh:write",
 ];
 /** Scopes reserved for a human admin session — never grantable to a token. */
 export const ADMIN_ONLY = [
@@ -85,6 +90,10 @@ export const TOOL_SCOPES = {
   // EFETIVO calculado pelo backend para o run (delegação nunca amplia privilégio); os limites
   // (profundidade, filhos, orçamento) são verificados em server/workforce.js.
   delegate_agent: "workforce:run",
+  // Knowledge Hub (evolução Fase 2): pesquisa no acervo autorizado e anotações explícitas.
+  notebook_search: "kh:read",
+  notebook_transform: "kh:read",
+  notebook_note: "kh:write",
 };
 
 /** Loopback sources (all local processes look identical here). */

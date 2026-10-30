@@ -256,6 +256,36 @@ export const TOOL_META = {
       "tests/workforce-migration.test.mjs",
     ],
   },
+  notebook_search: {
+    nome: "Pesquisa no Knowledge Hub",
+    portao:
+      "Escopo kh:read; pesquisa híbrida (FTS5 BM25 + semântico) restrita às fontes do proprietário da execução, com filtros de notebook/biblioteca aplicados no backend.",
+    deps: "Tabelas kh_* (schema 21) e pipeline de documentos existente.",
+    limites: [
+      "Conteúdo das fontes volta como DADO NÃO CONFIÁVEL — nunca instrução nem autorização.",
+      "Falha do FTS degrada para o pipeline RAG existente (sem exposição de acesso).",
+    ],
+    testes: ["tests/kh-search.test.mjs", "tests/kh-workforce.test.mjs"],
+  },
+  notebook_transform: {
+    nome: "Transformação fundamentada do Hub",
+    portao:
+      "Escopo kh:read; one-shot LLM sobre trechos autorizados; transformação registrada com fontes/versões/citações (kh_transformations).",
+    deps: "Provedor LLM configurado (fallback existente).",
+    limites: [
+      "Sem loop de ferramentas (maxSteps=1); fontes insuficientes devem ser declaradas pelo modelo.",
+      "Transformações não criam memória permanente sem escrita explícita (notebook_note).",
+    ],
+    testes: ["tests/kh-grounded.test.mjs", "tests/kh-workforce.test.mjs"],
+  },
+  notebook_note: {
+    nome: "Criar nota no Hub",
+    portao:
+      "Escopo kh:write (escrita explícita — nunca automática); fonte tipo texto com dedupe por hash no notebook.",
+    deps: "Tabelas kh_* (schema 21).",
+    limites: ["Nada é persistido sem escopo kh:write; duplicata (mesmo hash) é recusada."],
+    testes: ["tests/kh-core.test.mjs", "tests/kh-workforce.test.mjs"],
+  },
 };
 
 const PROVIDER_NOMES = {

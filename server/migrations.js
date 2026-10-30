@@ -895,6 +895,234 @@ BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
       },
     ],
   },
+  {
+    // Fase 2 da evolução (docs/evolution/phase-2): Personal Knowledge Hub. Organização
+    // (bibliotecas/notebooks/fontes) SOBRE o pipeline de documentos existente — as fontes
+    // referenciam `documents` (chunks/embeddings/busca reutilizados). FTS5 nativo indexa os
+    // fragmentos (kh_fts, rowid controlado por kh_chunk_index para remoção determinística).
+    // Jobs de ingestão duráveis (kh_jobs) seguem o padrão de durable_jobs. O ownership é
+    // recriado para estender o CHECK com os tipos kh_*; linhas existentes são preservadas.
+    version: 21,
+    name: "knowledge hub: libraries, notebooks, sources, relationships, transforms and durable ingestion jobs",
+    sql: `
+CREATE TABLE IF NOT EXISTS kh_libraries (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'personal' CHECK (kind IN ('personal','project')),
+  project_ref TEXT,
+  description TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS kh_notebooks (
+  id TEXT PRIMARY KEY,
+  library_id TEXT NOT NULL REFERENCES kh_libraries(id) ON DELETE CASCADE,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  tags TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (library_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_kh_notebooks_library ON kh_notebooks(library_id);
+
+CREATE TABLE IF NOT EXISTS kh_sources (
+  id TEXT PRIMARY KEY,
+  notebook_id TEXT NOT NULL REFERENCES kh_notebooks(id) ON DELETE CASCADE,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  document_id TEXT,
+  type TEXT NOT NULL DEFAULT 'file' CHECK (type IN ('file','url','text')),
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  origin TEXT NOT NULL DEFAULT '',
+  content_hash TEXT,
+  size INTEGER NOT NULL DEFAULT 0,
+  mime TEXT NOT NULL DEFAULT '',
+  version INTEGER NOT NULL DEFAULT 1,
+  ingest_status TEXT NOT NULL DEFAULT 'pending' CHECK (ingest_status IN ('pending','processing','indexed','partial','failed','deleted')),
+  index_status TEXT NOT NULL DEFAULT 'pending' CHECK (index_status IN ('pending','indexed','partial','lexical_only')),
+  error_code TEXT,
+  provenance TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kh_sources_notebook ON kh_sources(notebook_id);
+CREATE INDEX IF NOT EXISTS idx_kh_sources_doc ON kh_sources(document_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_kh_sources_hash ON kh_sources(notebook_id, content_hash) WHERE content_hash IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS kh_source_content (
+  source_id TEXT PRIMARY KEY REFERENCES kh_sources(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  mime TEXT NOT NULL DEFAULT 'text/plain'
+);
+
+CREATE TABLE IF NOT EXISTS kh_source_versions (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL REFERENCES kh_sources(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  document_id TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  size INTEGER NOT NULL DEFAULT 0,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  UNIQUE (source_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS kh_chunk_index (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id TEXT NOT NULL REFERENCES kh_sources(id) ON DELETE CASCADE,
+  document_id TEXT NOT NULL,
+  chunk_id TEXT NOT NULL UNIQUE
+);
+CREATE INDEX IF NOT EXISTS idx_kh_chunk_index_doc ON kh_chunk_index(document_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS kh_fts USING fts5(text, title);
+
+CREATE TABLE IF NOT EXISTS kh_relationships (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  from_type TEXT NOT NULL CHECK (from_type IN ('source','notebook','library','memory','entity','chunk')),
+  from_id TEXT NOT NULL,
+  relation TEXT NOT NULL,
+  to_type TEXT NOT NULL CHECK (to_type IN ('source','notebook','library','memory','entity','chunk')),
+  to_id TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'explicit' CHECK (kind IN ('explicit','inferred')),
+  confidence REAL,
+  provenance TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kh_rel_from ON kh_relationships(from_type, from_id);
+CREATE INDEX IF NOT EXISTS idx_kh_rel_to ON kh_relationships(to_type, to_id);
+
+CREATE TABLE IF NOT EXISTS kh_transformations (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  op TEXT NOT NULL CHECK (op IN ('summary','topics','concepts','compare','synthesize')),
+  source_ids TEXT NOT NULL DEFAULT '[]',
+  params TEXT NOT NULL DEFAULT '{}',
+  result TEXT NOT NULL DEFAULT '',
+  citations TEXT NOT NULL DEFAULT '[]',
+  executor TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kh_transformations_owner ON kh_transformations(owner_admin_id, created_at);
+
+CREATE TABLE IF NOT EXISTS kh_jobs (
+  id TEXT PRIMARY KEY,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  source_id TEXT NOT NULL REFERENCES kh_sources(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','succeeded','failed')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  lease_until TEXT,
+  checkpoint_json TEXT NOT NULL DEFAULT '{}',
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kh_jobs_claim ON kh_jobs(status, created_at);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v20;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run','kh_library','kh_notebook','kh_source')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v20;
+DROP TABLE ownership_v20;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "kh_libraries",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "name",
+          "kind",
+          "project_ref",
+          "description",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "kh_notebooks",
+        type: "table",
+        columns: [
+          "id",
+          "library_id",
+          "owner_admin_id",
+          "name",
+          "description",
+          "tags",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "kh_sources",
+        type: "table",
+        columns: [
+          "id",
+          "notebook_id",
+          "owner_admin_id",
+          "document_id",
+          "type",
+          "title",
+          "description",
+          "origin",
+          "content_hash",
+          "size",
+          "mime",
+          "version",
+          "ingest_status",
+          "index_status",
+          "error_code",
+          "provenance",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "kh_jobs",
+        type: "table",
+        columns: [
+          "id",
+          "idempotency_key",
+          "source_id",
+          "status",
+          "attempts",
+          "lease_until",
+          "checkpoint_json",
+          "last_error",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
 ];
 
 const tableExists = (db, t) =>

@@ -1028,3 +1028,260 @@ export async function listWorkforceTemplates(): Promise<WorkforceTemplate[] | nu
     return null;
   }
 }
+
+// ---------- Knowledge Hub (Fase 2: acervo pessoal de conhecimento) ----------
+export type KhLibraryKind = "personal" | "project";
+export type KhLibrary = {
+  id: string;
+  name: string;
+  kind: KhLibraryKind;
+  description: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type KhNotebook = {
+  id: string;
+  library_id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  source_count: number;
+};
+
+export type KhIngestStatus =
+  "pending" | "processing" | "indexed" | "partial" | "failed" | "deleted";
+export type KhIndexStatus = "pending" | "indexed" | "partial" | "lexical_only";
+
+export type KhSourceVersion = {
+  version: number;
+  content_hash: string;
+  size: number;
+  note: string | null;
+  created_at: string;
+};
+
+export type KhSource = {
+  id: string;
+  notebook_id: string;
+  type: "file" | "url" | "text";
+  title: string;
+  description: string | null;
+  origin: string;
+  content_hash: string | null;
+  size: number;
+  mime: string | null;
+  version: number;
+  ingest_status: KhIngestStatus;
+  index_status: KhIndexStatus;
+  error_code: string | null;
+  provenance: unknown;
+  has_document: boolean;
+  versions: KhSourceVersion[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type KhCitation = {
+  source_id: string;
+  source_title: string;
+  document_id: string;
+  chunk_id: string;
+  chunk_index: number;
+  mode: string;
+  score: number;
+  at: string;
+};
+
+export type KhSearchItem = {
+  source_id: string;
+  source_title: string;
+  notebook_id: string;
+  document_id: string;
+  chunk_id: string;
+  chunk_index: number;
+  score: number;
+  fts_score: number;
+  rag_score: number;
+  snippet: string;
+  content: string;
+  citation: KhCitation | null;
+};
+
+export type KhSearchResponse = { items: KhSearchItem[]; modes: { fts: boolean; rag: boolean } };
+export type KhAskResponse = { answer: string; citations: KhCitation[]; sufficient: boolean };
+
+export type KhTransformOp = "summary" | "topics" | "concepts" | "compare" | "synthesize";
+export type KhTransformResult = {
+  id: string;
+  op: KhTransformOp;
+  result: string;
+  citations: KhCitation[];
+  sources: unknown[];
+  created_at: string;
+};
+
+export async function listKhLibraries(): Promise<KhLibrary[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<KhLibrary[]>("/api/kh/libraries");
+  } catch {
+    return null;
+  }
+}
+
+export async function createKhLibrary(body: {
+  name: string;
+  kind?: KhLibraryKind;
+  description?: string;
+}): Promise<KhLibrary | null> {
+  if (!(await ping())) return null;
+  return await api<KhLibrary>("/api/kh/libraries", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updateKhLibrary(
+  id: string,
+  body: { name?: string; kind?: KhLibraryKind; description?: string },
+): Promise<KhLibrary | null> {
+  if (!(await ping())) return null;
+  return await api<KhLibrary>(`/api/kh/libraries/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteKhLibrary(id: string): Promise<{ ok: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: boolean }>(`/api/kh/libraries/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function listKhNotebooks(libraryId: string): Promise<KhNotebook[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<KhNotebook[]>(`/api/kh/notebooks?library_id=${encodeURIComponent(libraryId)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function createKhNotebook(body: {
+  library_id: string;
+  name: string;
+  description?: string;
+  tags?: string[];
+}): Promise<KhNotebook | null> {
+  if (!(await ping())) return null;
+  return await api<KhNotebook>("/api/kh/notebooks", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteKhNotebook(id: string): Promise<{ ok: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: boolean }>(`/api/kh/notebooks/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function listKhSources(
+  notebookId: string,
+): Promise<{ items: KhSource[]; has_more: boolean } | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<{ items: KhSource[]; has_more: boolean }>(
+      `/api/kh/sources?notebook_id=${encodeURIComponent(notebookId)}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** Fonte do tipo texto (conteúdo digitado/colado vai no corpo JSON). */
+export async function createKhSourceText(
+  notebookId: string,
+  title: string,
+  content: string,
+): Promise<KhSource | null> {
+  if (!(await ping())) return null;
+  return await api<KhSource>("/api/kh/sources", {
+    method: "POST",
+    body: JSON.stringify({ notebook_id: notebookId, type: "text", title, content }),
+  });
+}
+
+/** Fonte do tipo URL. */
+export async function createKhSourceUrl(
+  notebookId: string,
+  title: string,
+  url: string,
+): Promise<KhSource | null> {
+  if (!(await ping())) return null;
+  return await api<KhSource>("/api/kh/sources", {
+    method: "POST",
+    body: JSON.stringify({ notebook_id: notebookId, type: "url", title, url }),
+  });
+}
+
+/** Upload de arquivo via multipart (api() não define content-type quando o body é FormData). */
+export async function createKhSourceFile(
+  notebookId: string,
+  title: string,
+  file: File,
+): Promise<KhSource | null> {
+  if (!(await ping())) return null;
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("notebook_id", notebookId);
+  fd.append("title", title);
+  return await api<KhSource>("/api/kh/sources", { method: "POST", body: fd });
+}
+
+export async function deleteKhSource(id: string): Promise<{ ok: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: boolean }>(`/api/kh/sources/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function khSearch(body: {
+  query: string;
+  notebook_id?: string;
+  library_id?: string;
+  limit?: number;
+}): Promise<KhSearchResponse | null> {
+  if (!(await ping())) return null;
+  return await api<KhSearchResponse>("/api/kh/search", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function khAsk(body: {
+  question: string;
+  notebook_id?: string;
+  library_id?: string;
+}): Promise<KhAskResponse | null> {
+  if (!(await ping())) return null;
+  return await api<KhAskResponse>("/api/kh/ask", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function khTransform(body: {
+  op: KhTransformOp;
+  source_ids: string[];
+  prompt?: string;
+}): Promise<KhTransformResult | null> {
+  if (!(await ping())) return null;
+  return await api<KhTransformResult>("/api/kh/transform", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}

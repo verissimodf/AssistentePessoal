@@ -35,15 +35,15 @@ INSERT INTO approvals VALUES ('a1','ls','pending',NULL,'2026-01-01');
   return { db, dir };
 }
 
-test("v20 é a migração de topo e sobe do zero até o schema alvo", () => {
-  assert.equal(targetVersion(), 20);
-  const V20 = MIGRATIONS[MIGRATIONS.length - 1];
-  assert.equal(V20.version, 20);
+test("migrações da Workforce existem e o schema sobe do zero até o alvo (>= 20)", () => {
+  const V20 = MIGRATIONS.find((m) => m.version === 20);
+  assert.ok(V20, "migração v20 da Workforce presente");
+  assert.ok(targetVersion() >= 20);
   const { db, dir } = legacyDb();
   const r = migrate(db, dir);
   assert.equal(r.from, 0);
-  assert.equal(r.to, 20);
-  assert.equal(currentVersion(db), 20);
+  assert.equal(r.to, targetVersion());
+  assert.equal(currentVersion(db), targetVersion());
   assert.ok(readdirSync(join(dir, "backups")).length === 1);
   assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE name='agent_definitions'").get());
   assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE name='agent_runs'").get());

@@ -1,6 +1,7 @@
 import { Link, Outlet } from "@tanstack/react-router";
 import {
   Activity,
+  BookOpen,
   Bot,
   Brain,
   FileText,
@@ -32,6 +33,7 @@ export function AppShell() {
     { to: "/agentes", label: t("nav_agents"), icon: Users },
     { to: "/bots", label: t("nav_bots"), icon: Bot },
     { to: "/workforce", label: t("nav_workforce"), icon: Network },
+    { to: "/knowledge", label: t("nav_knowledge"), icon: BookOpen },
     { to: "/configuracoes", label: t("nav_settings"), icon: Settings },
   ] as const;
   return (

@@ -95,6 +95,27 @@ import {
   reconcileRun,
   recoverWorkforceRuns,
 } from "./workforce.js";
+import {
+  createLibrary,
+  listLibraries,
+  getLibrary,
+  updateLibrary,
+  deleteLibrary,
+  createNotebook,
+  listNotebooks,
+  getNotebook,
+  updateNotebook,
+  deleteNotebook,
+  createSource,
+  listKhSources,
+  getKhSource,
+  deleteKhSource,
+  khSearch,
+  khTransform,
+  khAsk,
+  recoverKhJobs,
+  KH_LIMITS,
+} from "./knowledge.js";
 import { listScheduledJobs } from "./jobs.js";
 import {
   memoryRetentionPolicy,
@@ -1000,6 +1021,178 @@ route("POST", "/api/workforce/runs/:id/reconcile", "session", ({ params, body, p
   if (out.error) throw workforceError(new Error(out.error));
   return out;
 });
+
+// ---------- Knowledge Hub (evolução Fase 2, docs/evolution/phase-2) ----------
+const khError = (e) => {
+  const code = e?.message || "kh_error";
+  const map = {
+    kh_owner_required: 403,
+    kh_library_not_found: 404,
+    kh_notebook_not_found: 404,
+    kh_name_required: 400,
+    kh_kind_invalid: 400,
+    kh_tags_invalid: 400,
+    kh_notebook_limit: 409,
+    kh_source_limit: 409,
+    kh_source_not_found: 404,
+    kh_content_required: 400,
+    kh_url_invalid: 400,
+    kh_too_large: 413,
+    kh_op_invalid: 400,
+    kh_sources_required: 400,
+    kh_no_indexed_sources: 409,
+    kh_content_missing: 409,
+    kh_unsupported_mime: 415,
+    unsupported_type: 415,
+    kh_fetch_failed: 502,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+route("GET", "/api/kh/libraries", "kh:read", ({ principal }) => listLibraries(me(principal)));
+route("POST", "/api/kh/libraries", "kh:write", ({ body, principal }) => {
+  try {
+    return createLibrary(me(principal), body || {});
+  } catch (e) {
+    throw khError(e);
+  }
+});
+route("GET", "/api/kh/libraries/:id", "kh:read", ({ params, principal }) => {
+  const lib = getLibrary(me(principal), params.id);
+  if (!lib) notFound();
+  return lib;
+});
+route("PUT", "/api/kh/libraries/:id", "kh:write", ({ params, body, principal }) => {
+  const out = updateLibrary(me(principal), params.id, body || {});
+  if (!out) notFound();
+  return out;
+});
+route("DELETE", "/api/kh/libraries/:id", "kh:write", ({ params, principal }) => {
+  if (!deleteLibrary(me(principal), params.id)) notFound();
+  return { ok: true };
+});
+route("GET", "/api/kh/notebooks", "kh:read", ({ query, principal }) =>
+  listNotebooks(me(principal), { libraryId: query?.library_id || null }),
+);
+route("POST", "/api/kh/notebooks", "kh:write", ({ body, principal }) => {
+  try {
+    return createNotebook(me(principal), {
+      libraryId: body?.library_id,
+      name: body?.name,
+      description: body?.description,
+      tags: body?.tags,
+    });
+  } catch (e) {
+    if (e?.message === "kh_library_not_found") notFound();
+    throw khError(e);
+  }
+});
+route("GET", "/api/kh/notebooks/:id", "kh:read", ({ params, principal }) => {
+  const nb = getNotebook(me(principal), params.id);
+  if (!nb) notFound();
+  return nb;
+});
+route("PUT", "/api/kh/notebooks/:id", "kh:write", ({ params, body, principal }) => {
+  const out = updateNotebook(me(principal), params.id, body || {});
+  if (!out) notFound();
+  return out;
+});
+route("DELETE", "/api/kh/notebooks/:id", "kh:write", ({ params, principal }) => {
+  if (!deleteNotebook(me(principal), params.id)) notFound();
+  return { ok: true };
+});
+route("GET", "/api/kh/sources", "kh:read", ({ query, principal }) =>
+  listKhSources(me(principal), {
+    notebookId: query?.notebook_id || null,
+    status: query?.status || null,
+    limit: query?.limit,
+    offset: query?.offset,
+  }),
+);
+route("POST", "/api/kh/sources", "kh:write", async ({ body, form, principal }) => {
+  try {
+    const owner = me(principal);
+    if (form) {
+      const file = form.get("file");
+      if (!file || typeof file === "string") throw new AuthError(400, "file_required");
+      const buf = Buffer.from(await file.arrayBuffer());
+      const out = await createSource(owner, {
+        notebookId: String(form.get("notebook_id") || ""),
+        type: "file",
+        title: String(form.get("title") || file.name || "documento"),
+        description: String(form.get("description") || ""),
+        buffer: buf,
+        mime: String(form.get("mime") || file.type || "text/plain"),
+      });
+      if (out.duplicate) throw new AuthError(409, "kh_duplicate");
+      return out.source;
+    }
+    const out = await createSource(owner, {
+      notebookId: body?.notebook_id,
+      type: body?.type === "url" ? "url" : body?.type === "file" ? "file" : "text",
+      title: body?.title,
+      description: body?.description,
+      content: body?.content ?? null,
+      buffer:
+        body?.encoding === "base64" && body?.content
+          ? Buffer.from(String(body.content), "base64")
+          : null,
+      mime: body?.mime,
+      url: body?.url,
+    });
+    if (out.duplicate) throw new AuthError(409, "kh_duplicate");
+    return out.source;
+  } catch (e) {
+    if (e instanceof AuthError) throw e;
+    throw khError(e);
+  }
+});
+route("GET", "/api/kh/sources/:id", "kh:read", ({ params, principal }) => {
+  const src = getKhSource(me(principal), params.id);
+  if (!src) notFound();
+  return src;
+});
+route("DELETE", "/api/kh/sources/:id", "kh:write", ({ params, principal }) => {
+  if (!deleteKhSource(me(principal), params.id)) notFound();
+  return { ok: true };
+});
+route("POST", "/api/kh/sources/:id/ingest", "kh:write", async ({ params, principal }) => {
+  // Reingestão/reprocessamento manual (falha anterior ou nova versão).
+  const src = getKhSource(me(principal), params.id);
+  if (!src) notFound();
+  const { processIngest } = await import("./knowledge.js");
+  return processIngest(params.id);
+});
+route("POST", "/api/kh/search", "kh:read", async ({ body, principal }) => {
+  return khSearch(me(principal), {
+    query: body?.query,
+    notebookId: body?.notebook_id || null,
+    libraryId: body?.library_id || null,
+    limit: body?.limit,
+  });
+});
+route("POST", "/api/kh/transform", "kh:read", async ({ body, principal }) => {
+  try {
+    return await khTransform(me(principal), {
+      op: body?.op,
+      sourceIds: body?.source_ids,
+      prompt: body?.prompt,
+      notebookId: body?.notebook_id || null,
+    });
+  } catch (e) {
+    throw khError(e);
+  }
+});
+route("POST", "/api/kh/ask", "kh:read", async ({ body, principal }) => {
+  try {
+    return await khAsk(me(principal), {
+      question: body?.question,
+      notebookId: body?.notebook_id || null,
+      libraryId: body?.library_id || null,
+    });
+  } catch (e) {
+    throw khError(e);
+  }
+});
 // Cancelamento cooperativo de uma execução em andamento (checado entre passos do loop).
 route("POST", "/api/runs/:id/cancel", "bots:run", ({ params, principal }) => {
   if (!owns(me(principal), "run", params.id)) notFound();
@@ -1503,6 +1696,7 @@ if (isMain && !process.env.JARVIS_NO_LISTEN) {
   setInterval(() => auth.purgeAttempts(), 3600_000).unref();
   startScheduler();
   recoverWorkforceRuns();
+  recoverKhJobs();
   // P2: inbound messages run as the admin whose own settings hold the channel credentials.
   const activeAdmins = () =>
     db
