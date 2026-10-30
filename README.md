@@ -1,8 +1,8 @@
-# 🤖 AssistentePessoal (J.A.R.V.I.S.) — v1.9.3
+# 🤖 AssistentePessoal (J.A.R.V.I.S.) — v1.10.0
 
-[![Version](https://img.shields.io/badge/version-1.9.3-blue.svg?style=flat-square)](package.json)
+[![Version](https://img.shields.io/badge/version-1.10.0-blue.svg?style=flat-square)](package.json)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg?style=flat-square&logo=node.js)](https://nodejs.org/)
-[![Test Suite](https://img.shields.io/badge/tests-681%20backend%20%2B%20110%20frontend-success.svg?style=flat-square)](tests/)
+[![Test Suite](https://img.shields.io/badge/tests-688%20backend%20%2B%20110%20frontend-success.svg?style=flat-square)](tests/)
 [![Schema](https://img.shields.io/badge/schema-19-informational.svg?style=flat-square)](server/migrations.js)
 [![Privacy](https://img.shields.io/badge/privacy-local--first-blueviolet.svg?style=flat-square)](#-segurança-e-privacidade)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg?style=flat-square)](LICENSE)
@@ -12,6 +12,10 @@ memória, agentes e integrações com serviços da máquina. O desenho padrão �
 dados, banco, documentos, memórias e segredos ficam na máquina do operador; chamadas externas só
 acontecem quando o provedor/integração correspondente está configurado e habilitado.
 
+> **Release 1.10.0:** chat do painel com streaming de progresso ao vivo (NDJSON, cancelável) e
+> fontes preservadas por resposta (`meta.citations`, snapshot pontual do `document_search`);
+> JEV Reflex advisory **opt-in** (pré-resposta, nunca bloqueia nada, canais externos não afetados);
+> `npm run update:release` para atualização assistida por tag com backup verificado prévio.
 > **Release 1.9.3:** hardening do Playwright com allowlist de hosts aplicada no broker e grants de curta duração; navegador desligado por padrão.
 > A release 1.9.2 integrou o OpenHands Agent Canvas, fixou o Headroom na release estável e
 > saneamento completo do lint. TTS continua integrado ao container `xtts-service`; a ponte local usa vozes

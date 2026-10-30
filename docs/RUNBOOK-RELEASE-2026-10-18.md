@@ -1,5 +1,37 @@
 # Runbook de release — P0.3 (2026-10-18)
 
+## Release implantada — 1.10.0 (2026-10-30)
+
+| Item | Valor |
+| --- | --- |
+| Versão | `1.10.0` (`package.json`) |
+| Esquema | `19` (`PRAGMA user_version`; sem migração — novos dados em `conversation_messages.meta`, JSON livre) |
+| Compose ativo | `docker-compose.yml` (serviço `assistente`) |
+| Build args | `BUILD_VERSION`, `BUILD_COMMIT`, `BUILD_COMMIT_STATUS`, `SCHEMA_VERSION`, `BUILD_TIME`, `RELEASE_BUILD=1` |
+| Novidades | Streaming NDJSON do chat (`/api/chat/stream`), citações pontuais (`meta.citations`), JEV Reflex advisory opt-in e `npm run update:release` (atualização por tag com backup verificado) |
+| Atualização assistida | `scripts/update-release.sh`: exige serviço parado (health ping), backup tar verificado de `data/`, checkout de tag, testes em banco temporário, build idêntico ao Dockerfile e instruções de reversão — launcher completo do deploy segue manual (build + `verificar-imagem-release.sh` + `up -d --no-build`) |
+
+```bash
+cd /opt/laytech-ai/AssistentePessoal
+COMMIT_SHA=$(git rev-parse HEAD)
+SHORT_SHA=$(git rev-parse --short HEAD)
+VERSION=$(node -p 'require("./package.json").version')
+# STATUS="Registrado" SOMENTE após merge/tag no remoto ("Não registrado (local)" caso contrário)
+export BUILD_VERSION="$VERSION" BUILD_COMMIT="$COMMIT_SHA" \
+       BUILD_COMMIT_STATUS="$STATUS" SCHEMA_VERSION=19 \
+       BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) RELEASE_BUILD=1
+export IMAGE_TAG="$VERSION"
+docker compose -f docker-compose.yml build
+bash scripts/verificar-imagem-release.sh "assistente-pessoal:$IMAGE_TAG" "$COMMIT_SHA" "$VERSION"
+docker compose -f docker-compose.yml up -d --no-build
+curl -s http://192.168.2.40:7777/api/health
+```
+
+O health esperado contém `"version":"1.10.0"`, `"commit":"<SHA>"`, `"schemaVersion":19` e
+`"schemaVersionBuild":19`. O `/api/chat/stream` responde NDJSON (`application/x-ndjson`,
+`x-accel-buffering: no`) com eventos `reflex`/`progress`/`final`/`error`; o `/api/chat`
+permanece idêntico (fallback do painel).
+
 ## Release implantada — 1.8.1 (2026-10-27)
 
 | Item | Valor |

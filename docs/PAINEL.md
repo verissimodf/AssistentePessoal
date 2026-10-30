@@ -33,6 +33,14 @@ distinta (lista vazia → "Nenhum registro").
 - **Configurações → Proveniência** (`/configuracoes`): de onde vem cada valor efetivo
   (padrão/pessoal/global) e as variáveis de ambiente — sem valores nem segredos; ver
   `docs/CONFIGURACAO.md` §"Proveniência dos valores".
+- **Conversa** (`/`): envio com **streaming de progresso** (`/api/chat/stream`, NDJSON) — o
+  placeholder mostra ao vivo etapa/ferramenta em execução e o botão **Cancelar resposta** suspende
+  a exibição sem marcar falha (a troca segue e é persistida no servidor). A resposta pode exibir
+  **Fontes** (`meta.citations`: documento, chunk, modo e score do instante da busca — sobrevive a
+  edições posteriores do documento) e o resumo **JEV Reflex** (`meta.reflex`, advisory:
+  rota/confiança/latência ou fallback explícito). Reflex Liga/desliga em
+  **Configurações → Preferências** (opt-in por administrador; desligado = custo zero, e canais
+  externos — Telegram/bots — não passam pelo Reflex).
 
 ## Pós-condição (Fase 4)
 
