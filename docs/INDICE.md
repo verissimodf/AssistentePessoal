@@ -60,6 +60,12 @@ entrega, especificações superadas e fotografias de releases anteriores estão 
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md)                                                                    | fluxo de contribuição e política por risco                  |
 | [`AGENTS.md`](../AGENTS.md)                                                                                | regras do repositório para agentes                          |
 
+## Evolução (programa multi-fase)
+
+| Documento | Para quê |
+|---|---|
+| [`evolution/phase-0/README.md`](evolution/phase-0/README.md) | Fase 0 — arquitetura e segurança da evolução: inventário, alvo, contratos, ameaças, ADRs, backlog |
+
 ## Histórico
 
 | Documento                                   | Para quê                                                              |

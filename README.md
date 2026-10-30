@@ -358,6 +358,7 @@ depende de `.gitattributes` para preservar LF nas skills.
 - [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md) — topologia, fluxo e componentes.
 - [`docs/CONFIGURACAO.md`](docs/CONFIGURACAO.md) — provedores, integrações, canais e variáveis.
 - [`docs/NAVEGADOR.md`](docs/NAVEGADOR.md) — worker Playwright, broker egress e smoke test isolado.
+- [`docs/evolution/phase-0/`](docs/evolution/phase-0/README.md) — Fase 0 da evolução: arquitetura, contratos e modelo de ameaças.
 - [`docs/RECUPERACAO.md`](docs/RECUPERACAO.md) — backup, migrações, rollback e restore.
 - [`docs/OPERACAO-SLO-E-INCIDENTES.md`](docs/OPERACAO-SLO-E-INCIDENTES.md) — SLOs propostos e runbook.
 - [`docs/RUNBOOK-RELEASE-2026-10-18.md`](docs/RUNBOOK-RELEASE-2026-10-18.md) — release/deploy.
