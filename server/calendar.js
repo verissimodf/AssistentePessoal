@@ -4,21 +4,11 @@
 // registrados: 'fixture' (TESTE, claramente identificado) e 'google' (implementado
 // contra a API oficial via oauth_connections EXISTENTE — só é FUNCIONAL com conexão
 // OAuth real; caso contrário: indisponibilidade EXPLÍCITA, nunca simulação).
+import { parseJson, clean } from "./util.js";
 import { db, now, uid, audit } from "./db.js";
 import { assignNew, owns } from "./ownership.js";
 import { getOAuthAccessToken, OAuthError } from "./oauth.js";
 import { recordEvent } from "./proactive.js"; // sem ciclo: proactive.js não importa calendar.js
-
-const parseJson = (t, f) => {
-  if (t === null || t === undefined) return f;
-  try {
-    const v = JSON.parse(t);
-    return v && typeof v === "object" ? v : f;
-  } catch {
-    return f;
-  }
-};
-const clean = (v, max) => String(v ?? "").slice(0, max);
 
 export const IF_SYNC_LIMITS = { max_events_per_sync: 500 };
 

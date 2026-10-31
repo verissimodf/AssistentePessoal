@@ -9,6 +9,7 @@
 // - Efeito externo já iniciado nunca é re-executado (herda jobs.js:158): interrupção vira
 //   `unknown` e só sai por reconciliação auditada com verificador nomeado.
 // - Auto-relato do modelo não é evidência; `completed` técnico ≠ negócio verificado.
+import { parseJson, clean } from "./util.js";
 import { db, now, uid, audit, recordEvidence } from "./db.js";
 import { assignNew, owns, dropOwnership, tx } from "./ownership.js";
 import { SCOPES, ADMIN_ONLY, isVerifiedAdmin } from "./auth.js";
@@ -76,16 +77,6 @@ const ACTIVE_STATUSES = new Set(["queued", "running", "awaiting_approval"]);
 const ROLES = new Set(["orchestrator", "specialist", "worker"]);
 
 // ---------- validação de estruturas ----------
-
-const parseJson = (text, fallback) => {
-  if (text === null || text === undefined) return fallback;
-  try {
-    const v = JSON.parse(text);
-    return v && typeof v === "object" ? v : fallback;
-  } catch {
-    return fallback;
-  }
-};
 
 /** Escopos válidos para um definition: todos os pedidos devem existir em SCOPES; "*" e
  *  escopos admin-only são recusados explicitamente (não silenciosamente filtrados). */
@@ -717,7 +708,7 @@ export async function executeRun(runId, { agentRunner = null } = {}) {
         runId,
       );
     }
-    const verified = treeVerification(runId);
+    const verified = verificationOf(runId);
     recordEvidence({
       kind: "workforce_run",
       state: status,
@@ -910,7 +901,6 @@ function verificationOf(run) {
   if (rows.some((e) => e.verification === "verified")) return "partial";
   return "unverified";
 }
-export const treeVerification = verificationOf;
 
 // ---------- consultas, cancelamento, recuperação ----------
 

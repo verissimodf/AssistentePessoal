@@ -5,6 +5,7 @@
 // explícito, recuperação limitada (replanejar ≤2) e memória procedural (tested/validated).
 // Invariantes: conteúdo da interface é DADO NÃO CONFIÁVEL; o modelo não autoriza; ações
 // proibidas (pagamento/compra/transferência…) são bloqueadas por padrão, sem bypass.
+import { parseJson, clean } from "./util.js";
 import { db, now, uid, audit } from "./db.js";
 import { assignNew, owns, dropOwnership, tx } from "./ownership.js";
 import { callTool } from "./tools.js";
@@ -14,16 +15,6 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { getSettings } from "./settings.js";
 
-const parseJson = (t, f) => {
-  if (t === null || t === undefined) return f;
-  try {
-    const v = JSON.parse(t);
-    return v && typeof v === "object" ? v : f;
-  } catch {
-    return f;
-  }
-};
-const clean = (v, max) => String(v ?? "").slice(0, max);
 const sha256 = (b) => createHash("sha256").update(b).digest("hex");
 
 export const CI_LIMITS = {

@@ -4,6 +4,7 @@
 // `unknown` por evidência. SEM terceira fila de jobs (ADR-WF-001): executor in-process sobre
 // estado persistido + recovery no boot — reutiliza Workforce (nós agent), Knowledge Hub
 // (nós knowledge/transform), callTool (nós tool, com D9) e o policy engine em toda decisão.
+import { parseJson, clean } from "./util.js";
 import { db, now, uid, audit } from "./db.js";
 import { assignNew, owns, dropOwnership, tx } from "./ownership.js";
 import { TOOL_SCOPES } from "./auth.js";
@@ -67,17 +68,6 @@ function workflowScopes(definition) {
 function getWfDefinitionInternal(id) {
   return defRow(db.prepare("SELECT * FROM wf_definitions WHERE id = ?").get(id));
 }
-
-const parseJson = (t, f) => {
-  if (t === null || t === undefined) return f;
-  try {
-    const v = JSON.parse(t);
-    return v && typeof v === "object" ? v : f;
-  } catch {
-    return f;
-  }
-};
-const clean = (v, max) => String(v ?? "").slice(0, max);
 
 // ---------- validação de grafo ----------
 

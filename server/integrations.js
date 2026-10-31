@@ -7,22 +7,12 @@
 // AUTENTICA o produtor mas não autoriza ação alguma; identidade vem da credencial
 // validada no backend (o payload NUNCA se declara confiável); toda execução proativa
 // segue pelo Proactive Engine → Workflow Engine → Policy Engine/D9. Sem segredos em logs.
+import { parseJson, clean } from "./util.js";
 import { db, now, uid, audit } from "./db.js";
 import { assignNew, owns, tx } from "./ownership.js";
 import { encrypt, decrypt } from "./secret-crypto.js";
 import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
 import { getCalendarProvider } from "./calendar.js"; // registry de adapters (sem ciclo)
-
-const parseJson = (t, f) => {
-  if (t === null || t === undefined) return f;
-  try {
-    const v = JSON.parse(t);
-    return v && typeof v === "object" ? v : f;
-  } catch {
-    return f;
-  }
-};
-const clean = (v, max) => String(v ?? "").slice(0, max);
 
 export const IF_LIMITS = {
   max_integrations_per_owner: 20,
@@ -497,22 +487,27 @@ async function recordExternalEvent(
     dedupeKey: `if-event:${externalEventRowId}`,
   });
   if (ev.duplicate) return { skipped: "pr_duplicate" };
-  // regras ativas com gatilho event (source integrations) disparam normalmente
+  // Fase 9 (correção da auditoria): avalia TODAS as regras que escutam o evento —
+  // cooldown/pausa de UMA regra nunca bloqueia as irmãs (antes: return na 1ª match).
   const rules = db
     .prepare(
       "SELECT id, trigger_json FROM pr_rules WHERE owner_admin_id = ? AND state = 'active' AND trigger_kind = 'event'",
     )
     .all(adminId);
+  const results = [];
   for (const r of rules) {
     const trigger = parseJson(r.trigger_json, {});
-    if (trigger.source === "integrations" && trigger.eventKind === clean(eventType, 60)) {
-      try {
-        return await prEngine.handleRuleTriggered(adminId, r.id, { event: ev.event });
-      } catch (e) {
-        return { error: clean(e?.code || e?.message, 60) };
-      }
+    if (trigger.source !== "integrations" || trigger.eventKind !== clean(eventType, 60)) continue;
+    try {
+      results.push(await prEngine.handleRuleTriggered(adminId, r.id, { event: ev.event }));
+    } catch (e) {
+      results.push({ error: clean(e?.code || e?.message, 60) });
     }
   }
-  return { recorded: true }; // evento registrado; nenhuma regra casou
+  if (!results.length) return { recorded: true }; // evento registrado; nenhuma regra casou
+  // resultado agregado: a primeira decisão que criou/executou representa o encaminhamento
+  return (
+    results.find((x) => x.opportunityId || x.error) || results.find((x) => !x.skipped) || results[0]
+  );
 }
 import * as prEngine from "./proactive.js"; // sem ciclo: proactive.js não importa este módulo

@@ -9,6 +9,7 @@
 // - conteúdo de fonte é DADO NÃO CONFIÁVEL — nunca instrução, nunca autorização;
 // - falha de indexação nunca concede acesso; excesso/erro falham fechado;
 // - exclusão remove documento, chunks, FTS, relacionamentos e versões (sem órfãos).
+import { parseJson, clean } from "./util.js";
 import { db, now, uid, audit } from "./db.js";
 import { assignNew, owns, dropOwnership, tx } from "./ownership.js";
 import { saveDocument, deleteDocument, searchDocuments, getDocument } from "./documents.js";
@@ -37,17 +38,7 @@ const INGEST_STATUSES = new Set([
 ]);
 const INDEX_STATUSES = new Set(["pending", "indexed", "partial", "lexical_only"]);
 
-const parseJson = (text, fallback) => {
-  if (text === null || text === undefined) return fallback;
-  try {
-    const v = JSON.parse(text);
-    return v && typeof v === "object" ? v : fallback;
-  } catch {
-    return fallback;
-  }
-};
 const sha256 = (buf) => createHash("sha256").update(buf).digest("hex");
-const clean = (v, max) => String(v ?? "").slice(0, max);
 
 // ---------- bibliotecas ----------
 

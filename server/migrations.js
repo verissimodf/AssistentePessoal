@@ -2339,6 +2339,29 @@ BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
       },
     ],
   },
+  {
+    // Fase 9 da evolução (docs/evolution/phase-9): CONSOLIDAÇÃO — índices para as queries
+    // dos ticks periódicos (15-60 s) das fases 5-8, que faziam full scan com o crescimento
+    // das tabelas (auditoria arquitetural, docs/evolution/phase-9/migration-audit.md).
+    // ADITIVA e reversível: somente CREATE INDEX — nenhum dado tocado.
+    version: 28,
+    name: "consolidation: indexes for periodic tick queries (phases 5-8)",
+    sql: `
+CREATE INDEX IF NOT EXISTS idx_if_events_status ON if_events(status, id);
+CREATE INDEX IF NOT EXISTS idx_ci_actions_pending ON ci_actions(status, approval_id) WHERE approval_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_pr_rules_temporal ON pr_rules(state, trigger_kind, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_pr_rules_event ON pr_rules(owner_admin_id, state, trigger_kind);
+CREATE INDEX IF NOT EXISTS idx_wf_runs_status ON wf_runs(status);
+CREATE INDEX IF NOT EXISTS idx_mm_sessions_tick ON mm_sessions(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_mm_turns_tick ON mm_turns(state, updated_at);
+CREATE INDEX IF NOT EXISTS idx_ci_sessions_owner ON ci_sessions(owner_admin_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_pr_opp_dedupe ON pr_opportunities(dedupe_key) WHERE dedupe_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_pr_opp_rule ON pr_opportunities(rule_id, status);
+CREATE INDEX IF NOT EXISTS idx_cal_conflicts_account ON cal_conflicts(account_id, resolved_at);
+CREATE INDEX IF NOT EXISTS idx_pr_notif_read ON pr_notifications(owner_admin_id, read_at);
+`,
+    expect: [],
+  },
 ];
 
 const tableExists = (db, t) =>

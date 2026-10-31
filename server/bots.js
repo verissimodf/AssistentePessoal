@@ -7,6 +7,9 @@ import { ownerOf, assignNew, tx } from "./ownership.js";
 import { reindexPendingDocuments } from "./documents.js";
 import { enqueueScheduledBot, recoverScheduledJobs, drainScheduledJobs } from "./jobs.js";
 import { runMemoryRetention } from "./memory-retention.js";
+// Fase 9: quebra do ciclo estático bots↔jobs — o runner é registrado no boot (jobs.js
+// chama `runBot` VIA o setter; nada de import reverso).
+import { setBotRunner } from "./jobs.js";
 
 /**
  * Identity of a bot run: the bot itself, on behalf of its owner admin. Ownership comes only from
@@ -139,6 +142,9 @@ export async function runBot(
     activeBotRuns.delete(fresh.id);
   }
 }
+
+// Fase 9: registra o runner no jobs.js (injeção que quebra o ciclo estático bots↔jobs).
+setBotRunner(runBot);
 
 /** Runs of a bot, restricted to runs owned by adminId. */
 export const listRuns = (botId, adminId) =>

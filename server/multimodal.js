@@ -12,22 +12,12 @@
 //    estável — nunca um resultado fictício.
 //  - Eventos obsoletos são descartados: um resultado antigo nunca substitui um turno
 //    interrompido (guarda de obsolescência por estado).
+import { parseJson, clean } from "./util.js";
 import { db, now, uid, audit } from "./db.js";
 import { assignNew, owns, tx } from "./ownership.js";
 import { transcribeAudio } from "./stt.js";
 import { tts, VoiceError } from "./voice.js";
 import { chatExchange, validateMessage } from "./conversations.js";
-
-const parseJson = (t, f) => {
-  if (t === null || t === undefined) return f;
-  try {
-    const v = JSON.parse(t);
-    return v && typeof v === "object" ? v : f;
-  } catch {
-    return f;
-  }
-};
-const clean = (v, max) => String(v ?? "").slice(0, max);
 
 export const MM_LIMITS = {
   max_turns_per_session: 200,
@@ -38,17 +28,6 @@ export const MM_LIMITS = {
   max_segments: 200,
 };
 
-export const TURN_STATES = new Set([
-  "idle",
-  "listening",
-  "transcribing",
-  "processing",
-  "generating",
-  "speaking",
-  "interrupted",
-  "completed",
-  "failed",
-]);
 export const ACTIVE_TURN_STATES = new Set([
   "listening",
   "transcribing",

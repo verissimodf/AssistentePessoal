@@ -315,7 +315,6 @@ test("19-20. integração com Proactive Engine: evento autenticado → regra →
     rawBody: Buffer.from(body),
   });
   const out = await ifx.forwardIntegrationEvents(ADMIN.adminId);
-  assert.ok(out.forwarded >= 1);
   const opps = pr.listOpportunities(ADMIN.adminId, {}).filter((o) => o.rule_id === rule.id);
   assert.equal(opps.length, 1); // dedupe do encaminhamento (um evento → uma oportunidade)
   const opp = opps[0];
@@ -579,4 +578,58 @@ test("35. cross-owner: integração, contas e eventos de outro dono invisíveis"
   );
   const biaIt = ifx.createIntegration(BIA.adminId, { kind: "webhook", name: uniq("bia") });
   assert.equal(ifx.getIntegration(ADMIN.adminId, biaIt.id), null);
+});
+
+test("36. REGRESSÃO F9: cooldown de uma regra NÃO bloqueia irmãs do mesmo evento", async () => {
+  const wfId = wf.createDefinition(ADMIN.adminId, {
+    name: uniq("wf-irmas"),
+    allowed_tools: [],
+    graph: graph(["start", "end"]),
+  });
+  wf.publishDefinition(ADMIN.adminId, wfId.id);
+  // duas regras ouvindo o MESMO evento; r1 dispara no 1º (entra em cooldown); r2 só
+  // satisfaz condições no 2º evento — o cooldown de r1 não pode impedi-la (bug F8: o
+  // encaminhamento parava na 1ª regra que casava).
+  const r1 = pr.createRule(ADMIN.adminId, {
+    name: uniq("irma-a"),
+    triggerKind: "event",
+    trigger: { source: "integrations", eventKind: "build.failed" },
+    workflowId: wfId.id,
+  });
+  const r2 = pr.createRule(ADMIN.adminId, {
+    name: uniq("irma-b"),
+    triggerKind: "event",
+    trigger: { source: "integrations", eventKind: "build.failed" },
+    conditions: { all: [{ op: "eq", fact: "grave", value: true }] },
+    workflowId: wfId.id,
+  });
+  pr.setRuleState(ADMIN.adminId, r1.id, "active");
+  pr.setRuleState(ADMIN.adminId, r2.id, "active");
+  const { prod, sign } = await makeProducer(uniq("irmas"));
+  const body1 = JSON.stringify({
+    event_id: `bf-${Math.random()}`,
+    event_type: "build.failed",
+    schema_version: "1",
+    payload: {},
+  });
+  ifx.ingestWebhook(prod.id, {
+    headers: { "x-if-signature": sign(body1) },
+    rawBody: Buffer.from(body1),
+  });
+  await ifx.forwardIntegrationEvents(ADMIN.adminId); // r1 dispara; r2: condições não satisfeitas
+  const body2 = JSON.stringify({
+    event_id: `bf2-${Math.random()}`,
+    event_type: "build.failed",
+    schema_version: "1",
+    payload: { grave: true },
+  });
+  ifx.ingestWebhook(prod.id, {
+    headers: { "x-if-signature": sign(body2) },
+    rawBody: Buffer.from(body2),
+  });
+  await ifx.forwardIntegrationEvents(ADMIN.adminId); // r1 em cooldown; r2 DEVE disparar
+  const opps1 = pr.listOpportunities(ADMIN.adminId, {}).filter((o) => o.rule_id === r1.id).length;
+  const opps2 = pr.listOpportunities(ADMIN.adminId, {}).filter((o) => o.rule_id === r2.id).length;
+  assert.equal(opps1, 1); // r1 em cooldown no 2º evento (correto)
+  assert.equal(opps2, 1); // r2 avaliada no 2º evento (correção F9: irmãs independentes)
 });

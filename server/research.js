@@ -4,6 +4,7 @@
 // validada contra o conteúdo da fonte (citação alucinada é rejeitada); relatórios versionados
 // com citações autoritativas. Sem resultados fictícios: provedor indisponível → status
 // 'partial'/'inconclusive' explícito.
+import { parseJson, clean } from "./util.js";
 import { db, now, uid, audit } from "./db.js";
 import { assignNew, owns, tx } from "./ownership.js";
 import {
@@ -23,16 +24,6 @@ const RESEARCH_LIMITS = {
   max_evidence_per_source: 5,
 };
 
-const parseJson = (t, f) => {
-  if (t === null || t === undefined) return f;
-  try {
-    const v = JSON.parse(t);
-    return v && typeof v === "object" ? v : f;
-  } catch {
-    return f;
-  }
-};
-const clean = (v, max) => String(v ?? "").slice(0, max);
 const norm = (s) =>
   String(s ?? "")
     .replace(/\s+/g, " ")

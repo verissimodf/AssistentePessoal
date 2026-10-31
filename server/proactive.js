@@ -6,21 +6,11 @@
 // fingerprint. Níveis de autonomia governam o que o motor pode fazer SOZINHO (0=observar,
 // 1=recomendar, 2=iniciar workflows seguros, 3=condicionada ao D9) — nunca sobrepor o
 // Policy Engine. Eventos internos são DADOS: dedupe por chave idempotente, fail-closed.
+import { parseJson, clean } from "./util.js";
 import { db, now, uid, audit } from "./db.js";
 import { assignNew, owns, tx } from "./ownership.js";
 import { startWorkflowRun, getWfRun, setWfEventSink } from "./workflow.js";
 import { getSettings } from "./settings.js";
-
-const parseJson = (t, f) => {
-  if (t === null || t === undefined) return f;
-  try {
-    const v = JSON.parse(t);
-    return v && typeof v === "object" ? v : f;
-  } catch {
-    return f;
-  }
-};
-const clean = (v, max) => String(v ?? "").slice(0, max);
 
 export const PR_LIMITS = {
   max_rules_per_owner: 50,

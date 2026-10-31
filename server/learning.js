@@ -2,19 +2,10 @@
 // Jornadas de aprendizagem persistentes (projeto → módulos → lições → atividades → tentativas),
 // tutor contextual fundamentado no Knowledge Hub (citações autoritativas), diário e progresso
 // explícito. Nada vira memória automática; nada é avaliado como "domínio" — só contagens.
+import { parseJson, clean } from "./util.js";
 import { db, now, uid, audit } from "./db.js";
 import { assignNew, owns, dropOwnership, tx } from "./ownership.js";
 
-const parseJson = (t, f) => {
-  if (t === null || t === undefined) return f;
-  try {
-    const v = JSON.parse(t);
-    return v && typeof v === "object" ? v : f;
-  } catch {
-    return f;
-  }
-};
-const clean = (v, max) => String(v ?? "").slice(0, max);
 const extractJson = (text) => {
   const m = String(text || "").match(/\{[\s\S]*\}/);
   if (!m) throw new Error("learn_generation_invalid");
