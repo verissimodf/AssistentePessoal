@@ -4,7 +4,9 @@
 // política, execução com D9 real, verificação, evidências, procedimento
 // (observed→tested→validated), reutilização, mudança de interface com interrupção segura,
 // bloqueio proibido e injeção visual sem efeito.
-import { test, before, after } from "node:test";
+import { test as nodeTest, before, after } from "node:test";
+// Managed browser integration is Linux-only: it requires filesystem Unix sockets.
+const test = process.platform === "win32" ? nodeTest.skip : nodeTest;
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtempSync } from "node:fs";

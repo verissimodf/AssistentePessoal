@@ -1,4 +1,6 @@
-import { test } from "node:test";
+// Unix domain sockets are Linux-only (policy proxy listens on a UDS).
+import { test as nodeTest } from "node:test";
+const test = process.platform === "win32" ? nodeTest.skip : nodeTest;
 import assert from "node:assert/strict";
 import net from "node:net";
 import { once } from "node:events";
