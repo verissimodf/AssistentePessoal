@@ -163,6 +163,19 @@ import {
   learningProgress,
   deleteLearningProject,
 } from "./learning.js";
+import {
+  openSession,
+  getSession,
+  closeSession,
+  observe as ciObserve,
+  planActions,
+  executePlan,
+  tickCiSessions,
+  recordProcedure,
+  listProcedures,
+  reuseProcedure,
+  registerCiWorkflowNodes,
+} from "./computer.js";
 import { listScheduledJobs } from "./jobs.js";
 import {
   memoryRetentionPolicy,
@@ -1385,6 +1398,87 @@ route("POST", "/api/policies/simulate", "session", ({ body, principal }) => {
   return out;
 });
 
+// ---------- Computer Studio (evolução Fase 5, docs/evolution/phase-5) ----------
+const ciError = (e) => {
+  const code = e?.message || "ci_error";
+  const map = {
+    ci_owner_required: 403,
+    ci_browser_disabled: 409,
+    ci_session_not_active: 409,
+    ci_plan_invalid: 502,
+    ci_plan_not_planned: 409,
+    ci_procedure_deprecated: 409,
+    ci_name_required: 400,
+    not_found: 404,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+route("GET", "/api/ci/sessions", "computer:read", ({ principal }) =>
+  db.prepare("SELECT id, environment, objective, status, created_at, closed_at FROM ci_sessions WHERE owner_admin_id = ? ORDER BY created_at DESC LIMIT 100").all(me(principal)),
+);
+route("POST", "/api/ci/sessions", "computer:run", ({ body, principal }) => {
+  try {
+    return openSession(me(principal), body || {});
+  } catch (e) {
+    throw ciError(e);
+  }
+});
+route("GET", "/api/ci/sessions/:id", "computer:read", ({ params, principal }) => {
+  const s = getSession(me(principal), params.id);
+  if (!s) notFound();
+  return s;
+});
+route("POST", "/api/ci/sessions/:id/close", "computer:run", ({ params, principal }) => {
+  const out = closeSession(me(principal), params.id);
+  if (out.error) throw ciError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/ci/sessions/:id/observe", "computer:read", async ({ params, principal }) => {
+  try {
+    const out = await ciObserve(me(principal), params.id);
+    if (out.error) throw ciError(new Error(out.error));
+    return { id: out.id, hash: out.hash, dims: out.dims, content: out.content.slice(0, 4000) };
+  } catch (e) {
+    throw ciError(e);
+  }
+});
+route("POST", "/api/ci/sessions/:id/plan", "computer:run", async ({ params, principal }) => {
+  try {
+    const out = await planActions(me(principal), params.id);
+    if (out.error) throw ciError(new Error(out.error));
+    return { plan_id: out.plan_id, steps: out.steps };
+  } catch (e) {
+    throw ciError(e);
+  }
+});
+route("POST", "/api/ci/plans/:id/execute", "computer:run", async ({ params, principal }) => {
+  try {
+    const plan = db.prepare("SELECT session_id FROM ci_plans WHERE id = ?").get(params.id);
+    if (!plan || !owns(me(principal), "ci_session", plan.session_id)) notFound();
+    const out = await executePlan(me(principal), plan.session_id, params.id);
+    if (out.error) throw ciError(new Error(out.error));
+    return out;
+  } catch (e) {
+    if (e instanceof AuthError) throw e;
+    throw ciError(e);
+  }
+});
+route("GET", "/api/ci/procedures", "computer:read", ({ query, principal }) =>
+  listProcedures(me(principal), { includeDeprecated: query?.include === "deprecated" }),
+);
+route("POST", "/api/ci/procedures", "computer:run", ({ body, principal }) => {
+  try {
+    return recordProcedure(me(principal), body || {});
+  } catch (e) {
+    throw ciError(e);
+  }
+});
+route("POST", "/api/ci/procedures/:id/reuse", "computer:run", ({ params, principal }) => {
+  const out = reuseProcedure(me(principal), params.id);
+  if (out.error) throw ciError(new Error(out.error));
+  return out;
+});
+
 // ---------- Deep Research (evolução Fase 4, docs/evolution/phase-4) ----------
 const researchError = (e) => {
   const code = e?.message || "research_error";
@@ -2046,8 +2140,11 @@ if (isMain && !process.env.JARVIS_NO_LISTEN) {
   recoverWorkforceRuns();
   recoverKhJobs();
   recoverWfRuns();
-  // Tick do Workflow Studio: retoma runs de aprovações resolvidas e waits expirados.
+  // Tick do Workflow Studio: retoma runs de aprovações resolvidas e waits expirados;
+  // tick da Computer Intelligence: ações verification_pending após resolução D9.
   setInterval(() => tickWfRuns().catch(() => {}), 20_000).unref();
+  setInterval(() => tickCiSessions().catch(() => {}), 20_000).unref();
+  registerCiWorkflowNodes(); // nós computer_* no Workflow Engine (Fase 5)
   // P2: inbound messages run as the admin whose own settings hold the channel credentials.
   const activeAdmins = () =>
     db

@@ -11,6 +11,7 @@ import {
   LogOut,
   Mail,
   MessageSquare,
+  Monitor,
   Network,
   Settings,
   ShieldCheck,
@@ -41,6 +42,7 @@ export function AppShell() {
     { to: "/research", label: t("nav_research"), icon: Telescope },
     { to: "/learning", label: t("nav_learning"), icon: GraduationCap },
     { to: "/workflows", label: t("nav_workflows"), icon: GitBranch },
+    { to: "/computer", label: t("nav_computer"), icon: Monitor },
     { to: "/policies", label: t("nav_policies"), icon: ShieldCheck },
     { to: "/configuracoes", label: t("nav_settings"), icon: Settings },
   ] as const;

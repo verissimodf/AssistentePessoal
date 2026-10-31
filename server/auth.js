@@ -54,6 +54,10 @@ export const SCOPES = [
   "research:write",
   "learn:read",
   "learn:write",
+  // Computer Intelligence (evolução Fase 5): sessões de navegador com observação/verificação
+  // (read) e execução de planos (run) — escritas passam pelo D9 nativo do browser_action.
+  "computer:read",
+  "computer:run",
 ];
 /** Scopes reserved for a human admin session — never grantable to a token. */
 export const ADMIN_ONLY = [
@@ -104,6 +108,12 @@ export const TOOL_SCOPES = {
   notebook_search: "kh:read",
   notebook_transform: "kh:read",
   notebook_note: "kh:write",
+  // Computer Intelligence (evolução Fase 5): observação/verificação (read) e planos/execução
+  // (run) — as ESCRITAS do navegador continuam com D9 (web:write + aprovação) dentro do fluxo.
+  computer_observe: "computer:read",
+  computer_verify: "computer:read",
+  computer_plan: "computer:run",
+  computer_execute: "computer:run",
 };
 
 /** Loopback sources (all local processes look identical here). */

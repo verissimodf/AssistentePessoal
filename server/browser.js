@@ -26,6 +26,12 @@ import {
 /** Operações suportadas — lista FECHADA (não existe eval/shell/download arbitrário). */
 export const BROWSER_OPS = ["navigate", "extract", "click", "fill", "wait_for", "screenshot"];
 
+/** Override de teste (fixtures Playwright); produção mantém null → carregamento real. */
+let loadPlaywrightOverride = null;
+export function setLoadPlaywright(fn) {
+  loadPlaywrightOverride = fn;
+}
+
 export const BROWSER_LIMITS = {
   minTimeoutMs: 1_000,
   maxTimeoutMs: 60_000,
@@ -253,8 +259,8 @@ async function localRun(
     }
     if (request.op === "screenshot") {
       const buf = await page.screenshot({ fullPage: false, type: "png" });
-      // A imagem NÃO é devolvida em base64: apenas tamanho (o arquivo é gravado pelo chamador).
-      return { screenshotBytes: buf.length };
+      // Fase 5: imagem em base64 pelo canal local (callback saveScreenshot persiste no app).
+      return { screenshotBytes: buf.length, screenshotBase64: buf.toString("base64") };
     }
     const title = await page.title();
     let text = "";
@@ -391,7 +397,8 @@ export async function runBrowserAction(adminId, params = {}, options = {}) {
   const external = options.signal;
   const signal = external ? AbortSignal.any([external, ctl.signal]) : ctl.signal;
   inflight.set(runId, { abort: () => ctl.abort() });
-  const loadPlaywrightFn = options.loadPlaywright ?? loadPlaywright;
+  // Fase 5: seam para testes (fixtures Playwright) — produção usa o loadPlaywright real.
+  const loadPlaywrightFn = options.loadPlaywright ?? loadPlaywrightOverride ?? loadPlaywright;
   try {
     const result =
       cfg.mode === "managed"
@@ -434,11 +441,22 @@ export async function runBrowserAction(adminId, params = {}, options = {}) {
               text: excerpt,
             }),
           ).slice(0, BROWSER_LIMITS.maxOutputChars);
+    // Fase 5 (Computer Intelligence): persiste o PNG como artefato de evidência quando o
+    // chamador fornece o destino (callback); base64 vem do worker/local pelo canal privado.
+    let screenshotPath = null;
+    if (typeof result.screenshotBase64 === "string" && typeof options.saveScreenshot === "function") {
+      try {
+        screenshotPath = options.saveScreenshot(Buffer.from(result.screenshotBase64, "base64")) || null;
+      } catch {
+        screenshotPath = null;
+      }
+    }
     return done("completed", {
       output,
       title: result.title ?? null,
       finalUrl: result.finalUrl ?? null,
       host: result.host ?? base.host,
+      screenshotPath,
     });
   } catch (e) {
     const code = e instanceof BrowserError ? e.code : "browser_error";

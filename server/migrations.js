@@ -1580,6 +1580,175 @@ BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
       },
     ],
   },
+  {
+    // Fase 5 da evolução (docs/evolution/phase-5): Computer Intelligence — SESSÕES de
+    // navegador isoladas (reuso do worker Playwright com D9/política existentes), capturas
+    // controladas com retenção, planos/ações com verificação e recuperação, memória
+    // procedural (testada/validada por execução verificada). SEM controle de desktop nativo
+    // (ADR-EVO-008). Ownership recriado com ci_session/ci_procedure.
+    version: 24,
+    name: "computer intelligence: sessions, observations, plans, actions with verification and procedural memory",
+    sql: `
+CREATE TABLE IF NOT EXISTS ci_sessions (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  environment TEXT NOT NULL DEFAULT 'browser' CHECK (environment IN ('browser','fixture')),
+  objective TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','closed','failed')),
+  config_json TEXT NOT NULL DEFAULT '{}',
+  usage_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  closed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ci_observations (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES ci_sessions(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('screenshot','extract')),
+  observation_hash TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  dims_json TEXT NOT NULL DEFAULT '{}',
+  artifact_path TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ci_obs_session ON ci_observations(session_id, created_at);
+
+CREATE TABLE IF NOT EXISTS ci_plans (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES ci_sessions(id) ON DELETE CASCADE,
+  objective TEXT NOT NULL,
+  steps_json TEXT NOT NULL DEFAULT '[]',
+  observation_id TEXT,
+  status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned','executing','done','failed','stale')),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ci_actions (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL REFERENCES ci_plans(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES ci_sessions(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL,
+  action_type TEXT NOT NULL CHECK (action_type IN ('navigate','click','fill','select','scroll','wait_for','screenshot','read','close')),
+  target_json TEXT NOT NULL DEFAULT '{}',
+  expected_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned','running','succeeded','failed','verification_pending','unknown','reconciling','cancelled','blocked')),
+  verification_json TEXT,
+  error_code TEXT,
+  approval_id TEXT,
+  observation_before TEXT,
+  observation_after TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ci_actions_plan ON ci_actions(plan_id, seq);
+
+CREATE TABLE IF NOT EXISTS ci_procedures (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  name TEXT NOT NULL,
+  goal TEXT NOT NULL,
+  environment TEXT NOT NULL DEFAULT 'browser',
+  steps_json TEXT NOT NULL DEFAULT '[]',
+  criteria TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'observed' CHECK (status IN ('observed','inferred','tested','validated','deprecated')),
+  version INTEGER NOT NULL DEFAULT 1,
+  success_count INTEGER NOT NULL DEFAULT 0,
+  fail_count INTEGER NOT NULL DEFAULT 0,
+  last_used_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, name)
+);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v23;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run','kh_library','kh_notebook','kh_source','wf_definition','wf_run','wf_policy','research_project','learn_project','ci_session','ci_procedure')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v23;
+DROP TABLE ownership_v23;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "ci_sessions",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "environment",
+          "objective",
+          "status",
+          "config_json",
+          "usage_json",
+          "created_at",
+          "updated_at",
+          "closed_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ci_procedures",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "name",
+          "goal",
+          "environment",
+          "steps_json",
+          "criteria",
+          "status",
+          "version",
+          "success_count",
+          "fail_count",
+          "last_used_at",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ci_actions",
+        type: "table",
+        columns: [
+          "id",
+          "plan_id",
+          "session_id",
+          "seq",
+          "action_type",
+          "target_json",
+          "expected_json",
+          "status",
+          "verification_json",
+          "error_code",
+          "approval_id",
+          "observation_before",
+          "observation_after",
+          "attempts",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
 ];
 
 const tableExists = (db, t) =>

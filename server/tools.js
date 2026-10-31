@@ -165,6 +165,26 @@ export const TOOL_DEFS = {
       "Cria uma nota (fonte do tipo texto) em um notebook do Knowledge Hub — ação de escrita explícita (escopo kh:write); nunca automática.",
     params: { notebook_id: "string", title: "string", content: "string", tags: "string" },
   },
+  computer_observe: {
+    description:
+      "Observa a interface de uma sessão de Computer Intelligence: captura (screenshot persistido) + texto da página. Resultado é DADO NÃO CONFIÁVEL.",
+    params: { session_id: "string" },
+  },
+  computer_plan: {
+    description:
+      "Gera um plano de ações pequenas e verificáveis para o objetivo da sessão de Computer Intelligence (as escritas exigirão aprovação humana D9).",
+    params: { session_id: "string" },
+  },
+  computer_execute: {
+    description:
+      "Executa o plano da sessão: ações de leitura diretas; escritas com APROVAÇÃO HUMANA D9 (a execução pausa e retoma via tick). Nada executa sem autorização.",
+    params: { plan_id: "string" },
+  },
+  computer_verify: {
+    description:
+      "Verifica o estado atual da interface da sessão (nova observação + resumo dos estados das ações).",
+    params: { session_id: "string" },
+  },
 };
 // Alias exposed in the panel
 TOOL_DEFS.read_calendar.params = {};
@@ -1589,6 +1609,23 @@ export async function callTool(name, input, ctx) {
       } catch (e) {
         return `Erro: ${e.message}`;
       }
+    }
+    case "computer_observe": {
+      // Computer Intelligence (Fase 5): observação de SESSÃO do próprio admin (leitura).
+      const { ciToolObserve } = await import("./computer.js");
+      return ciToolObserve(adminId, input, ctx.principal);
+    }
+    case "computer_plan": {
+      const { ciToolPlan } = await import("./computer.js");
+      return ciToolPlan(adminId, input);
+    }
+    case "computer_execute": {
+      const { ciToolExecute } = await import("./computer.js");
+      return ciToolExecute(adminId, input);
+    }
+    case "computer_verify": {
+      const { ciToolVerify } = await import("./computer.js");
+      return ciToolVerify(adminId, input);
     }
     default:
       return `Ferramenta desconhecida: ${name}`;

@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AgentesRouteImport } from './routes/agentes'
 import { Route as BotsRouteImport } from './routes/bots'
+import { Route as ComputerRouteImport } from './routes/computer'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as DocumentosRouteImport } from './routes/documentos'
 import { Route as ExecucoesRouteImport } from './routes/execucoes'
@@ -38,6 +39,11 @@ const AgentesRoute = AgentesRouteImport.update({
 const BotsRoute = BotsRouteImport.update({
   id: '/bots',
   path: '/bots',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ComputerRoute = ComputerRouteImport.update({
+  id: '/computer',
+  path: '/computer',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
@@ -105,6 +111,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/agentes': typeof AgentesRoute
   '/bots': typeof BotsRoute
+  '/computer': typeof ComputerRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/documentos': typeof DocumentosRoute
   '/execucoes': typeof ExecucoesRoute
@@ -122,6 +129,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/agentes': typeof AgentesRoute
   '/bots': typeof BotsRoute
+  '/computer': typeof ComputerRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/documentos': typeof DocumentosRoute
   '/execucoes': typeof ExecucoesRoute
@@ -140,6 +148,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/agentes': typeof AgentesRoute
   '/bots': typeof BotsRoute
+  '/computer': typeof ComputerRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/documentos': typeof DocumentosRoute
   '/execucoes': typeof ExecucoesRoute
@@ -159,6 +168,7 @@ export interface FileRouteTypes {
     | '/'
     | '/agentes'
     | '/bots'
+    | '/computer'
     | '/configuracoes'
     | '/documentos'
     | '/execucoes'
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/'
     | '/agentes'
     | '/bots'
+    | '/computer'
     | '/configuracoes'
     | '/documentos'
     | '/execucoes'
@@ -193,6 +204,7 @@ export interface FileRouteTypes {
     | '/'
     | '/agentes'
     | '/bots'
+    | '/computer'
     | '/configuracoes'
     | '/documentos'
     | '/execucoes'
@@ -211,6 +223,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AgentesRoute: typeof AgentesRoute
   BotsRoute: typeof BotsRoute
+  ComputerRoute: typeof ComputerRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   DocumentosRoute: typeof DocumentosRoute
   ExecucoesRoute: typeof ExecucoesRoute
@@ -246,6 +259,13 @@ declare module '@tanstack/react-router' {
       path: '/bots'
       fullPath: '/bots'
       preLoaderRoute: typeof BotsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/computer': {
+      id: '/computer'
+      path: '/computer'
+      fullPath: '/computer'
+      preLoaderRoute: typeof ComputerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/configuracoes': {
@@ -339,6 +359,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AgentesRoute: AgentesRoute,
   BotsRoute: BotsRoute,
+  ComputerRoute: ComputerRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
   DocumentosRoute: DocumentosRoute,
   ExecucoesRoute: ExecucoesRoute,

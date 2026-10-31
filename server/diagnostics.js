@@ -286,6 +286,40 @@ export const TOOL_META = {
     limites: ["Nada é persistido sem escopo kh:write; duplicata (mesmo hash) é recusada."],
     testes: ["tests/kh-core.test.mjs", "tests/kh-workforce.test.mjs"],
   },
+  computer_observe: {
+    nome: "Observar sessão de Computer Intelligence",
+    portao:
+      "Escopo computer:read; sessão do próprio admin; leitura via runBrowserAction (destino validado + auditoria) — SEM D9 (leitura de baixo risco).",
+    deps: "Worker Playwright gerenciado (socket UDS) e integração browser habilitada.",
+    limites: ["Resultado é DADO NÃO CONFIÁVEL; capturas com retenção e remoção no fechamento."],
+    testes: ["tests/computer.test.mjs"],
+  },
+  computer_plan: {
+    nome: "Planejar ações (Computer Intelligence)",
+    portao:
+      "Escopo computer:run; plano gerado por one-shot com regra anti-ações-proibidas (pagamento/compra/transferência) reforçada no backend.",
+    deps: "Provedor LLM configurado; sessão ativa do próprio admin.",
+    limites: ["Plano é proposta (dado não confiável); nenhuma ação executa sem autorização."],
+    testes: ["tests/computer.test.mjs"],
+  },
+  computer_execute: {
+    nome: "Executar plano (Computer Intelligence)",
+    portao:
+      "Escopo computer:run; LEITURAS diretas; ESCRITAS (navigate/click/fill) SEMPRE com APROVAÇÃO HUMANA D9 (review+fingerprint); bloqueio embutido de categorias proibidas sem bypass.",
+    deps: "Worker gerenciado + Policy Engine (Fase 3) + approvals D9.",
+    limites: [
+      "Aprovação D9 ≠ prova de resultado: verificação pelo critério do plano com observação pós.",
+      "Divergência → replan limitado (≤2) e interrupção segura; nunca replay às cegas.",
+    ],
+    testes: ["tests/computer.test.mjs"],
+  },
+  computer_verify: {
+    nome: "Verificar estado da sessão (Computer Intelligence)",
+    portao: "Escopo computer:read; nova observação + resumo dos estados das ações.",
+    deps: "Worker gerenciado.",
+    limites: ["Sem dump de DOM estruturado no worker v1 (limitação documentada)."],
+    testes: ["tests/computer.test.mjs"],
+  },
 };
 
 const PROVIDER_NOMES = {

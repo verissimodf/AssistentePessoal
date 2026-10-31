@@ -1859,3 +1859,162 @@ export async function getLearningProgress(id: string): Promise<LearnProgressRow[
   if (!(await ping())) return null;
   return await api<LearnProgressRow[]>(`/api/learn/${encodeURIComponent(id)}/progress`);
 }
+
+// ---------- Computer Studio (Fase 5: sessões de navegador observáveis, planos one-shot
+// com verificação e memória procedural — escritas sempre sob aprovação D9) ----------
+export type CiSessionStatus = "active" | "closed" | "failed";
+
+/** Item da listagem: sem plans/observations (só no detalhe). */
+export type CiSessionSummary = {
+  id: string;
+  environment: string;
+  objective: string;
+  status: CiSessionStatus | string;
+  created_at: string;
+  closed_at: string | null;
+};
+
+export type CiObservation = {
+  id: string;
+  kind: string;
+  observation_hash: string;
+  dims: Record<string, unknown>;
+  artifact_path: string | null;
+  created_at: string;
+};
+
+/** Passo de plano: alvo e verificação vêm do modelo como objetos (ou string). */
+export type CiPlanStep = { action: string; target: unknown; expected: unknown; why: string };
+
+export type CiPlan = {
+  id: string;
+  objective: string;
+  status: string;
+  observation_id: string | null;
+  created_at: string;
+  steps: CiPlanStep[];
+};
+
+export type CiSession = CiSessionSummary & {
+  config: Record<string, unknown>;
+  usage: Record<string, number>;
+  plans: CiPlan[];
+  observations: CiObservation[];
+};
+
+export type CiObserveResult = {
+  id: string;
+  hash: string;
+  dims: Record<string, unknown>;
+  content: string;
+};
+
+export type CiPlanResult = { plan_id: string; steps: CiPlanStep[] };
+
+/** Execução é parcial por desenho: done / waiting_approval (D9) / replanned / failed_at. */
+export type CiExecuteResult = {
+  done?: boolean;
+  waiting_approval?: boolean;
+  replanned?: boolean;
+  failed_at?: number | string | null;
+};
+
+export type CiProcedure = {
+  id: string;
+  name: string;
+  goal: string;
+  status: "observed" | "inferred" | "tested" | "validated" | "deprecated" | string;
+  version: number;
+  success_count: number;
+  fail_count: number;
+  steps: CiPlanStep[];
+  last_used_at: string | null;
+};
+
+export type CiReuseResult = { id: string; steps: CiPlanStep[]; status: string; note: string };
+
+export async function listCiSessions(): Promise<CiSessionSummary[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<CiSessionSummary[]>("/api/ci/sessions");
+  } catch {
+    return null;
+  }
+}
+
+export async function openCiSession(body: {
+  objective: string;
+  environment?: string;
+}): Promise<CiSession | null> {
+  if (!(await ping())) return null;
+  return await api<CiSession>("/api/ci/sessions", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getCiSession(id: string): Promise<CiSession | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<CiSession>(`/api/ci/sessions/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function closeCiSession(id: string): Promise<{ ok: true } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: true }>(`/api/ci/sessions/${encodeURIComponent(id)}/close`, {
+    method: "POST",
+  });
+}
+
+export async function observeCiSession(id: string): Promise<CiObserveResult | null> {
+  if (!(await ping())) return null;
+  return await api<CiObserveResult>(`/api/ci/sessions/${encodeURIComponent(id)}/observe`, {
+    method: "POST",
+  });
+}
+
+export async function planCiSession(id: string): Promise<CiPlanResult | null> {
+  if (!(await ping())) return null;
+  return await api<CiPlanResult>(`/api/ci/sessions/${encodeURIComponent(id)}/plan`, {
+    method: "POST",
+  });
+}
+
+export async function executeCiPlan(planId: string): Promise<CiExecuteResult | null> {
+  if (!(await ping())) return null;
+  return await api<CiExecuteResult>(`/api/ci/plans/${encodeURIComponent(planId)}/execute`, {
+    method: "POST",
+  });
+}
+
+export async function listCiProcedures(): Promise<CiProcedure[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<CiProcedure[]>("/api/ci/procedures");
+  } catch {
+    return null;
+  }
+}
+
+export async function createCiProcedure(body: {
+  name: string;
+  goal: string;
+  steps: CiPlanStep[];
+  verified?: boolean;
+}): Promise<{ id: string; status: string } | null> {
+  if (!(await ping())) return null;
+  return await api<{ id: string; status: string }>("/api/ci/procedures", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function reuseCiProcedure(id: string): Promise<CiReuseResult | null> {
+  if (!(await ping())) return null;
+  return await api<CiReuseResult>(`/api/ci/procedures/${encodeURIComponent(id)}/reuse`, {
+    method: "POST",
+  });
+}
