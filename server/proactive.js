@@ -33,6 +33,7 @@ export const PR_LIMITS = {
   max_justification_chars: 2000,
   max_pending_per_rule: 5,
   max_notifications: 200,
+  max_occurrence_delay_ms: 60 * 60 * 1000, // Fase 8: ocorrência atrasada além disso é descartada com motivo
 };
 
 export const SOURCES = new Set([
@@ -45,6 +46,8 @@ export const SOURCES = new Set([
   "computer",
   "manual",
   "system",
+  "integrations", // Fase 8: Integration Fabric (eventos externos autenticados e normalizados)
+  "calendar", // Fase 8: eventos de calendário (provider abstrato)
 ]);
 
 const RULE_STATES = new Set(["draft", "active", "paused", "disabled", "expired", "failed"]);
@@ -81,6 +84,7 @@ export function getControls(adminId, { settings = null } = {}) {
   return {
     level,
     paused: v.paused === true,
+    timezone: tzValidate(v.timezone) ? v.timezone : "UTC", // Fase 8: tz do usuário
     maxExecutionsPerHour: clampInt(
       v.maxExecutionsPerHour,
       1,
@@ -110,6 +114,11 @@ export function validateControls(body = {}) {
   if (body.paused !== undefined) {
     if (typeof body.paused !== "boolean") throw new PrError("pr_invalid_controls");
     out.paused = body.paused;
+  }
+  if (body.timezone !== undefined) {
+    if (typeof body.timezone !== "string" || !tzValidate(body.timezone))
+      throw new PrError("pr_invalid_timezone"); // Fase 8: tz IANA do usuário
+    out.timezone = body.timezone;
   }
   if (body.maxExecutionsPerHour !== undefined)
     out.maxExecutionsPerHour = clampInt(
@@ -307,7 +316,7 @@ function validateTrigger(kind, trigger = {}) {
   }
   if (kind === "temporal") {
     const type = trigger.type;
-    if (!["daily", "weekly", "interval", "date"].includes(type))
+    if (!["daily", "weekly", "monthly", "interval", "date"].includes(type))
       throw new PrError("pr_invalid_trigger_type");
     const out = { type };
     if (type === "daily") {
@@ -317,10 +326,30 @@ function validateTrigger(kind, trigger = {}) {
     } else if (type === "weekly") {
       if (!/^\d{2}:\d{2}$/.test(String(trigger.time || "")))
         throw new PrError("pr_invalid_trigger_time");
-      if (!Number.isInteger(trigger.weekday) || trigger.weekday < 0 || trigger.weekday > 6)
+      if (trigger.weekday === undefined && !Array.isArray(trigger.weekdays))
         throw new PrError("pr_invalid_trigger_weekday");
       out.time = trigger.time;
-      out.weekday = trigger.weekday;
+      // dia único OU lista de dias específicos (Fase 8)
+      if (trigger.weekday !== undefined) {
+        if (!Number.isInteger(trigger.weekday) || trigger.weekday < 0 || trigger.weekday > 6)
+          throw new PrError("pr_invalid_trigger_weekday");
+        out.weekday = trigger.weekday;
+      }
+      if (Array.isArray(trigger.weekdays)) {
+        if (
+          !trigger.weekdays.every((x) => Number.isInteger(x) && x >= 0 && x <= 6) ||
+          !trigger.weekdays.length
+        )
+          throw new PrError("pr_invalid_trigger_weekday");
+        out.weekdays = [...new Set(trigger.weekdays)];
+      }
+    } else if (type === "monthly") {
+      if (!Number.isInteger(trigger.day) || trigger.day < 1 || trigger.day > 31)
+        throw new PrError("pr_invalid_trigger_day");
+      if (!/^\d{2}:\d{2}$/.test(String(trigger.time || "")))
+        throw new PrError("pr_invalid_trigger_time");
+      out.day = trigger.day;
+      out.time = trigger.time;
     } else if (type === "interval") {
       const ms = Number(trigger.intervalMs);
       if (!Number.isInteger(ms) || ms < 60_000) throw new PrError("pr_invalid_trigger_interval");
@@ -330,6 +359,16 @@ function validateTrigger(kind, trigger = {}) {
         throw new PrError("pr_invalid_trigger_date");
       out.date = trigger.date;
       if (trigger.time && /^\d{2}:\d{2}$/.test(trigger.time)) out.time = trigger.time;
+    }
+    // janela de horário opcional (§10.1): o disparo só ocorre dentro da janela local
+    if (trigger.window !== undefined) {
+      const win = trigger.window || {};
+      if (
+        !/^\d{2}:\d{2}$/.test(String(win.from || "")) ||
+        !/^\d{2}:\d{2}$/.test(String(win.to || ""))
+      )
+        throw new PrError("pr_invalid_trigger_window");
+      out.window = { from: win.from, to: win.to };
     }
     return out;
   }
@@ -389,6 +428,12 @@ function validateRuleBody(body, { partial = false } = {}) {
       24 * 60 * 60 * 1000,
       PR_LIMITS.default_cooldown_ms,
     );
+  if (body.timezone !== undefined) {
+    // Fase 8: timezone IANA por regra; inválida é rejeitada (fail-closed, nunca UTC silencioso)
+    if (typeof body.timezone !== "string" || !tzValidate(body.timezone))
+      throw new PrError("pr_invalid_timezone");
+    out.timezone = body.timezone;
+  }
   return out;
 }
 
@@ -405,8 +450,8 @@ export function createRule(adminId, body = {}) {
   tx(() => {
     db.prepare(
       `INSERT INTO pr_rules (id, owner_admin_id, name, description, origin, trigger_kind, trigger_json, conditions_json,
-        workflow_id, params_json, execution, valid_from, valid_until, max_executions, cooldown_ms, state, version, created_at, updated_at)
-       VALUES (?,?,?,?, 'user', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 1, ?, ?)`,
+        workflow_id, params_json, execution, valid_from, valid_until, max_executions, cooldown_ms, timezone, state, version, created_at, updated_at)
+       VALUES (?,?,?,?, 'user', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 1, ?, ?)`,
     ).run(
       id,
       adminId,
@@ -422,6 +467,7 @@ export function createRule(adminId, body = {}) {
       data.valid_until || null,
       data.max_executions ?? null,
       data.cooldown_ms ?? PR_LIMITS.default_cooldown_ms,
+      data.timezone || "UTC",
       ts,
       ts,
     );
@@ -486,7 +532,7 @@ export function updateRule(adminId, id, body = {}) {
   tx(() => {
     db.prepare(
       `UPDATE pr_rules SET name=?, description=?, trigger_kind=?, trigger_json=?, conditions_json=?, workflow_id=?,
-        params_json=?, execution=?, valid_from=?, valid_until=?, max_executions=?, cooldown_ms=?, version=?, updated_at=?
+        params_json=?, execution=?, valid_from=?, valid_until=?, max_executions=?, cooldown_ms=?, timezone=?, version=?, updated_at=?
        WHERE id=?`,
     ).run(
       clean(merged.name, 80),
@@ -501,6 +547,7 @@ export function updateRule(adminId, id, body = {}) {
       merged.valid_until ?? r.valid_until,
       merged.max_executions ?? r.max_executions,
       merged.cooldown_ms ?? r.cooldown_ms,
+      data.timezone || r.timezone || "UTC",
       newVersion,
       ts,
       id,
@@ -532,9 +579,13 @@ export function setRuleState(adminId, id, state, extra = {}) {
   const sets = ["state = ?", "updated_at = ?"];
   const vals = [state, ts];
   if (state === "active") {
-    const rule = db.prepare("SELECT trigger_kind, trigger_json FROM pr_rules WHERE id = ?").get(id);
+    const rule = db
+      .prepare("SELECT trigger_kind, trigger_json, timezone FROM pr_rules WHERE id = ?")
+      .get(id);
     if (rule.trigger_kind === "temporal") {
-      const next = computeNextRunAt(parseJson(rule.trigger_json, {}));
+      const next = computeNextRunAt(parseJson(rule.trigger_json, {}), {
+        timezone: rule.timezone || "UTC",
+      });
       if (next) {
         sets.push("next_run_at = ?");
         vals.push(next);
@@ -560,35 +611,163 @@ export function setRuleState(adminId, id, state, extra = {}) {
   return getRule(adminId, id);
 }
 
-/** Próxima ocorrência calculável de um gatilho temporal (nunca no passado distante). */
-export function computeNextRunAt(trigger, { from = new Date() } = {}) {
-  const base = new Date(from);
-  const at = (day, time) => {
-    const [h, m] = String(time || "00:00")
-      .split(":")
-      .map(Number);
-    day.setUTCHours(h, m, 0, 0);
-    return day.toISOString();
-  };
-  if (trigger.type === "daily") {
-    const d = new Date(base);
-    const t = at(d, trigger.time);
-    return t > base.toISOString() ? t : at(new Date(base.getTime() + 86_400_000), trigger.time);
-  }
-  if (trigger.type === "weekly") {
-    for (let i = 0; i < 8; i++) {
-      const d = new Date(base.getTime() + i * 86_400_000);
-      if (d.getUTCDay() === trigger.weekday) {
-        const t = at(d, trigger.time);
-        if (t > base.toISOString()) return t;
-      }
+// ---------- inteligência temporal (Fase 8): timezone IANA + DST ----------
+
+const TZ_FMT = new Map();
+function tzFormatter(tz) {
+  let f = TZ_FMT.get(tz);
+  if (!f) {
+    try {
+      f = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+      TZ_FMT.set(tz, f);
+    } catch {
+      return null; // timezone inválida → chamador trata (fail-closed)
     }
-    return null;
   }
-  if (trigger.type === "interval")
+  return f;
+}
+
+function tzValidate(tz) {
+  return typeof tz === "string" && tz !== "" && tzFormatter(tz) !== null;
+}
+
+/** Partes de parede (wall clock) de um instante num timezone IANA. */
+function wallInTz(ms, tz) {
+  const f = tzFormatter(tz);
+  if (!f) return null;
+  const p = Object.fromEntries(f.formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  const hour = Number(p.hour) === 24 ? 0 : Number(p.hour); // Intl pode emitir '24'
+  return { y: +p.year, mo: +p.month, d: +p.day, h: hour, mi: +p.minute, s: +p.second };
+}
+
+/**
+ * Converte horário de parede local (ex.: "2026-11-05T09:00" em America/Sao_Paulo) para o
+ * instante UTC correto, lidando com DST:
+ *  - transição de outono (mesma hora local existe 2×): usa a PRIMEIRA ocorrência
+ *    (padrão da janela adiantada — horário padrão);
+ *  - transição de primavera (hora local NÃO existe): avança para o instante da
+ *    transição + 1 h (a recorrência NÃO é perdida nem executada duas vezes — política
+ *    documentada em docs/evolution/phase-8/timezone-dst.md).
+ * Timezone inválida → null (fail-closed: o chamador registra e NÃO dispara).
+ */
+export function zonedWallToUtc(wall, tz) {
+  if (!tzValidate(tz) || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(wall || ""))) return null;
+  const naive = Date.parse(`${wall}:00Z`);
+  if (!Number.isFinite(naive)) return null;
+  // Convergência: busca o instante t cujo offset(t) leva de naive ao MESMO t.
+  let instant = naive;
+  for (let i = 0; i < 3; i++) {
+    const w = wallInTz(instant, tz);
+    if (!w) return null;
+    const asUtc = Date.UTC(w.y, w.mo - 1, w.d, w.h, w.mi, w.s);
+    const next = naive - (asUtc - instant);
+    if (next === instant) return new Date(instant); // ponto fixo (horário existe)
+    instant = next;
+  }
+  // Não convergiu (oscilou): hora local NÃO existe (spring forward). Política documentada
+  // (ADR IF-006): avança 1 h a partir do último candidato — determinístico, nunca perde
+  // a ocorrência nem executa na hora inexistente.
+  return new Date(instant + 3_600_000);
+}
+
+/**
+ * Próxima ocorrência de um gatilho temporal no TIMEZONE do usuário (instantes sempre
+ * persistidos em UTC; a hora local é preservada entre transições de DST). Recorrências:
+ * daily, weekly (weekday único ou lista `weekdays`), monthly (dia fixo, com clamp ao
+ * último dia do mês), interval, date — todas com `window` opcional {from,to} "HH:MM".
+ * Retorna null quando não há próxima ocorrência calculável (fail-closed).
+ */
+export function computeNextRunAt(trigger, { from = new Date(), timezone = "UTC" } = {}) {
+  if (!tzValidate(timezone)) return null;
+  const base = new Date(from);
+  const w = wallInTz(base.getTime(), timezone);
+  if (!w) return null;
+  const [hh, mm] = String(trigger.time || "00:00")
+    .split(":")
+    .map(Number);
+  const pad = (n) => String(n).padStart(2, "0");
+  const wallOf = (y, mo, d) => `${y}-${pad(mo)}-${pad(d)}T${pad(hh)}:${pad(mm)}`;
+  const plusDays = (y, mo, d, n) => {
+    const t = new Date(Date.UTC(y, mo - 1, d + n));
+    return { y: t.getUTCFullYear(), mo: t.getUTCMonth() + 1, d: t.getUTCDate() };
+  };
+
+  let wall = null;
+  if (trigger.type === "daily") {
+    const today = wallOf(w.y, w.mo, w.d);
+    if (today > `${w.y}-${pad(w.mo)}-${pad(w.d)}T${pad(w.h)}:${pad(w.mi)}`) wall = today;
+    else {
+      const t = plusDays(w.y, w.mo, w.d, 1);
+      wall = wallOf(t.y, t.mo, t.d);
+    }
+  } else if (trigger.type === "weekly") {
+    const days =
+      Array.isArray(trigger.weekdays) && trigger.weekdays.length
+        ? trigger.weekdays
+        : [trigger.weekday];
+    if (!days.every((x) => Number.isInteger(x) && x >= 0 && x <= 6)) return null;
+    for (let i = 0; i < 8 && !wall; i++) {
+      const t = plusDays(w.y, w.mo, w.d, i);
+      const dow = new Date(Date.UTC(t.y, t.mo - 1, t.d)).getUTCDay();
+      if (!days.includes(dow)) continue;
+      const cand = wallOf(t.y, t.mo, t.d);
+      if (i > 0 || cand > `${w.y}-${pad(w.mo)}-${pad(w.d)}T${pad(w.h)}:${pad(w.mi)}`) wall = cand;
+    }
+  } else if (trigger.type === "monthly") {
+    const day = trigger.day;
+    if (!Number.isInteger(day) || day < 1 || day > 31) return null;
+    for (let i = 0; i < 3 && !wall; i++) {
+      const mo = ((w.mo - 1 + i) % 12) + 1;
+      const y = w.y + Math.floor((w.mo - 1 + i) / 12);
+      const last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+      const d = Math.min(day, last); // clamp: 31 em mês de 30 → dia 30
+      const cand = wallOf(y, mo, d);
+      if (i > 0 || cand > `${w.y}-${pad(w.mo)}-${pad(w.d)}T${pad(w.h)}:${pad(w.mi)}`) wall = cand;
+    }
+  } else if (trigger.type === "interval") {
     return new Date(base.getTime() + trigger.intervalMs).toISOString();
-  if (trigger.type === "date") return at(new Date(`${trigger.date}T00:00:00Z`), trigger.time);
-  return null;
+  } else if (trigger.type === "date") {
+    return zonedWallToUtc(`${trigger.date}T${pad(hh)}:${pad(mm)}`, timezone);
+  } else return null;
+  if (!wall) return null;
+  const instant = zonedWallToUtc(wall, timezone);
+  if (!instant) return null;
+  // janela de horário: se a ocorrência cai fora da janela local, adia para o início da
+  // janela no MESMO dia (ou no dia seguinte, se já passou) — motivo registrado pelo tick.
+  if (trigger.window) {
+    if (
+      !/^\d{2}:\d{2}$/.test(String(trigger.window.from || "")) ||
+      !/^\d{2}:\d{2}$/.test(String(trigger.window.to || ""))
+    )
+      return null;
+    const [fh, fm] = trigger.window.from.split(":").map(Number);
+    const [th, tm] = trigger.window.to.split(":").map(Number);
+    const parts = wall.split("T")[1].split(":").map(Number);
+    const mins = parts[0] * 60 + parts[1];
+    const fromM = fh * 60 + fm;
+    const toM = th * 60 + tm;
+    if (mins < fromM || mins > toM) {
+      const [y, mo, d] = wall.split("T")[0].split("-").map(Number);
+      let targetWall = `${y}-${pad(mo)}-${pad(d)}T${pad(fh)}:${pad(fm)}`;
+      if (mins > toM) {
+        const t = plusDays(y, mo, d, 1);
+        targetWall = `${t.y}-${pad(t.mo)}-${pad(t.d)}T${pad(fh)}:${pad(fm)}`;
+      }
+      const tInstant = zonedWallToUtc(targetWall, timezone);
+      if (!tInstant) return null;
+      return tInstant.toISOString();
+    }
+  }
+  return instant.toISOString();
 }
 
 // ---------- eventos internos ----------
@@ -1070,19 +1249,52 @@ export async function tickProactive({ nowMs = Date.now() } = {}) {
     notificationsExpired: 0,
   };
 
-  // regras temporais ativas vencidas (next_run_at persistido — nada só em memória)
+  // regras temporais ativas vencidas (next_run_at persistido — nada só em memória).
+  // Fase 8: ocorrência no TIMEZONE do usuário; drift controlado com política explícita.
   const due = db
     .prepare(
-      "SELECT id, owner_admin_id, trigger_json FROM pr_rules WHERE state = 'active' AND trigger_kind = 'temporal' AND next_run_at IS NOT NULL AND next_run_at <= ?",
+      "SELECT id, owner_admin_id, trigger_json, timezone, next_run_at FROM pr_rules WHERE state = 'active' AND trigger_kind = 'temporal' AND next_run_at IS NOT NULL AND next_run_at <= ?",
     )
     .all(tsIso);
   for (const r of due) {
     const trigger = parseJson(r.trigger_json, {});
-    // agenda a próxima ANTES de disparar (idempotência por ocorrência: janela de 1 min)
-    const next = computeNextRunAt(trigger, { from: new Date(nowMs + 1000) });
-    const occurrence = String(Math.floor(nowMs / 60_000));
+    const tz = r.timezone || "UTC";
+    const dueMs = Date.parse(r.next_run_at);
+    // Drift: ocorrência atrasada além do teto é DESCARTADA com motivo (nunca executada
+    // tarde nem silenciosamente perdida); próxima ocorrência é agendada.
+    if (nowMs - dueMs > PR_LIMITS.max_occurrence_delay_ms) {
+      const next = computeNextRunAt(trigger, { from: new Date(nowMs + 1000), timezone: tz });
+      const wall = wallInTz(dueMs, tz);
+      audit("pr.occurrence_skipped", {
+        admin: r.owner_admin_id,
+        ids: [r.id],
+        reason: "pr_occurrence_stale",
+        wall: wall
+          ? `${wall.y}-${String(wall.mo).padStart(2, "0")}-${String(wall.d).padStart(2, "0")}T${String(wall.h).padStart(2, "0")}:${String(wall.mi).padStart(2, "0")}`
+          : null,
+      });
+      if (trigger.type === "date") {
+        db.prepare(
+          "UPDATE pr_rules SET state='expired', next_run_at=NULL, updated_at=? WHERE id=?",
+        ).run(now(), r.id);
+      } else {
+        db.prepare("UPDATE pr_rules SET next_run_at = ?, updated_at = ? WHERE id = ?").run(
+          next,
+          now(),
+          r.id,
+        );
+      }
+      continue;
+    }
+    // Chave de ocorrência = horário LOCAL da ocorrência vencida (estável entre ticks; DST-
+    // seguro: 09:00 local continua 09:00 quando o offset muda).
+    const w = wallInTz(dueMs, tz) || { y: 0, mo: 0, d: 0, h: 0, mi: 0 };
+    const pad = (n) => String(n).padStart(2, "0");
+    const occurrence = `tick:${w.y}-${pad(w.mo)}-${pad(w.d)}T${pad(w.h)}:${pad(w.mi)}@${tz}`;
+    // agenda a próxima a partir da ocorrência vencida (sem drift cumulativo)
+    const next = computeNextRunAt(trigger, { from: new Date(dueMs + 1000), timezone: tz });
     const res = await handleRuleTriggered(r.owner_admin_id, r.id, {
-      occurrenceKey: `tick:${occurrence}`,
+      occurrenceKey: occurrence,
       nowMs,
     });
     if (!res.error && !res.skipped) out.temporalFired++;

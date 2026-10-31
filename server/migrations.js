@@ -2084,6 +2084,261 @@ BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
       },
     ],
   },
+  {
+    // Fase 8 da evolução (docs/evolution/phase-8): INTEGRATION FABRIC & TEMPORAL
+    // INTELLIGENCE — registro de integrações com credenciais cifradas (secret-crypto
+    // EXISTENTE), produtores de webhook autenticados por HMAC, eventos externos canônicos
+    // (dados NÃO CONFIÁVEIS; nunca instrução), contas de calendário (provider abstrato)
+    // e gatilhos temporais com timezone IANA (regra pr_rules ganha timezone + tipos de
+    // recorrência estendidos). NENHUMA execução/autorização paralela: Proactive Engine +
+    // Workflow Engine + D9 permanecem as únicas portas.
+    version: 27,
+    name: "integration fabric: integrations, webhook producers, external events, calendar accounts and tz-aware temporal triggers",
+    sql: `
+CREATE TABLE IF NOT EXISTS if_integrations (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  kind TEXT NOT NULL CHECK (kind IN ('webhook','calendar','custom')),
+  adapter TEXT NOT NULL,
+  name TEXT NOT NULL,
+  version TEXT NOT NULL DEFAULT '1',
+  capabilities_json TEXT NOT NULL DEFAULT '[]',
+  config_json TEXT NOT NULL DEFAULT '{}',
+  policy_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'unconfigured' CHECK (status IN ('unconfigured','configured','active','degraded','disabled','error')),
+  health_json TEXT NOT NULL DEFAULT '{}',
+  last_contact_at TEXT,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, kind, name)
+);
+
+CREATE TABLE IF NOT EXISTS if_producers (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  integration_id TEXT NOT NULL REFERENCES if_integrations(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  secret_encrypted TEXT NOT NULL,
+  allowed_event_types_json TEXT NOT NULL DEFAULT '[]',
+  last_event_at TEXT,
+  event_count INTEGER NOT NULL DEFAULT 0,
+  rejected_count INTEGER NOT NULL DEFAULT 0,
+  disabled_at TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (integration_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS if_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  producer_id TEXT NOT NULL REFERENCES if_producers(id),
+  event_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  schema_version TEXT NOT NULL,
+  occurred_at TEXT,
+  received_at TEXT NOT NULL,
+  correlation_id TEXT,
+  idempotency_key TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  trust_level TEXT NOT NULL DEFAULT 'untrusted' CHECK (trust_level IN ('authenticated','untrusted')),
+  provenance_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('received','normalized','forwarded','duplicate','rejected','error')),
+  error_code TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_if_events_owner ON if_events(owner_admin_id, created_at);
+
+CREATE TABLE IF NOT EXISTS cal_accounts (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  integration_id TEXT NOT NULL REFERENCES if_integrations(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL CHECK (provider IN ('fixture','google')),
+  provider_account TEXT NOT NULL,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  sync_cursor TEXT,
+  last_sync_at TEXT,
+  last_error TEXT,
+  status TEXT NOT NULL DEFAULT 'configured' CHECK (status IN ('configured','active','degraded','disabled','error')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (integration_id, provider_account)
+);
+
+CREATE TABLE IF NOT EXISTS cal_events (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  account_id TEXT NOT NULL REFERENCES cal_accounts(id) ON DELETE CASCADE,
+  external_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  starts_at_utc TEXT NOT NULL,
+  ends_at_utc TEXT,
+  timezone TEXT NOT NULL DEFAULT 'UTC',
+  recurrence_json TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed','cancelled')),
+  checksum TEXT,
+  updated_at TEXT NOT NULL,
+  UNIQUE (account_id, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cal_events_account ON cal_events(account_id, starts_at_utc);
+
+CREATE TABLE IF NOT EXISTS cal_conflicts (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  account_id TEXT NOT NULL REFERENCES cal_accounts(id) ON DELETE CASCADE,
+  event_a TEXT NOT NULL,
+  event_b TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'overlap' CHECK (kind IN ('overlap','moved','missing_update')),
+  detected_at TEXT NOT NULL,
+  resolved_at TEXT
+);
+
+-- pr_events: fonte CHECK ampliada para produtores do Integration Fabric (tabela recriada
+-- preservando linhas; UNIQUE(owner, dedupe_key) mantida).
+ALTER TABLE pr_events RENAME TO pr_events_v26;
+CREATE TABLE pr_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  source TEXT NOT NULL CHECK (source IN ('workflow','research','learning','kh','workforce','mm','computer','manual','system','integrations','calendar')),
+  kind TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  dedupe_key TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, dedupe_key)
+);
+INSERT INTO pr_events (id, owner_admin_id, source, kind, payload_json, dedupe_key, created_at)
+  SELECT id, owner_admin_id, source, kind, payload_json, dedupe_key, created_at FROM pr_events_v26;
+DROP TABLE pr_events_v26;
+CREATE INDEX IF NOT EXISTS idx_pr_events_owner ON pr_events(owner_admin_id, created_at);
+
+-- pr_rules: gatilhos temporais com timezone IANA do usuário (instantes continuam em UTC).
+ALTER TABLE pr_rules ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC';
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v26;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run','kh_library','kh_notebook','kh_source','wf_definition','wf_run','wf_policy','research_project','learn_project','ci_session','ci_procedure','mm_session','pr_rule','if_integration','cal_account')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v26;
+DROP TABLE ownership_v26;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "if_integrations",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "kind",
+          "adapter",
+          "name",
+          "version",
+          "capabilities_json",
+          "config_json",
+          "policy_json",
+          "status",
+          "health_json",
+          "last_contact_at",
+          "last_error",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "if_events",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "producer_id",
+          "event_id",
+          "event_type",
+          "schema_version",
+          "occurred_at",
+          "received_at",
+          "correlation_id",
+          "idempotency_key",
+          "payload_json",
+          "trust_level",
+          "provenance_json",
+          "status",
+          "error_code",
+          "created_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "cal_accounts",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "integration_id",
+          "provider",
+          "provider_account",
+          "config_json",
+          "sync_cursor",
+          "last_sync_at",
+          "last_error",
+          "status",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "cal_events",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "account_id",
+          "external_id",
+          "title",
+          "starts_at_utc",
+          "ends_at_utc",
+          "timezone",
+          "recurrence_json",
+          "status",
+          "checksum",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "cal_conflicts",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "account_id",
+          "event_a",
+          "event_b",
+          "kind",
+          "detected_at",
+          "resolved_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
 ];
 
 const tableExists = (db, t) =>

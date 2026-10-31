@@ -2256,6 +2256,8 @@ export type PrRule = {
   cooldown_ms: number | null;
   state: PrRuleState;
   version: number;
+  /** Fase 8: timezone IANA da regra (temporal intelligence com DST). */
+  timezone?: string | null;
   last_run_at: string | null;
   next_run_at: string | null;
   last_error: string | null;
@@ -2338,6 +2340,8 @@ export type PrNotification = {
 export type PrControls = {
   level: number;
   paused: boolean;
+  /** Fase 8: timezone IANA do usuário (fail-closed — inválida nunca é aceita). */
+  timezone?: string;
   maxExecutionsPerHour: number;
   cooldownMs: number;
   maxPendingOpportunities: number;
@@ -2346,6 +2350,8 @@ export type PrControls = {
 export type PrControlsBody = {
   level?: number;
   paused?: boolean;
+  /** Fase 8: timezone IANA do usuário (erro estável: pr_invalid_timezone). */
+  timezone?: string;
   maxExecutionsPerHour?: number;
   cooldownMs?: number;
   maxPendingOpportunities?: number;
@@ -2560,6 +2566,278 @@ export async function getPrMetrics(): Promise<PrMetrics | null> {
   if (!(await ping())) return null;
   try {
     return await api<PrMetrics>("/api/pr/metrics");
+  } catch {
+    return null;
+  }
+}
+
+// ---------- Integration Studio (Fase 8: Integration Fabric — webhooks HMAC-SHA256,
+// calendários com provider abstrato e Event Inspector; o segredo do produtor é exibido
+// UMA única vez e nunca mais (§13); indisponibilidade do provider real é explícita) ----------
+export type IfKind = "webhook" | "calendar";
+
+export type IfCatalogEntry = {
+  kind: IfKind | string;
+  capabilities: string[];
+  description: string;
+  providers?: string[];
+};
+
+export type IfIntegrationStatus =
+  "unconfigured" | "configured" | "active" | "degraded" | "disabled" | "error" | string;
+
+export type IfProducer = {
+  id: string;
+  integration_id: string;
+  name: string;
+  allowed_event_types: string[];
+  event_count: number;
+  rejected_count: number;
+  disabled_at: string | null;
+  last_event_at: string | null;
+  created_at: string;
+};
+
+/** Resposta da criação de produtor: `secret` aparece UMA vez (depois NUNCA — §13). */
+export type IfProducerSecret = {
+  id: string;
+  name: string;
+  integration_id: string;
+  secret: string;
+  note: string;
+};
+
+export type IfIntegration = {
+  id: string;
+  kind: IfKind | string;
+  adapter: string;
+  name: string;
+  version: number;
+  capabilities: string[];
+  config: Record<string, unknown>;
+  policy: Record<string, unknown>;
+  status: IfIntegrationStatus;
+  health: Record<string, unknown>;
+  last_contact_at: string | null;
+  last_error: string | null;
+  producers?: IfProducer[];
+  accounts?: IfCalendarAccount[];
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type IfEventStatus =
+  "received" | "normalized" | "forwarded" | "duplicate" | "rejected" | "error" | string;
+
+export type IfEvent = {
+  id: number;
+  producer_id: string;
+  producer_name: string;
+  event_id: string;
+  event_type: string;
+  schema_version: string;
+  occurred_at: string | null;
+  received_at: string;
+  correlation_id: string | null;
+  idempotency_key: string | null;
+  trust_level: string;
+  status: IfEventStatus;
+  error_code: string | null;
+  payload: Record<string, unknown>;
+};
+
+export type IfCalendarAccount = {
+  id: string;
+  integration_id: string;
+  provider: string;
+  provider_account: string;
+  status: string;
+  sync_cursor: number | string | null;
+  last_sync_at: string | null;
+  last_error: string | null;
+  /** Provider de TESTE (ex.: fixture) — sempre marcado; NUNCA apresentar como real. */
+  provider_test_only: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type IfSyncResult = {
+  upserted: number;
+  cancelled: number;
+  cursor: number | string | null;
+  testOnly: boolean;
+  proactive?: string;
+};
+
+export type IfCalendarEvent = {
+  id?: string;
+  external_id: string;
+  title: string;
+  starts_at_utc: string | null;
+  ends_at_utc: string | null;
+  timezone: string | null;
+  recurrence: unknown;
+  status: string;
+};
+
+export type IfConflictSide = {
+  external_id: string;
+  title: string;
+  starts_at_utc: string | null;
+} | null;
+
+export type IfConflict = {
+  id: string;
+  account_id: string;
+  kind: string;
+  detected_at: string;
+  resolved_at: string | null;
+  eventA: IfConflictSide;
+  eventB: IfConflictSide;
+};
+
+export async function listIfCatalog(): Promise<IfCatalogEntry[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfCatalogEntry[]>("/api/if/catalog");
+  } catch {
+    return null;
+  }
+}
+
+export async function listIfIntegrations(): Promise<IfIntegration[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfIntegration[]>("/api/if/integrations");
+  } catch {
+    return null;
+  }
+}
+
+export async function createIfIntegration(body: {
+  kind: string;
+  adapter: string;
+  name: string;
+  config?: Record<string, unknown>;
+}): Promise<IfIntegration | null> {
+  if (!(await ping())) return null;
+  return await api<IfIntegration>("/api/if/integrations", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getIfIntegration(id: string): Promise<IfIntegration | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfIntegration>(`/api/if/integrations/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function activateIfIntegration(id: string): Promise<IfIntegration | null> {
+  if (!(await ping())) return null;
+  return await api<IfIntegration>(`/api/if/integrations/${encodeURIComponent(id)}/activate`, {
+    method: "POST",
+  });
+}
+
+export async function disableIfIntegration(id: string): Promise<IfIntegration | null> {
+  if (!(await ping())) return null;
+  return await api<IfIntegration>(`/api/if/integrations/${encodeURIComponent(id)}/disable`, {
+    method: "POST",
+  });
+}
+
+/** Teste de conectividade/saúde por adaptador (sem segredos na resposta). */
+export async function testIfIntegration(id: string): Promise<IfIntegration | null> {
+  if (!(await ping())) return null;
+  return await api<IfIntegration>(`/api/if/integrations/${encodeURIComponent(id)}/test`, {
+    method: "POST",
+  });
+}
+
+/** Cria produtor: a resposta contém o secret — exibido UMA vez, nunca mais recuperável. */
+export async function createIfProducer(
+  integrationId: string,
+  body: { name: string; allowedEventTypes?: string[] },
+): Promise<IfProducerSecret | null> {
+  if (!(await ping())) return null;
+  return await api<IfProducerSecret>(
+    `/api/if/integrations/${encodeURIComponent(integrationId)}/producers`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export async function listIfProducers(integrationId: string): Promise<IfProducer[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfProducer[]>(
+      `/api/if/integrations/${encodeURIComponent(integrationId)}/producers`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** Event Inspector (§14): sem payload sensível na listagem. */
+export async function listIfEvents(limit = 100): Promise<IfEvent[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfEvent[]>(`/api/if/events?limit=${limit}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function listIfCalendarAccounts(): Promise<IfCalendarAccount[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfCalendarAccount[]>("/api/if/calendar/accounts");
+  } catch {
+    return null;
+  }
+}
+
+export async function createIfCalendarAccount(body: {
+  integrationId: string;
+  provider: string;
+  providerAccount: string;
+}): Promise<IfCalendarAccount | { error: string } | null> {
+  if (!(await ping())) return null;
+  return await api<IfCalendarAccount>("/api/if/calendar/accounts", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Sync incremental — indisponibilidade do provider real vem como 503 com código estável. */
+export async function syncIfCalendarAccount(id: string): Promise<IfSyncResult | null> {
+  if (!(await ping())) return null;
+  return await api<IfSyncResult>(`/api/if/calendar/accounts/${encodeURIComponent(id)}/sync`, {
+    method: "POST",
+  });
+}
+
+export async function listIfCalendarEvents(
+  id: string,
+  limit = 100,
+): Promise<IfCalendarEvent[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfCalendarEvent[]>(
+      `/api/if/calendar/accounts/${encodeURIComponent(id)}/events?limit=${limit}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+export async function listIfCalendarConflicts(id: string): Promise<IfConflict[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfConflict[]>(`/api/if/calendar/accounts/${encodeURIComponent(id)}/conflicts`);
   } catch {
     return null;
   }

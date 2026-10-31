@@ -221,6 +221,30 @@ import {
   listEvents as listPrEvents,
   PrError,
 } from "./proactive.js";
+import {
+  createIntegration,
+  getIntegration,
+  listIntegrations,
+  setIntegrationState,
+  deactivateIntegration,
+  checkIntegration,
+  createProducer,
+  listProducers,
+  ingestWebhook,
+  forwardIntegrationEvents,
+  listEvents as listIfEvents,
+  IfError,
+  ADAPTERS,
+} from "./integrations.js";
+import {
+  listCalendarProviders,
+  connectCalendarAccount,
+  getCalendarAccount,
+  listCalendarAccounts,
+  syncCalendarAccount,
+  listCalendarEvents,
+  listConflicts,
+} from "./calendar.js";
 import { listScheduledJobs } from "./jobs.js";
 import {
   memoryRetentionPolicy,
@@ -1858,6 +1882,162 @@ route("PUT", "/api/pr/controls", "proactive:write", ({ body, principal }) => {
 // Métricas reais (contagens; correlação por trail)
 route("GET", "/api/pr/metrics", "proactive:read", ({ principal }) => getMetrics(me(principal)));
 
+// ---------- Integration Studio (evolução Fase 8, docs/evolution/phase-8) ----------
+// Gestão de integrações/produtores/calendários. NENHUM segredo volta pela API depois de
+// criado; webhook ingress é PUBLICO e autenticado por HMAC (credencial do produtor) —
+// nunca pelo corpo do payload. Execução permanece no Proactive/Workflow Engine.
+const ifError = (e) => {
+  const code = e?.message || "if_error";
+  const map = {
+    if_owner_required: 403,
+    if_invalid_kind: 400,
+    if_invalid_config: 400,
+    if_name_required: 400,
+    if_account_required: 400,
+    if_not_webhook: 400,
+    if_not_calendar: 400,
+    if_unknown_adapter: 400,
+    if_invalid_status: 400,
+    if_integration_limit: 429,
+    if_producer_limit: 429,
+    not_found: 404,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+
+route("GET", "/api/if/catalog", "integrations:read", () =>
+  Object.entries(ADAPTERS).map(([kind, a]) => ({ kind, ...a, providers: listCalendarProviders() })),
+);
+route("GET", "/api/if/integrations", "integrations:read", ({ principal }) =>
+  listIntegrations(me(principal)),
+);
+route("POST", "/api/if/integrations", "integrations:write", ({ body, principal }) => {
+  try {
+    return createIntegration(me(principal), body || {});
+  } catch (e) {
+    if (e instanceof IfError) throw ifError(e);
+    throw e;
+  }
+});
+route("GET", "/api/if/integrations/:id", "integrations:read", ({ params, principal }) => {
+  const it = getIntegration(me(principal), params.id);
+  if (!it) notFound();
+  return it;
+});
+route(
+  "POST",
+  "/api/if/integrations/:id/activate",
+  "integrations:write",
+  ({ params, principal }) => {
+    const out = setIntegrationState(me(principal), params.id, "active");
+    if (out.error) notFound();
+    return out;
+  },
+);
+route("POST", "/api/if/integrations/:id/disable", "integrations:write", ({ params, principal }) => {
+  const out = deactivateIntegration(me(principal), params.id);
+  if (out.error) notFound();
+  return out;
+});
+route("POST", "/api/if/integrations/:id/test", "integrations:write", ({ params, principal }) => {
+  const out = checkIntegration(me(principal), params.id);
+  if (out.error) notFound();
+  return out;
+});
+// Produtor: o segredo volta UMA vez na criação; depois NUNCA (§13).
+route(
+  "POST",
+  "/api/if/integrations/:id/producers",
+  "integrations:write",
+  ({ params, body, principal }) => {
+    try {
+      const out = createProducer(me(principal), params.id, body || {});
+      if (out.error === "not_found") notFound();
+      return out;
+    } catch (e) {
+      if (e instanceof IfError) throw ifError(e);
+      throw e;
+    }
+  },
+);
+route("GET", "/api/if/integrations/:id/producers", "integrations:read", ({ params, principal }) => {
+  const it = getIntegration(me(principal), params.id);
+  if (!it) notFound();
+  return it.producers;
+});
+
+// Webhook ingress: PUBLIC por desenho — autenticado por HMAC do produtor (§7.1);
+// nenhum cookie/principal; rejeições auditadas sem payload.
+route(
+  "POST",
+  "/api/if/webhooks/:producerId",
+  "public",
+  ({ params, rawBody, req }) => {
+    const out = ingestWebhook(params.producerId, { headers: req.headers, rawBody });
+    if (out.error) throw new AuthError(out.status, out.error);
+    return { __status: out.status, ...out };
+  },
+  { raw: true },
+);
+
+// Event Inspector (§14) — sem payload sensível: payload é dado não confiável e fica
+// sob demanda apenas para o dono.
+route("GET", "/api/if/events", "integrations:read", ({ query, principal }) =>
+  listIfEvents(me(principal), { limit: numParam(query.get("limit")) ?? 100 }),
+);
+
+// Calendários
+route("GET", "/api/if/calendar/accounts", "integrations:read", ({ principal }) =>
+  listCalendarAccounts(me(principal)),
+);
+route("POST", "/api/if/calendar/accounts", "integrations:write", ({ body, principal }) => {
+  try {
+    return connectCalendarAccount(me(principal), body?.integrationId, body || {});
+  } catch (e) {
+    if (e instanceof IfError || (e?.code && String(e.code).startsWith("if_"))) throw ifError(e);
+    if (e?.message && /^[a-z_]+$/.test(e.message)) throw new AuthError(400, e.message);
+    throw e;
+  }
+});
+route("GET", "/api/if/calendar/accounts/:id", "integrations:read", ({ params, principal }) => {
+  const a = getCalendarAccount(me(principal), params.id);
+  if (!a) notFound();
+  return a;
+});
+route(
+  "POST",
+  "/api/if/calendar/accounts/:id/sync",
+  "integrations:write",
+  async ({ params, principal }) => {
+    const out = await syncCalendarAccount(me(principal), params.id);
+    if (out.error === "not_found") notFound();
+    if (out.error) throw new AuthError(503, out.error);
+    return out;
+  },
+);
+route(
+  "GET",
+  "/api/if/calendar/accounts/:id/events",
+  "integrations:read",
+  ({ params, query, principal }) => {
+    const evs = listCalendarEvents(me(principal), params.id, {
+      limit: numParam(query.get("limit")) ?? 100,
+    });
+    if (evs === null) notFound();
+    return evs;
+  },
+);
+route(
+  "GET",
+  "/api/if/calendar/accounts/:id/conflicts",
+  "integrations:read",
+  ({ params, principal }) => {
+    const c = listConflicts(me(principal), params.id);
+    if (c === null) notFound();
+    return c;
+  },
+);
+
 // ---------- Deep Research (evolução Fase 4, docs/evolution/phase-4) ----------
 const researchError = (e) => {
   const code = e?.message || "research_error";
@@ -2462,6 +2642,15 @@ export function createApp(opts = {}) {
         return res.end();
       }
       if (out?.__raw) return send(res, 200, out.__raw, origin, out.__type, extra);
+      if (out?.__status)
+        return send(
+          res,
+          out.__status,
+          { ...out, __status: undefined },
+          origin,
+          "application/json",
+          extra,
+        );
       return send(res, 200, out ?? { ok: true }, origin, "application/json", extra);
     } catch (e) {
       if (
@@ -2533,6 +2722,9 @@ if (isMain && !process.env.JARVIS_NO_LISTEN) {
   registerWorkflowEventSink();
   recoverProactive();
   setInterval(() => tickProactive().catch(() => {}), 30_000).unref();
+  // Fase 8: encaminhamento assíncrono de eventos externos aceitos (ingress responde 202
+  // após aceitação durável; o Proactive Engine processa no tick — nunca na fila HTTP).
+  setInterval(() => forwardIntegrationEvents(null).catch(() => {}), 15_000).unref();
   // P2: inbound messages run as the admin whose own settings hold the channel credentials.
   const activeAdmins = () =>
     db

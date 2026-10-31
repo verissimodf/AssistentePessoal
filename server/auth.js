@@ -63,6 +63,10 @@ export const SCOPES = [
   // Workflow Engine com políticas+D9 — o escopo só governa a superfície de gestão.
   "proactive:read",
   "proactive:write",
+  // Integration Fabric (evolução Fase 8): gestão de integrações/produtores/calendários.
+  // Webhook ingress é público e autenticado por HMAC — escopo governa só a GESTÃO.
+  "integrations:read",
+  "integrations:write",
 ];
 /** Scopes reserved for a human admin session — never grantable to a token. */
 export const ADMIN_ONLY = [

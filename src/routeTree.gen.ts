@@ -16,6 +16,7 @@ import { Route as ComputerRouteImport } from './routes/computer'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as DocumentosRouteImport } from './routes/documentos'
 import { Route as ExecucoesRouteImport } from './routes/execucoes'
+import { Route as IntegrationsRouteImport } from './routes/integrations'
 import { Route as KnowledgeRouteImport } from './routes/knowledge'
 import { Route as LearningRouteImport } from './routes/learning'
 import { Route as MemoriaRouteImport } from './routes/memoria'
@@ -61,6 +62,11 @@ const DocumentosRoute = DocumentosRouteImport.update({
 const ExecucoesRoute = ExecucoesRouteImport.update({
   id: '/execucoes',
   path: '/execucoes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntegrationsRoute = IntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const KnowledgeRoute = KnowledgeRouteImport.update({
@@ -127,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/configuracoes': typeof ConfiguracoesRoute
   '/documentos': typeof DocumentosRoute
   '/execucoes': typeof ExecucoesRoute
+  '/integrations': typeof IntegrationsRoute
   '/knowledge': typeof KnowledgeRoute
   '/learning': typeof LearningRoute
   '/memoria': typeof MemoriaRoute
@@ -147,6 +154,7 @@ export interface FileRoutesByTo {
   '/configuracoes': typeof ConfiguracoesRoute
   '/documentos': typeof DocumentosRoute
   '/execucoes': typeof ExecucoesRoute
+  '/integrations': typeof IntegrationsRoute
   '/knowledge': typeof KnowledgeRoute
   '/learning': typeof LearningRoute
   '/memoria': typeof MemoriaRoute
@@ -168,6 +176,7 @@ export interface FileRoutesById {
   '/configuracoes': typeof ConfiguracoesRoute
   '/documentos': typeof DocumentosRoute
   '/execucoes': typeof ExecucoesRoute
+  '/integrations': typeof IntegrationsRoute
   '/knowledge': typeof KnowledgeRoute
   '/learning': typeof LearningRoute
   '/memoria': typeof MemoriaRoute
@@ -190,6 +199,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/documentos'
     | '/execucoes'
+    | '/integrations'
     | '/knowledge'
     | '/learning'
     | '/memoria'
@@ -210,6 +220,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/documentos'
     | '/execucoes'
+    | '/integrations'
     | '/knowledge'
     | '/learning'
     | '/memoria'
@@ -230,6 +241,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/documentos'
     | '/execucoes'
+    | '/integrations'
     | '/knowledge'
     | '/learning'
     | '/memoria'
@@ -251,6 +263,7 @@ export interface RootRouteChildren {
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   DocumentosRoute: typeof DocumentosRoute
   ExecucoesRoute: typeof ExecucoesRoute
+  IntegrationsRoute: typeof IntegrationsRoute
   KnowledgeRoute: typeof KnowledgeRoute
   LearningRoute: typeof LearningRoute
   MemoriaRoute: typeof MemoriaRoute
@@ -313,6 +326,13 @@ declare module '@tanstack/react-router' {
       path: '/execucoes'
       fullPath: '/execucoes'
       preLoaderRoute: typeof ExecucoesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/integrations': {
+      id: '/integrations'
+      path: '/integrations'
+      fullPath: '/integrations'
+      preLoaderRoute: typeof IntegrationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/knowledge': {
@@ -403,6 +423,7 @@ const rootRouteChildren: RootRouteChildren = {
   ConfiguracoesRoute: ConfiguracoesRoute,
   DocumentosRoute: DocumentosRoute,
   ExecucoesRoute: ExecucoesRoute,
+  IntegrationsRoute: IntegrationsRoute,
   KnowledgeRoute: KnowledgeRoute,
   LearningRoute: LearningRoute,
   MemoriaRoute: MemoriaRoute,
