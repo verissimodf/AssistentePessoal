@@ -49,6 +49,11 @@ export const SCOPES = [
   "workflow:read",
   "workflow:write",
   "workflow:run",
+  // Deep Research & Learning (evolução Fase 4): investigações e jornadas de aprendizagem.
+  "research:read",
+  "research:write",
+  "learn:read",
+  "learn:write",
 ];
 /** Scopes reserved for a human admin session — never grantable to a token. */
 export const ADMIN_ONLY = [

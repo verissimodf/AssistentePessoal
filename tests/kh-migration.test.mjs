@@ -185,11 +185,9 @@ test("UNIQUEs: (owner,name) em bibliotecas, (library,name) em notebooks e hash p
   db.prepare(
     "INSERT INTO kh_sources (id, notebook_id, owner_admin_id, title, content_hash, created_at, updated_at) VALUES ('s1','n1','a1','A','hash1','t','t')",
   ).run();
-  assert.throws(() =>
-    db
-      .prepare(
-        "INSERT INTO kh_sources (id, notebook_id, owner_admin_id, title, content_hash, created_at, updated_at) VALUES ('s2','n1','a1','B','hash1','t','t')",
-      )
-      .run(),
-  );
+  // Dedupe por hash é aplicado em código (createSource), não por índice — duas fontes com o
+  // mesmo conteúdo podem coexistir (ex.: páginas idênticas recuperadas na Fase 4).
+  db.prepare(
+    "INSERT INTO kh_sources (id, notebook_id, owner_admin_id, title, content_hash, created_at, updated_at) VALUES ('s2','n1','a1','B','hash1','t','t')",
+  ).run();
 });

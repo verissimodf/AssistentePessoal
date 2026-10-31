@@ -1565,3 +1565,297 @@ export async function simulatePolicy(body: {
     body: JSON.stringify(body),
   });
 }
+
+// ---------- Deep Research (Fase 4: investigações com plano, evidências e relatório) ----------
+export type ResearchStatus =
+  | "draft"
+  | "planning"
+  | "running"
+  | "waiting"
+  | "completed"
+  | "partial"
+  | "inconclusive"
+  | "failed"
+  | "unknown";
+
+export type ResearchSource = {
+  id: string;
+  origin: "web" | "hub" | string;
+  title: string;
+  url: string | null;
+  domain: string | null;
+  snippet?: string | null;
+  quality: "full" | "partial" | "snippet_only" | "failed" | string;
+  fetched_at?: string | null;
+};
+
+export type ResearchEvidence = {
+  id: string;
+  source_id: string;
+  quote: string;
+  location: string | null;
+  type: "direct" | "indirect" | "inference" | "hypothesis" | "gap" | string;
+};
+
+export type ResearchClaim = {
+  id: string;
+  statement: string;
+  evidence_ids: string[];
+  status: "supported" | "unsupported" | "contested" | "inferred" | string;
+};
+
+export type ResearchConflict = {
+  id: string;
+  claim_a_id: string | null;
+  claim_b_id: string | null;
+  description: string;
+  resolution: string | null;
+};
+
+export type ResearchReportSummary = {
+  id: string;
+  version: number;
+  title: string;
+  created_at: string;
+};
+
+export type ResearchPlan = {
+  subquestions: string[];
+  strategy: string;
+  sufficiency: string;
+  kind: "hypothesis" | string;
+};
+
+export type ResearchProject = {
+  id: string;
+  question: string;
+  scope_text: string | null;
+  status: ResearchStatus;
+  plan: ResearchPlan | null;
+  sources: ResearchSource[];
+  evidence: ResearchEvidence[];
+  claims: ResearchClaim[];
+  conflicts: ResearchConflict[];
+  reports: ResearchReportSummary[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type ResearchReport = {
+  version: number;
+  title: string;
+  content: string;
+  citations: {
+    n: number;
+    source_id: string;
+    origin: "web" | "hub" | string;
+    title: string;
+    url: string | null;
+    domain: string | null;
+  }[];
+};
+
+export async function listResearch(): Promise<{
+  items: ResearchProject[];
+  has_more: boolean;
+} | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<{ items: ResearchProject[]; has_more: boolean }>("/api/research");
+  } catch {
+    return null;
+  }
+}
+
+export async function createResearch(body: {
+  question: string;
+  scope?: string;
+}): Promise<ResearchProject | null> {
+  if (!(await ping())) return null;
+  return await api<ResearchProject>("/api/research", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getResearch(id: string): Promise<ResearchProject | null> {
+  if (!(await ping())) return null;
+  return await api<ResearchProject>(`/api/research/${encodeURIComponent(id)}`);
+}
+
+export async function planResearch(id: string): Promise<ResearchProject | null> {
+  if (!(await ping())) return null;
+  return await api<ResearchProject>(`/api/research/${encodeURIComponent(id)}/plan`, {
+    method: "POST",
+  });
+}
+
+export async function executeResearch(id: string): Promise<ResearchProject | null> {
+  if (!(await ping())) return null;
+  return await api<ResearchProject>(`/api/research/${encodeURIComponent(id)}/execute`, {
+    method: "POST",
+  });
+}
+
+export async function deepenResearch(
+  id: string,
+  question: string,
+): Promise<ResearchProject | null> {
+  if (!(await ping())) return null;
+  return await api<ResearchProject>(`/api/research/${encodeURIComponent(id)}/deepen`, {
+    method: "POST",
+    body: JSON.stringify({ question }),
+  });
+}
+
+export async function getResearchReport(id: string): Promise<ResearchReport | null> {
+  if (!(await ping())) return null;
+  return await api<ResearchReport>(`/api/research/${encodeURIComponent(id)}/report`);
+}
+
+// ---------- Learning Studio (Fase 4: jornadas, tutor, diário e progresso) ----------
+export type LearnLesson = {
+  id: string;
+  title: string;
+  content: string;
+  references: string[];
+  activity_count: number;
+};
+
+export type LearnModule = {
+  id: string;
+  title: string;
+  description: string | null;
+  lessons: LearnLesson[];
+};
+
+export type LearnProject = {
+  id: string;
+  goal: string;
+  level: string | null;
+  status: "draft" | "ready" | string;
+  sources: string[];
+  research_project_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LearnProjectDetail = LearnProject & { modules: LearnModule[] };
+
+export type LearnActivity = {
+  id: string;
+  lesson_id: string;
+  type: string;
+  question: string;
+  options: string[];
+  expected_answer: string | null;
+  concept: string | null;
+};
+
+export type LearnJournalEntry = { id: string; kind: string; content: string; created_at: string };
+
+export type LearnProgressRow = {
+  module: string;
+  lessons: {
+    lesson: string;
+    activities: number;
+    attempts: number;
+    correct: number;
+    incorrect: number;
+    undetermined: number;
+  }[];
+};
+
+export async function listLearning(): Promise<LearnProject[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<LearnProject[]>("/api/learn");
+  } catch {
+    return null;
+  }
+}
+
+export async function createLearning(body: {
+  goal: string;
+  level?: string;
+  sourceIds?: string[];
+}): Promise<LearnProject | null> {
+  if (!(await ping())) return null;
+  return await api<LearnProject>("/api/learn", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getLearning(id: string): Promise<LearnProjectDetail | null> {
+  if (!(await ping())) return null;
+  return await api<LearnProjectDetail>(`/api/learn/${encodeURIComponent(id)}`);
+}
+
+export async function generateLearningPath(id: string): Promise<LearnProjectDetail | null> {
+  if (!(await ping())) return null;
+  return await api<LearnProjectDetail>(`/api/learn/${encodeURIComponent(id)}/path`, {
+    method: "POST",
+  });
+}
+
+export async function tutorAsk(
+  id: string,
+  body: { question: string; lesson_id?: string },
+): Promise<{ answer: string; references: string[] } | null> {
+  if (!(await ping())) return null;
+  return await api<{ answer: string; references: string[] }>(
+    `/api/learn/${encodeURIComponent(id)}/tutor`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export async function generateLearningActivities(
+  lessonId: string,
+  count?: number,
+): Promise<{ created: number | string[] } | null> {
+  if (!(await ping())) return null;
+  return await api<{ created: number | string[] }>(
+    `/api/learn/lessons/${encodeURIComponent(lessonId)}/activities`,
+    { method: "POST", body: JSON.stringify(count ? { count } : {}) },
+  );
+}
+
+export async function listLearningActivities(lessonId: string): Promise<LearnActivity[] | null> {
+  if (!(await ping())) return null;
+  return await api<LearnActivity[]>(
+    `/api/learn/lessons/${encodeURIComponent(lessonId)}/activities`,
+  );
+}
+
+export async function submitLearningAttempt(
+  activityId: string,
+  answer: string,
+): Promise<{ correct: boolean | null; feedback: string } | null> {
+  if (!(await ping())) return null;
+  return await api<{ correct: boolean | null; feedback: string }>(
+    `/api/learn/activities/${encodeURIComponent(activityId)}/attempt`,
+    { method: "POST", body: JSON.stringify({ answer }) },
+  );
+}
+
+export async function addJournalEntry(
+  id: string,
+  body: { kind: string; content: string },
+): Promise<LearnJournalEntry | null> {
+  if (!(await ping())) return null;
+  return await api<LearnJournalEntry>(`/api/learn/${encodeURIComponent(id)}/journal`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function listJournal(id: string): Promise<LearnJournalEntry[] | null> {
+  if (!(await ping())) return null;
+  return await api<LearnJournalEntry[]>(`/api/learn/${encodeURIComponent(id)}/journal`);
+}
+
+export async function getLearningProgress(id: string): Promise<LearnProgressRow[] | null> {
+  if (!(await ping())) return null;
+  return await api<LearnProgressRow[]>(`/api/learn/${encodeURIComponent(id)}/progress`);
+}

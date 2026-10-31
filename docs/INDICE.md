@@ -68,6 +68,7 @@ entrega, especificações superadas e fotografias de releases anteriores estão 
 | [`evolution/phase-1/README.md`](evolution/phase-1/README.md) | Fase 1 — Agent Workforce: definições, runs, orçamento hierárquico, delegação e reconciliação |
 | [`evolution/phase-2/README.md`](evolution/phase-2/README.md) | Fase 2 — Personal Knowledge Hub: bibliotecas/notebooks/fontes, ingestão durável, pesquisa híbrida e respostas fundamentadas |
 | [`evolution/phase-3/README.md`](evolution/phase-3/README.md) | Fase 3 — Workflow & Behavior Studio: motor durável, aprovações D9, policy engine e studios |
+| [`evolution/phase-4/README.md`](evolution/phase-4/README.md) | Fase 4 — Deep Research & Learning: investigação com evidências verbatim, relatórios e jornadas de aprendizagem |
 
 ## Histórico
 

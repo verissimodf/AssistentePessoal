@@ -23,12 +23,13 @@ CREATE TABLE audit (id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, kind TEXT, de
   return { db, dir };
 }
 
-test("v22 é a migração de topo; sobe do zero com tabelas wf_* e ownership estendido", () => {
-  assert.equal(targetVersion(), 22);
+test("v22 existe e o schema sobe do zero com as tabelas wf_* e ownership estendido", () => {
+  const V22 = MIGRATIONS.find((m) => m.version === 22);
+  assert.ok(V22, "migração v22 do Workflow Studio presente");
   const { db, dir } = legacyDb();
   const r = migrate(db, dir);
-  assert.equal(r.to, 22);
-  assert.equal(currentVersion(db), 22);
+  assert.equal(r.to, targetVersion());
+  assert.ok(currentVersion(db) >= 22);
   for (const t of [
     "wf_definitions",
     "wf_definition_versions",

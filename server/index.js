@@ -141,6 +141,28 @@ import {
   deletePolicy,
   evaluatePolicies,
 } from "./policies.js";
+import {
+  createResearch,
+  getResearch,
+  listResearch,
+  generatePlan as generateResearchPlan,
+  executeResearch as executeResearchProject,
+  deepenResearch,
+} from "./research.js";
+import {
+  createLearningProject,
+  getLearningProject,
+  listLearningProjects,
+  generateLearningPath,
+  tutorAsk,
+  generateActivities as generateLearningActivities,
+  listActivities as listLearningActivities,
+  submitAttempt as submitLearningAttempt,
+  addJournalEntry,
+  listJournal,
+  learningProgress,
+  deleteLearningProject,
+} from "./learning.js";
 import { listScheduledJobs } from "./jobs.js";
 import {
   memoryRetentionPolicy,
@@ -1362,6 +1384,163 @@ route("POST", "/api/policies/simulate", "session", ({ body, principal }) => {
   });
   return out;
 });
+
+// ---------- Deep Research (evolução Fase 4, docs/evolution/phase-4) ----------
+const researchError = (e) => {
+  const code = e?.message || "research_error";
+  const map = {
+    research_owner_required: 403,
+    research_question_required: 400,
+    research_already_planned: 409,
+    research_already_running: 409,
+    research_plan_required: 409,
+    research_plan_invalid: 502,
+    research_plan_empty: 502,
+    not_found: 404,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+route("GET", "/api/research", "research:read", ({ query, principal }) =>
+  listResearch(me(principal), { limit: query?.limit, offset: query?.offset }),
+);
+route("POST", "/api/research", "research:write", ({ body, principal }) => {
+  try {
+    return createResearch(me(principal), body || {});
+  } catch (e) {
+    throw researchError(e);
+  }
+});
+route("GET", "/api/research/:id", "research:read", ({ params, principal }) => {
+  const r = getResearch(me(principal), params.id);
+  if (!r) notFound();
+  return r;
+});
+route("POST", "/api/research/:id/plan", "research:write", async ({ params, principal }) => {
+  const out = await generateResearchPlan(me(principal), params.id);
+  if (out.error === "not_found") notFound();
+  if (out.error) throw researchError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/research/:id/execute", "research:write", async ({ params, principal }) => {
+  const out = await executeResearchProject(me(principal), params.id);
+  if (out.error === "not_found") notFound();
+  if (out.error) throw researchError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/research/:id/deepen", "research:write", async ({ params, body, principal }) => {
+  const out = await deepenResearch(me(principal), params.id, body?.question);
+  if (out.error === "not_found") notFound();
+  if (out.error) throw researchError(new Error(out.error));
+  return out;
+});
+route("GET", "/api/research/:id/report", "research:read", ({ params, principal }) => {
+  const proj = getResearch(me(principal), params.id);
+  if (!proj) notFound();
+  const reports = db
+    .prepare("SELECT * FROM research_reports WHERE project_id = ? ORDER BY version DESC")
+    .all(params.id);
+  if (!reports.length) notFound();
+  return { ...reports[0], citations: JSON.parse(reports[0].citations_json) };
+});
+
+// ---------- Learning Studio (evolução Fase 4) ----------
+const learnError = (e) => {
+  const code = e?.message || "learn_error";
+  const map = {
+    learn_owner_required: 403,
+    learn_goal_required: 400,
+    learn_question_required: 400,
+    learn_answer_required: 400,
+    learn_already_generated: 409,
+    learn_generation_invalid: 502,
+    learn_generation_empty: 502,
+    learn_journal_kind_invalid: 400,
+    learn_content_required: 400,
+    not_found: 404,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+route("GET", "/api/learn", "learn:read", ({ principal }) => listLearningProjects(me(principal)));
+route("POST", "/api/learn", "learn:write", ({ body, principal }) => {
+  try {
+    return createLearningProject(me(principal), body || {});
+  } catch (e) {
+    throw learnError(e);
+  }
+});
+route("GET", "/api/learn/:id", "learn:read", ({ params, principal }) => {
+  const p = getLearningProject(me(principal), params.id);
+  if (!p) notFound();
+  return p;
+});
+route("DELETE", "/api/learn/:id", "learn:write", ({ params, principal }) => {
+  if (!deleteLearningProject(me(principal), params.id)) notFound();
+  return { ok: true };
+});
+route("POST", "/api/learn/:id/path", "learn:write", async ({ params, principal }) => {
+  const out = await generateLearningPath(me(principal), params.id);
+  if (out.error === "not_found") notFound();
+  if (out.error) throw learnError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/learn/:id/tutor", "learn:read", async ({ params, body, principal }) => {
+  try {
+    return await tutorAsk(me(principal), params.id, {
+      question: body?.question,
+      lessonId: body?.lesson_id || null,
+    });
+  } catch (e) {
+    throw learnError(e);
+  }
+});
+route("POST", "/api/learn/:id/journal", "learn:write", ({ params, body, principal }) => {
+  try {
+    return addJournalEntry(me(principal), params.id, body || {});
+  } catch (e) {
+    throw learnError(e);
+  }
+});
+route("GET", "/api/learn/:id/journal", "learn:read", ({ params, principal }) => {
+  const j = listJournal(me(principal), params.id);
+  if (j === null) notFound();
+  return j;
+});
+route("GET", "/api/learn/:id/progress", "learn:read", ({ params, principal }) => {
+  const p = learningProgress(me(principal), params.id);
+  if (p === null) notFound();
+  return p;
+});
+route(
+  "POST",
+  "/api/learn/lessons/:id/activities",
+  "learn:write",
+  async ({ params, body, principal }) => {
+    const out = await generateLearningActivities(me(principal), params.id, { count: body?.count });
+    if (out.error === "not_found") notFound();
+    if (out.error) throw learnError(new Error(out.error));
+    return out;
+  },
+);
+route("GET", "/api/learn/lessons/:id/activities", "learn:read", ({ params, principal }) => {
+  const acts = listLearningActivities(me(principal), params.id);
+  if (acts === null) notFound();
+  return acts;
+});
+route(
+  "POST",
+  "/api/learn/activities/:id/attempt",
+  "learn:write",
+  async ({ params, body, principal }) => {
+    try {
+      const out = await submitLearningAttempt(me(principal), params.id, { answer: body?.answer });
+      if (out.error === "not_found") notFound();
+      if (out.error) throw learnError(new Error(out.error));
+      return out;
+    } catch (e) {
+      throw learnError(e);
+    }
+  },
+);
 // Cancelamento cooperativo de uma execução em andamento (checado entre passos do loop).
 route("POST", "/api/runs/:id/cancel", "bots:run", ({ params, principal }) => {
   if (!owns(me(principal), "run", params.id)) notFound();

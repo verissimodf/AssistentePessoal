@@ -952,7 +952,7 @@ CREATE TABLE IF NOT EXISTS kh_sources (
 );
 CREATE INDEX IF NOT EXISTS idx_kh_sources_notebook ON kh_sources(notebook_id);
 CREATE INDEX IF NOT EXISTS idx_kh_sources_doc ON kh_sources(document_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_kh_sources_hash ON kh_sources(notebook_id, content_hash) WHERE content_hash IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_kh_sources_hash ON kh_sources(notebook_id, content_hash) WHERE content_hash IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS kh_source_content (
   source_id TEXT PRIMARY KEY REFERENCES kh_sources(id) ON DELETE CASCADE,
@@ -1324,6 +1324,249 @@ BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
           "conditions",
           "effect",
           "enabled",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
+  {
+    // Fase 4 da evolução (docs/evolution/phase-4): Deep Research & Learning. Pesquisas com
+    // fontes (web/hub) e evidências com citação verbatim; relatórios versionados; jornadas de
+    // aprendizagem com módulos/lições/atividades/tentativas/diário. Reusa Hub (fontes internas),
+    // Workforce (análise) e Workflow Engine (execução durável — registry de nós de pesquisa).
+    // Ownership recriado com research_project/learn_project.
+    version: 23,
+    name: "deep research and learning: research projects, sources, evidence, claims, conflicts, reports; learning projects, modules, lessons, activities, attempts, journal",
+    sql: `
+CREATE TABLE IF NOT EXISTS research_projects (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  question TEXT NOT NULL,
+  scope_text TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','planning','running','waiting','completed','partial','inconclusive','failed','unknown')),
+  plan_json TEXT,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  workflow_run_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_owner ON research_projects(owner_admin_id, status);
+
+CREATE TABLE IF NOT EXISTS research_sources (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES research_projects(id) ON DELETE CASCADE,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  origin TEXT NOT NULL CHECK (origin IN ('web','hub','memory')),
+  url TEXT NOT NULL DEFAULT '',
+  canonical_url TEXT,
+  title TEXT NOT NULL,
+  domain TEXT NOT NULL DEFAULT '',
+  content_hash TEXT,
+  snippet TEXT NOT NULL DEFAULT '',
+  content TEXT,
+  quality TEXT NOT NULL DEFAULT 'snippet_only' CHECK (quality IN ('full','partial','snippet_only','failed')),
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  fetched_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_sources_project ON research_sources(project_id);
+CREATE INDEX IF NOT EXISTS idx_research_sources_hash ON research_sources(project_id, content_hash) WHERE content_hash IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS research_evidence (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES research_projects(id) ON DELETE CASCADE,
+  source_id TEXT REFERENCES research_sources(id) ON DELETE CASCADE,
+  quote TEXT NOT NULL,
+  location TEXT NOT NULL DEFAULT '',
+  type TEXT NOT NULL DEFAULT 'direct' CHECK (type IN ('direct','indirect','inference','hypothesis','gap')),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_evidence_project ON research_evidence(project_id);
+CREATE INDEX IF NOT EXISTS idx_research_evidence_source ON research_evidence(source_id);
+
+CREATE TABLE IF NOT EXISTS research_claims (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES research_projects(id) ON DELETE CASCADE,
+  statement TEXT NOT NULL,
+  evidence_ids TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'inferred' CHECK (status IN ('supported','unsupported','contested','inferred')),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_claims_project ON research_claims(project_id);
+
+CREATE TABLE IF NOT EXISTS research_conflicts (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES research_projects(id) ON DELETE CASCADE,
+  claim_a_id TEXT REFERENCES research_claims(id) ON DELETE CASCADE,
+  claim_b_id TEXT REFERENCES research_claims(id) ON DELETE CASCADE,
+  description TEXT NOT NULL,
+  resolution TEXT NOT NULL DEFAULT 'unresolved' CHECK (resolution IN ('unresolved','resolved_a','resolved_b','insufficient')),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS research_reports (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES research_projects(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  citations_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  UNIQUE (project_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS learn_projects (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  goal TEXT NOT NULL,
+  level TEXT NOT NULL DEFAULT '',
+  sources_json TEXT NOT NULL DEFAULT '[]',
+  plan_json TEXT,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','ready','archived')),
+  research_project_id TEXT REFERENCES research_projects(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learn_owner ON learn_projects(owner_admin_id);
+
+CREATE TABLE IF NOT EXISTS learn_modules (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES learn_projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  order_index INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learn_modules_project ON learn_modules(project_id);
+
+CREATE TABLE IF NOT EXISTS learn_lessons (
+  id TEXT PRIMARY KEY,
+  module_id TEXT NOT NULL REFERENCES learn_modules(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  references_json TEXT NOT NULL DEFAULT '[]',
+  order_index INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learn_lessons_module ON learn_lessons(module_id);
+
+CREATE TABLE IF NOT EXISTS learn_activities (
+  id TEXT PRIMARY KEY,
+  lesson_id TEXT NOT NULL REFERENCES learn_lessons(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('comprehension','multiple_choice','open_ended','application','comparison','review')),
+  question TEXT NOT NULL,
+  options_json TEXT NOT NULL DEFAULT '[]',
+  expected_answer TEXT NOT NULL DEFAULT '',
+  concept TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learn_activities_lesson ON learn_activities(lesson_id);
+
+CREATE TABLE IF NOT EXISTS learn_attempts (
+  id TEXT PRIMARY KEY,
+  activity_id TEXT NOT NULL REFERENCES learn_activities(id) ON DELETE CASCADE,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  answer TEXT NOT NULL,
+  feedback TEXT NOT NULL DEFAULT '',
+  correct INTEGER,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learn_attempts_activity ON learn_attempts(activity_id);
+CREATE INDEX IF NOT EXISTS idx_learn_attempts_owner ON learn_attempts(owner_admin_id, created_at);
+
+CREATE TABLE IF NOT EXISTS learn_journal (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES learn_projects(id) ON DELETE CASCADE,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  kind TEXT NOT NULL CHECK (kind IN ('note','doubt','discovery','difficulty','review')),
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learn_journal_project ON learn_journal(project_id);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v22;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run','kh_library','kh_notebook','kh_source','wf_definition','wf_run','wf_policy','research_project','learn_project')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v22;
+DROP TABLE ownership_v22;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "research_projects",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "question",
+          "scope_text",
+          "status",
+          "plan_json",
+          "config_json",
+          "workflow_run_id",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "research_sources",
+        type: "table",
+        columns: [
+          "id",
+          "project_id",
+          "owner_admin_id",
+          "origin",
+          "url",
+          "canonical_url",
+          "title",
+          "domain",
+          "content_hash",
+          "snippet",
+          "content",
+          "quality",
+          "metadata_json",
+          "fetched_at",
+          "created_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "research_evidence",
+        type: "table",
+        columns: ["id", "project_id", "source_id", "quote", "location", "type", "created_at"],
+        primaryKey: ["id"],
+      },
+      {
+        table: "learn_projects",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "goal",
+          "level",
+          "sources_json",
+          "plan_json",
+          "status",
+          "research_project_id",
           "created_at",
           "updated_at",
         ],

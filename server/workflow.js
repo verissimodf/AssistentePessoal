@@ -21,6 +21,16 @@ const NODE_TYPES = new Set([
   "wait",
   "subworkflow",
 ]);
+// Extensão (evolução Fase 4): tipos de nó registrados por módulos externos (ex.: research.js).
+export function registerNodeType(type) {
+  if (typeof type === "string" && /^[a-z_]{1,40}$/.test(type)) NODE_TYPES.add(type);
+}
+// Executor registrado: recebe (node, nodeExec, ctx) e devolve como executeNode.
+const NODE_REGISTRY = new Map();
+export function registerNodeExecutor(type, fn) {
+  registerNodeType(type);
+  NODE_REGISTRY.set(type, fn);
+}
 const RUN_STATUSES = new Set([
   "queued",
   "running",
@@ -406,6 +416,8 @@ function createWorkflowApproval(ownerId, nodeExecId, config, correlation) {
 async function executeNode(node, nodeExec, ctx) {
   const { run, outputs, owner } = ctx;
   const config = node.config || {};
+  // Executor registrado (Fase 4: nós de pesquisa) — mesmo contrato, mesmos controles.
+  if (NODE_REGISTRY.has(node.type)) return NODE_REGISTRY.get(node.type)(node, nodeExec, ctx);
   switch (node.type) {
     case "start":
       return { output: { started: true } };
