@@ -313,10 +313,13 @@ export async function nodeResearchWeb(node, nodeExec, ctx) {
   let unavailable = null;
   let added = 0;
   for (const sq of plan.subquestions.slice(0, RESEARCH_LIMITS.max_subquestions)) {
-    const res = await webSearchStructured({
-      query: sq,
-      limit: RESEARCH_LIMITS.max_sources_per_question,
-    });
+    const res = await webSearchStructured(
+      {
+        query: sq,
+        limit: RESEARCH_LIMITS.max_sources_per_question,
+      },
+      { adminId: ctx.owner },
+    );
     if (res.unavailable) {
       unavailable = res.unavailable;
       continue;

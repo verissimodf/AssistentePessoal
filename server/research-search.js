@@ -1,8 +1,10 @@
 // Provedor de busca web estruturada — evolução Fase 4 (docs/evolution/phase-4/web-search-provider.md).
-// Interface substituível; provedor padrão 'ddg-html' (reutiliza o scraping existente e a
-// política de rede da urlpolicy). Sem credenciais configuradas para provedores de API —
-// indisponibilidade é EXPLÍCITA, nunca resultado fictício (mandato §4.2).
+// Provedores substituíveis: 'searxng' (instância local, JSON API — recomendado) e 'ddg-html'
+// (sem credenciais). Configuração do searxng: global_settings.integrations.searxng.url (painel)
+// com fallback em JARVIS_SEARXNG_URL. Indisponibilidade é SEMPRE explícita — nunca resultado
+// fictício (mandato §4.2).
 import { safeFetch, assertSafeUrl, assertPublicHost } from "./urlpolicy.js";
+import { getSettings } from "./settings.js";
 import { createHash } from "node:crypto";
 
 export const KH_RETRIEVAL_MAX_BYTES = Number(process.env.JARVIS_RESEARCH_MAX_PAGE) || 500_000;
@@ -43,7 +45,54 @@ async function fetchHtml(url) {
   return await r.text();
 }
 
-/** Faz o parse do HTML de resultados do provedor (formato do provedor padrão). */
+/** Provedor configurado: searxng (settings/env) quando presente; senão ddg-html. */
+export function configuredProvider(adminId = 0) {
+  let url = null;
+  try {
+    url = getSettings(adminId)?.integrations?.searxng?.url || null;
+  } catch {
+    /* settings indisponíveis em boot inicial — segue para env */
+  }
+  url = url || process.env.JARVIS_SEARXNG_URL || null;
+  // Base validada: esquema HTTP(S) e host explícito (serviço declarado pelo operador).
+  if (url && !/^https?:\/\/[a-zA-Z0-9._:-]+(:\d+)?$/i.test(url.replace(/\/$/, ""))) return { provider: "ddg-html", base: null };
+  return url ? { provider: "searxng", base: String(url).replace(/\/$/, "") } : { provider: "ddg-html", base: null };
+}
+
+/** Busca via instância searxng local (JSON API). A BASE é configurada pelo OPERADOR
+ *  (global_settings/env) — segue o padrão das integrações HTTP do próprio app
+ *  (`http-integration.js`: URL da configuração do admin, timeout, sem urlpolicy de conteúdo),
+ *  pois é serviço interno da rede Docker; o modelo só controla a consulta, nunca a base. */
+async function searxngSearch(base, request) {
+  const u = new URL(`${base}/search`);
+  u.searchParams.set("q", request.query);
+  u.searchParams.set("format", "json");
+  if (request.language) u.searchParams.set("language", request.language);
+  u.searchParams.set("safesearch", "1");
+  const body = await (injectedFetcher
+    ? injectedFetcher(u.toString())
+    : (async () => {
+        // Integração do OPERADOR (base fixa em config): fetch direto na rede interna —
+        // padrão de `http-integration.js`; o urlpolicy (SSRF) não se aplica pois a URL NÃO
+        // vem de conteúdo/modelo, e sim da configuração administrativa.
+        const r = await fetch(u.toString(), { signal: AbortSignal.timeout(20_000), headers: { "User-Agent": "Jarvis/1.0 (+local research)" } });
+        if (!r.ok) throw new Error(`searxng_http_${r.status}`);
+        return await r.text();
+      })());
+  const data = JSON.parse(body);
+  const results = (Array.isArray(data.results) ? data.results : []).map((x) => ({
+    title: String(x.title || "(sem título)"),
+    url: x.url,
+    canonical_url: canonicalizeUrl(x.url),
+    domain: domainOf(x.url),
+    snippet: String(x.content || ""),
+    provider: "searxng",
+    metadata: { engine: x.engine || null, published: x.publishedDate || null },
+  }));
+  return { provider: "searxng", results };
+}
+
+/** Faz o parse do HTML de resultados do provedor ddg (formato do provedor ddg-html). */
 function parseResults(html) {
   const results = [];
   const re = /<a[^>]+class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
@@ -81,10 +130,32 @@ const stripTags = (s) =>
  * {provider, results:[{title, url, canonical_url, domain, snippet, provider}], unavailable?}.
  * Falha do provedor → indisponibilidade EXPLÍCITA (results vazio + unavailable: motivo).
  */
-export async function webSearchStructured(request = {}) {
+export async function webSearchStructured(request = {}, { adminId = 0 } = {}) {
   const query = String(request.query || "").trim();
   if (!query) return { provider: null, results: [], unavailable: "empty_query" };
   const limit = Math.min(Math.max(Number(request.limit) || 8, 1), 20);
+  const cfg = configuredProvider(adminId);
+
+  if (cfg.provider === "searxng") {
+    try {
+      const res = await searxngSearch(cfg.base, { ...request, query });
+      const seen = new Set();
+      const out = [];
+      for (const r of res.results) {
+        if (request.domains?.length && !request.domains.some((d) => r.domain.endsWith(d))) continue;
+        if (request.exclude?.length && request.exclude.some((d) => r.domain.endsWith(d))) continue;
+        if (seen.has(r.canonical_url)) continue;
+        seen.add(r.canonical_url);
+        out.push(r);
+        if (out.length >= limit) break;
+      }
+      if (!out.length) return { ...res, results: out, unavailable: "no_results" };
+      return { ...res, results: out };
+    } catch (e) {
+      return { provider: "searxng", results: [], unavailable: `searxng:${e.message}` };
+    }
+  }
+
   let html;
   try {
     const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}${request.language ? `&kl=${encodeURIComponent(request.language)}` : ""}`;
@@ -161,8 +232,9 @@ export async function retrievePage(rawUrl) {
       ? injectedFetcher(urlStr)
       : (async () => {
           const r = await safeFetch(url, { timeoutMs: 30_000 });
-          if (!r.ok) throw new Error("fetch_failed");
-          return await r.text();
+          if (!(r.status >= 200 && r.status < 300)) throw new Error(`http_${r.status}`);
+          const capped = await r.body();
+          return capped.text + (capped.truncated ? "\n[TRUNCADO]" : "");
         })();
     const body = await fetcher;
     const text = typeof body === "string" ? htmlToText(body) : String(body);
