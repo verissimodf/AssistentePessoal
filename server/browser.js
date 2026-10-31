@@ -444,9 +444,13 @@ export async function runBrowserAction(adminId, params = {}, options = {}) {
     // Fase 5 (Computer Intelligence): persiste o PNG como artefato de evidência quando o
     // chamador fornece o destino (callback); base64 vem do worker/local pelo canal privado.
     let screenshotPath = null;
-    if (typeof result.screenshotBase64 === "string" && typeof options.saveScreenshot === "function") {
+    if (
+      typeof result.screenshotBase64 === "string" &&
+      typeof options.saveScreenshot === "function"
+    ) {
       try {
-        screenshotPath = options.saveScreenshot(Buffer.from(result.screenshotBase64, "base64")) || null;
+        screenshotPath =
+          options.saveScreenshot(Buffer.from(result.screenshotBase64, "base64")) || null;
       } catch {
         screenshotPath = null;
       }

@@ -149,7 +149,11 @@ async function runOp({ op, url, selector, text, timeoutMs, allowedHosts = [], po
       const buf = await page.screenshot({ type: "png" });
       // Fase 5 (Computer Intelligence): imagem em base64 PELO SOCKET (canal de confiança
       // app↔worker) para o app persistir como artefato de evidência; worker sem volume/disco.
-      return { state: "completed", screenshotBytes: buf.length, screenshotBase64: buf.toString("base64") };
+      return {
+        state: "completed",
+        screenshotBytes: buf.length,
+        screenshotBase64: buf.toString("base64"),
+      };
     }
     const title = await page.title();
     const body =

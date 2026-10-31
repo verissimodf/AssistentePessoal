@@ -39,26 +39,57 @@ export const CI_LIMITS = {
 const PROHIBITED_PATTERNS =
   /(pagamento|pagar|comprar|compra|checkout|carrinho|transfer[êe]ncia|\btransfer\b|pix\b|enviar e-?mail|publicar (post|site)|excluir (tudo|conta)|deletar (conta|permanente)|sen[ha] (de|do) admin)/i;
 
-const ACTION_TYPES = new Set(["navigate", "click", "fill", "select", "scroll", "wait_for", "screenshot", "read", "close"]);
+const ACTION_TYPES = new Set([
+  "navigate",
+  "click",
+  "fill",
+  "select",
+  "scroll",
+  "wait_for",
+  "screenshot",
+  "read",
+  "close",
+]);
 const ACTION_STATUSES = new Set([
-  "planned", "running", "succeeded", "failed", "verification_pending", "unknown", "reconciling", "cancelled", "blocked",
+  "planned",
+  "running",
+  "succeeded",
+  "failed",
+  "verification_pending",
+  "unknown",
+  "reconciling",
+  "cancelled",
+  "blocked",
 ]);
 const READ_OPS = new Set(["screenshot", "extract", "wait_for"]); // observação: escopo web (sem web:write)
 
 // ---------- sessões ----------
 
-export function openSession(adminId, { objective = "", environment = "browser", config = {} } = {}) {
+export function openSession(
+  adminId,
+  { objective = "", environment = "browser", config = {} } = {},
+) {
   if (!adminId) throw new Error("ci_owner_required");
   const cfg = getSettings(adminId);
-  const browserEnabled = cfg.integrations?.browser?.enabled === true || cfg.integrations?.browser?.mode === "managed";
-  if (environment === "browser" && !browserEnabled)
-    throw new Error("ci_browser_disabled"); // indisponibilidade EXPLÍCITA (nunca simular)
+  const browserEnabled =
+    cfg.integrations?.browser?.enabled === true || cfg.integrations?.browser?.mode === "managed";
+  if (environment === "browser" && !browserEnabled) throw new Error("ci_browser_disabled"); // indisponibilidade EXPLÍCITA (nunca simular)
   const id = uid();
   const ts = now();
   tx(() => {
     db.prepare(
       "INSERT INTO ci_sessions (id, owner_admin_id, environment, objective, status, config_json, created_at, updated_at) VALUES (?,?,?,?, 'active', ?, ?, ?)",
-    ).run(id, adminId, environment, clean(objective, 2000), JSON.stringify({ allowedHosts: (Array.isArray(config.allowedHosts) ? config.allowedHosts : []).slice(0, 20) }), ts, ts);
+    ).run(
+      id,
+      adminId,
+      environment,
+      clean(objective, 2000),
+      JSON.stringify({
+        allowedHosts: (Array.isArray(config.allowedHosts) ? config.allowedHosts : []).slice(0, 20),
+      }),
+      ts,
+      ts,
+    );
     assignNew("ci_session", id, adminId);
   });
   audit("ci.session_opened", { admin: adminId, ids: [id], type: environment });
@@ -73,8 +104,25 @@ export function getSession(adminId, id) {
     ...row,
     config: parseJson(row.config_json, {}),
     usage: parseJson(row.usage_json, {}),
-    plans: db.prepare("SELECT id, objective, status, observation_id, created_at FROM ci_plans WHERE session_id = ? ORDER BY created_at").all(id).map((p) => ({ ...p, steps: parseJson(db.prepare("SELECT steps_json FROM ci_plans WHERE id=?").get(p.id).steps_json, []) })),
-    observations: db.prepare("SELECT id, kind, observation_hash, dims_json, artifact_path, created_at FROM ci_observations WHERE session_id = ? ORDER BY created_at").all(id).slice(-10).map((o) => ({ ...o, dims: parseJson(o.dims_json, {}) })),
+    plans: db
+      .prepare(
+        "SELECT id, objective, status, observation_id, created_at FROM ci_plans WHERE session_id = ? ORDER BY created_at",
+      )
+      .all(id)
+      .map((p) => ({
+        ...p,
+        steps: parseJson(
+          db.prepare("SELECT steps_json FROM ci_plans WHERE id=?").get(p.id).steps_json,
+          [],
+        ),
+      })),
+    observations: db
+      .prepare(
+        "SELECT id, kind, observation_hash, dims_json, artifact_path, created_at FROM ci_observations WHERE session_id = ? ORDER BY created_at",
+      )
+      .all(id)
+      .slice(-10)
+      .map((o) => ({ ...o, dims: parseJson(o.dims_json, {}) })),
   };
 }
 
@@ -84,7 +132,9 @@ export function closeSession(adminId, id) {
   if (!s || s.status !== "active") return { error: "ci_session_not_active" };
   const ts = now();
   // Retenção: artefatos de captura são removidos no fechamento (nada fica em disco).
-  const obs = db.prepare("SELECT id, artifact_path FROM ci_observations WHERE session_id = ?").all(id);
+  const obs = db
+    .prepare("SELECT id, artifact_path FROM ci_observations WHERE session_id = ?")
+    .all(id);
   for (const o of obs) {
     if (o.artifact_path && existsSync(o.artifact_path)) {
       try {
@@ -94,7 +144,11 @@ export function closeSession(adminId, id) {
   }
   tx(() => {
     db.prepare("DELETE FROM ci_observations WHERE session_id = ?").run(id); // hash sobrevive em ci_actions
-    db.prepare("UPDATE ci_sessions SET status='closed', closed_at=?, updated_at=? WHERE id=?").run(ts, ts, id);
+    db.prepare("UPDATE ci_sessions SET status='closed', closed_at=?, updated_at=? WHERE id=?").run(
+      ts,
+      ts,
+      id,
+    );
   });
   audit("ci.session_closed", { admin: adminId, ids: [id], count: obs.length });
   return { ok: true };
@@ -114,9 +168,15 @@ export async function observe(adminId, sessionId, { config = null, loadPlaywrigh
   if (!owns(adminId, "ci_session", sessionId)) return { error: "not_found" };
   const s = db.prepare("SELECT * FROM ci_sessions WHERE id = ?").get(sessionId);
   if (!s || s.status !== "active") return { error: "ci_session_not_active" };
-  const count = db.prepare("SELECT COUNT(*) n FROM ci_observations WHERE session_id = ?").get(sessionId).n;
+  const count = db
+    .prepare("SELECT COUNT(*) n FROM ci_observations WHERE session_id = ?")
+    .get(sessionId).n;
   if (count >= CI_LIMITS.max_observations_per_session) {
-    const oldest = db.prepare("SELECT id, artifact_path FROM ci_observations WHERE session_id = ? ORDER BY created_at LIMIT 1").get(sessionId);
+    const oldest = db
+      .prepare(
+        "SELECT id, artifact_path FROM ci_observations WHERE session_id = ? ORDER BY created_at LIMIT 1",
+      )
+      .get(sessionId);
     if (oldest?.artifact_path && existsSync(oldest.artifact_path)) {
       try {
         unlinkSync(oldest.artifact_path);
@@ -155,7 +215,16 @@ export async function observe(adminId, sessionId, { config = null, loadPlaywrigh
   };
   db.prepare(
     "INSERT INTO ci_observations (id, session_id, kind, observation_hash, content, dims_json, artifact_path, created_at) VALUES (?,?,?,?,?,?,?,?)",
-  ).run(id, sessionId, "extract", hash, content, JSON.stringify(dimInfo), shot.screenshotPath || null, ts);
+  ).run(
+    id,
+    sessionId,
+    "extract",
+    hash,
+    content,
+    JSON.stringify(dimInfo),
+    shot.screenshotPath || null,
+    ts,
+  );
   audit("ci.observe", { admin: adminId, ids: [sessionId], count: content.length });
   return { id, hash, content, dims: dimInfo, artifact: shot.screenshotPath || null };
 }
@@ -177,7 +246,11 @@ async function oneShot(adminId, prompt, runId) {
 }
 
 /** Plano estruturado via one-shot: ações pequenas, alvo, verificação e recuperação. */
-export async function planActions(adminId, sessionId, { observation = null, oneShotFn = null } = {}) {
+export async function planActions(
+  adminId,
+  sessionId,
+  { observation = null, oneShotFn = null } = {},
+) {
   if (!owns(adminId, "ci_session", sessionId)) return { error: "not_found" };
   const s = db.prepare("SELECT * FROM ci_sessions WHERE id = ?").get(sessionId);
   if (!s || s.status !== "active") return { error: "ci_session_not_active" };
@@ -194,19 +267,32 @@ export async function planActions(adminId, sessionId, { observation = null, oneS
   } catch {
     return { error: "ci_plan_invalid" };
   }
-  const rawSteps = (Array.isArray(parsed.steps) ? parsed.steps : []).slice(0, CI_LIMITS.max_actions_per_plan);
+  const rawSteps = (Array.isArray(parsed.steps) ? parsed.steps : []).slice(
+    0,
+    CI_LIMITS.max_actions_per_plan,
+  );
   const id = uid();
   const ts = now();
   tx(() => {
-    db.prepare("INSERT INTO ci_plans (id, session_id, objective, steps_json, observation_id, status, created_at) VALUES (?,?,?,?,?, 'planned', ?)").run(
-      id, sessionId, clean(s.objective, 2000), JSON.stringify(rawSteps), obs.id, ts,
-    );
+    db.prepare(
+      "INSERT INTO ci_plans (id, session_id, objective, steps_json, observation_id, status, created_at) VALUES (?,?,?,?,?, 'planned', ?)",
+    ).run(id, sessionId, clean(s.objective, 2000), JSON.stringify(rawSteps), obs.id, ts);
     // Ações persistidas com alvo/verificação explícitos.
     for (const [seq, st] of rawSteps.entries()) {
       const actionType = ACTION_TYPES.has(st.action) ? st.action : "read";
       db.prepare(
         "INSERT INTO ci_actions (id, plan_id, session_id, seq, action_type, target_json, expected_json, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?, 'planned', ?, ?)",
-      ).run(uid(), id, sessionId, seq, actionType, JSON.stringify(st.target || {}), JSON.stringify(st.expected || {}), ts, ts);
+      ).run(
+        uid(),
+        id,
+        sessionId,
+        seq,
+        actionType,
+        JSON.stringify(st.target || {}),
+        JSON.stringify(st.expected || {}),
+        ts,
+        ts,
+      );
     }
   });
   audit("ci.plan_created", { admin: adminId, ids: [sessionId], count: rawSteps.length });
@@ -241,11 +327,20 @@ function verify(expected, postObservation, preHash) {
   out.verified = true;
   return out;
 }
-const norm2 = (s) => String(s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+const norm2 = (s) =>
+  String(s ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 
 /** Executa o plano: observação pré → [escritas via callTool com D9] → observação pós →
  *  verificação por critério → recuperação limitada. Leitura não passa por D9. */
-export async function executePlan(adminId, sessionId, planId, { config = null, loadPlaywright = null, oneShotFn = null } = {}) {
+export async function executePlan(
+  adminId,
+  sessionId,
+  planId,
+  { config = null, loadPlaywright = null, oneShotFn = null } = {},
+) {
   if (!owns(adminId, "ci_session", sessionId)) return { error: "not_found" };
   const plan = db.prepare("SELECT * FROM ci_plans WHERE id = ?").get(planId);
   if (!plan || plan.session_id !== sessionId) return { error: "not_found" };
@@ -255,7 +350,10 @@ export async function executePlan(adminId, sessionId, planId, { config = null, l
   const startedAt = Date.now();
   let replans = 0;
   let pendingApproval = false;
-  const browserOpts = { ...(config ? { config } : {}), ...(loadPlaywright ? { loadPlaywright } : {}) };
+  const browserOpts = {
+    ...(config ? { config } : {}),
+    ...(loadPlaywright ? { loadPlaywright } : {}),
+  };
   const actions = db.prepare("SELECT * FROM ci_actions WHERE plan_id = ? ORDER BY seq").all(planId);
   for (const action of actions) {
     if (Date.now() - startedAt > CI_LIMITS.max_session_runtime_ms) {
@@ -276,17 +374,28 @@ export async function executePlan(adminId, sessionId, planId, { config = null, l
     if (action.status !== "planned") continue;
     // Transição atômica: falha = ação já tratada (tick/aprovação) → pula sem re-executar.
     if (!setActionStatus(action.id, action.status, "running")) continue;
-    const isWrite = ["navigate", "click", "fill", "select", "wait_for"].includes(action.action_type);
+    const isWrite = ["navigate", "click", "fill", "select", "wait_for"].includes(
+      action.action_type,
+    );
     let resultText = "";
     if (isWrite) {
       // ESCRITA: via callTool — can() + política (Fase 3) + D9 (aprovação humana por ação).
       const ctx = {
         autonomy: "confirm",
         pending: [],
-        principal: { type: "bot", botId: `ci:${sessionId}`, adminId, scopes: ["web", "web:write", "kh:read"] },
+        principal: {
+          type: "bot",
+          botId: `ci:${sessionId}`,
+          adminId,
+          scopes: ["web", "web:write", "kh:read"],
+        },
         correlation: sessionId,
       };
-      const result = await callTool("browser_action", buildBrowserParams(action.action_type, target), ctx);
+      const result = await callTool(
+        "browser_action",
+        buildBrowserParams(action.action_type, target),
+        ctx,
+      );
       resultText = String(result ?? "");
       if (ctx.pending.length) {
         pendingApproval = true;
@@ -312,14 +421,25 @@ export async function executePlan(adminId, sessionId, planId, { config = null, l
     const postObs = await observe(adminId, sessionId, browserOpts);
     const verdict = verify(expected, postObs, preObs?.hash);
     if (verdict.verified) {
-      setActionStatus(action.id, "running", "succeeded", { verification: verdict, observationAfter: postObs.id, observationBefore: preObs?.id });
+      setActionStatus(action.id, "running", "succeeded", {
+        verification: verdict,
+        observationAfter: postObs.id,
+        observationBefore: preObs?.id,
+      });
       audit("ci.action_verified", { admin: adminId, ids: [action.id], status: "succeeded" });
     } else if (verdict.inconclusive) {
-      setActionStatus(action.id, "running", "unknown", { verification: verdict, observationAfter: postObs.id });
+      setActionStatus(action.id, "running", "unknown", {
+        verification: verdict,
+        observationAfter: postObs.id,
+      });
       audit("ci.action_unknown", { admin: adminId, ids: [action.id] });
     } else {
       // Divergência: registra, interrompe dependentes e tenta recuperação limitada.
-      setActionStatus(action.id, "running", "failed", { verification: verdict, observationAfter: postObs.id, errorCode: "ci_verification_failed" });
+      setActionStatus(action.id, "running", "failed", {
+        verification: verdict,
+        observationAfter: postObs.id,
+        errorCode: "ci_verification_failed",
+      });
       audit("ci.action_diverged", { admin: adminId, ids: [action.id], status: "diverged" });
       if (replans < CI_LIMITS.max_replans && (oneShotFn || oneShotImpl)) {
         replans++;
@@ -331,9 +451,12 @@ export async function executePlan(adminId, sessionId, planId, { config = null, l
     }
   }
   // Aprovações pendentes: o plano segue 'executing' (nunca 'failed') — o tick retoma.
-  const hasPending = db
-    .prepare("SELECT COUNT(*) n FROM ci_actions WHERE plan_id=? AND status IN ('verification_pending','unknown','running')")
-    .get(planId).n > 0;
+  const hasPending =
+    db
+      .prepare(
+        "SELECT COUNT(*) n FROM ci_actions WHERE plan_id=? AND status IN ('verification_pending','unknown','running')",
+      )
+      .get(planId).n > 0;
   if (pendingApproval || hasPending) return { waiting_approval: true };
   const blocked = allDone(planId);
   db.prepare("UPDATE ci_plans SET status=? WHERE id=?").run(blocked ? "done" : "failed", planId);
@@ -341,20 +464,45 @@ export async function executePlan(adminId, sessionId, planId, { config = null, l
 }
 
 const latestObservation = (sessionId) =>
-  db.prepare("SELECT id, observation_hash FROM ci_observations WHERE session_id = ? ORDER BY created_at DESC LIMIT 1").get(sessionId);
+  db
+    .prepare(
+      "SELECT id, observation_hash FROM ci_observations WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
+    )
+    .get(sessionId);
 
 const allDone = (planId) =>
-  db.prepare("SELECT COUNT(*) n FROM ci_actions WHERE plan_id=? AND status NOT IN ('succeeded','cancelled','blocked')").get(planId).n === 0;
+  db
+    .prepare(
+      "SELECT COUNT(*) n FROM ci_actions WHERE plan_id=? AND status NOT IN ('succeeded','cancelled','blocked')",
+    )
+    .get(planId).n === 0;
 
 function setActionStatus(id, from, to, extra = {}) {
   const sets = ["status = ?", "updated_at = ?"];
   const vals = [to, now()];
-  if (extra.verification !== undefined) { sets.push("verification_json = ?"); vals.push(JSON.stringify(extra.verification)); }
-  if (extra.approvalId !== undefined) { sets.push("approval_id = ?"); vals.push(extra.approvalId); }
-  if (extra.observationBefore !== undefined) { sets.push("observation_before = ?"); vals.push(extra.observationBefore); }
-  if (extra.observationAfter !== undefined) { sets.push("observation_after = ?"); vals.push(extra.observationAfter); }
-  if (extra.errorCode !== undefined) { sets.push("error_code = ?"); vals.push(extra.errorCode); }
-  const r = db.prepare(`UPDATE ci_actions SET ${sets.join(", ")} WHERE id = ? AND status = ?`).run(...vals, id, from);
+  if (extra.verification !== undefined) {
+    sets.push("verification_json = ?");
+    vals.push(JSON.stringify(extra.verification));
+  }
+  if (extra.approvalId !== undefined) {
+    sets.push("approval_id = ?");
+    vals.push(extra.approvalId);
+  }
+  if (extra.observationBefore !== undefined) {
+    sets.push("observation_before = ?");
+    vals.push(extra.observationBefore);
+  }
+  if (extra.observationAfter !== undefined) {
+    sets.push("observation_after = ?");
+    vals.push(extra.observationAfter);
+  }
+  if (extra.errorCode !== undefined) {
+    sets.push("error_code = ?");
+    vals.push(extra.errorCode);
+  }
+  const r = db
+    .prepare(`UPDATE ci_actions SET ${sets.join(", ")} WHERE id = ? AND status = ?`)
+    .run(...vals, id, from);
   return r.changes === 1;
 }
 
@@ -364,16 +512,30 @@ function emitEvent(sessionId, kind, nodeId, detail) {
 
 function buildBrowserParams(actionType, target) {
   switch (actionType) {
-    case "navigate": return { op: "navigate", url: target.url };
-    case "click": return { op: "click", selector: target.selector };
-    case "fill": return { op: "fill", selector: target.selector, text: target.text };
-    case "select": return { op: "fill", selector: target.selector, text: target.value ?? target.text };
-    case "scroll": return { op: "wait_for", selector: target.selector, timeoutMs: 2000 };
-    case "wait_for": return { op: "wait_for", selector: target.selector, timeoutMs: Number(target.timeout_ms) || 5000 };
-    case "screenshot": return { op: "screenshot" };
-    case "read": return { op: "extract" };
-    case "close": return { op: "wait_for", timeoutMs: 1 };
-    default: return { op: "extract" };
+    case "navigate":
+      return { op: "navigate", url: target.url };
+    case "click":
+      return { op: "click", selector: target.selector };
+    case "fill":
+      return { op: "fill", selector: target.selector, text: target.text };
+    case "select":
+      return { op: "fill", selector: target.selector, text: target.value ?? target.text };
+    case "scroll":
+      return { op: "wait_for", selector: target.selector, timeoutMs: 2000 };
+    case "wait_for":
+      return {
+        op: "wait_for",
+        selector: target.selector,
+        timeoutMs: Number(target.timeout_ms) || 5000,
+      };
+    case "screenshot":
+      return { op: "screenshot" };
+    case "read":
+      return { op: "extract" };
+    case "close":
+      return { op: "wait_for", timeoutMs: 1 };
+    default:
+      return { op: "extract" };
   }
 }
 
@@ -383,11 +545,15 @@ function buildBrowserParams(actionType, target) {
  *  e RETOMADA do plano (ações restantes). Rejeição → ação cancelled e plano falha. */
 export async function tickCiSessions(execOpts = {}) {
   const pending = db
-    .prepare("SELECT id, plan_id, session_id, approval_id, expected_json FROM ci_actions WHERE status = 'verification_pending' AND approval_id IS NOT NULL")
+    .prepare(
+      "SELECT id, plan_id, session_id, approval_id, expected_json FROM ci_actions WHERE status = 'verification_pending' AND approval_id IS NOT NULL",
+    )
     .all();
   const resumedPlans = new Set();
   for (const a of pending) {
-    const owner = db.prepare("SELECT owner_admin_id FROM ci_sessions WHERE id = ?").get(a.session_id)?.owner_admin_id;
+    const owner = db
+      .prepare("SELECT owner_admin_id FROM ci_sessions WHERE id = ?")
+      .get(a.session_id)?.owner_admin_id;
     if (!owner) continue;
     const ap = db.prepare("SELECT status FROM approvals WHERE id = ?").get(a.approval_id);
     // pending = aguardando humano; running = sendo executado AGORA (nunca é rejeição).
@@ -406,7 +572,10 @@ export async function tickCiSessions(execOpts = {}) {
         audit("ci.action_resumed", { admin: owner, ids: [a.id], status: "succeeded" });
         resumedPlans.add(a.plan_id);
       } else if (verdict.inconclusive) {
-        setActionStatus(a.id, "verification_pending", "unknown", { verification: verdict, observationAfter: postObs?.id });
+        setActionStatus(a.id, "verification_pending", "unknown", {
+          verification: verdict,
+          observationAfter: postObs?.id,
+        });
         audit("ci.action_unknown", { admin: owner, ids: [a.id] });
       } else {
         setActionStatus(a.id, "verification_pending", "failed", {
@@ -418,7 +587,9 @@ export async function tickCiSessions(execOpts = {}) {
         audit("ci.action_diverged", { admin: owner, ids: [a.id], status: "diverged" });
       }
     } else {
-      setActionStatus(a.id, "verification_pending", "cancelled", { errorCode: "approval_rejected" });
+      setActionStatus(a.id, "verification_pending", "cancelled", {
+        errorCode: "approval_rejected",
+      });
       db.prepare("UPDATE ci_plans SET status='failed' WHERE id=?").run(a.plan_id);
       audit("ci.action_cancelled", { admin: owner, ids: [a.id], status: "rejected" });
     }
@@ -426,7 +597,14 @@ export async function tickCiSessions(execOpts = {}) {
   // Retoma planos com ações aprovadas (ações restantes continuam sob política/D9).
   for (const planId of resumedPlans) {
     const plan = db.prepare("SELECT session_id FROM ci_plans WHERE id = ?").get(planId);
-    if (plan) await executePlan(db.prepare("SELECT owner_admin_id FROM ci_sessions WHERE id = ?").get(plan.session_id)?.owner_admin_id, plan.session_id, planId, execOpts).catch(() => {});
+    if (plan)
+      await executePlan(
+        db.prepare("SELECT owner_admin_id FROM ci_sessions WHERE id = ?").get(plan.session_id)
+          ?.owner_admin_id,
+        plan.session_id,
+        planId,
+        execOpts,
+      ).catch(() => {});
   }
   return pending.length;
 }
@@ -436,11 +614,16 @@ export async function tickCiSessions(execOpts = {}) {
 const PROC_STATUS_ORDER = { observed: 0, inferred: 1, tested: 2, validated: 3, deprecated: 4 };
 
 /** Registra/atualiza procedimento a partir de execução VERIFICADA (nunca de plano só). */
-export function recordProcedure(adminId, { name, goal, steps, criteria = "", verified = false, environment = "browser" } = {}) {
+export function recordProcedure(
+  adminId,
+  { name, goal, steps, criteria = "", verified = false, environment = "browser" } = {},
+) {
   if (!adminId) throw new Error("ci_owner_required");
   const n = clean(name, 120).trim();
   if (!n) throw new Error("ci_name_required");
-  const existing = db.prepare("SELECT * FROM ci_procedures WHERE owner_admin_id = ? AND name = ?").get(adminId, n);
+  const existing = db
+    .prepare("SELECT * FROM ci_procedures WHERE owner_admin_id = ? AND name = ?")
+    .get(adminId, n);
   if (!existing) {
     const id = uid();
     // Execução verificada na criação → 'tested' (observado sem verificação → 'observed').
@@ -448,7 +631,19 @@ export function recordProcedure(adminId, { name, goal, steps, criteria = "", ver
     tx(() => {
       db.prepare(
         "INSERT INTO ci_procedures (id, owner_admin_id, name, goal, environment, steps_json, criteria, status, version, success_count, created_at, updated_at) VALUES (?,?,?,?,?,?,?, ?, 1, ?, ?, ?)",
-      ).run(id, adminId, n, clean(goal, 1000), environment, JSON.stringify(steps || []), clean(criteria, 500), initial, verified ? 1 : 0, now(), now());
+      ).run(
+        id,
+        adminId,
+        n,
+        clean(goal, 1000),
+        environment,
+        JSON.stringify(steps || []),
+        clean(criteria, 500),
+        initial,
+        verified ? 1 : 0,
+        now(),
+        now(),
+      );
       assignNew("ci_procedure", id, adminId);
     });
     return { id, status: initial };
@@ -456,17 +651,20 @@ export function recordProcedure(adminId, { name, goal, steps, criteria = "", ver
   // Execução verificada: tested; 2+ sucessos: validated; falha: rebaixa/deprecia.
   const success = existing.success_count + (verified ? 1 : 0);
   const fails = existing.fail_count + (verified ? 0 : 1);
-  const status = fails >= 2 ? "deprecated" : success >= 2 ? "validated" : verified ? "tested" : existing.status;
-  db.prepare("UPDATE ci_procedures SET steps_json=?, success_count=?, fail_count=?, status=?, version=version+1, last_used_at=?, updated_at=? WHERE id=?").run(
-    JSON.stringify(steps || []), success, fails, status, now(), now(), existing.id,
-  );
+  const status =
+    fails >= 2 ? "deprecated" : success >= 2 ? "validated" : verified ? "tested" : existing.status;
+  db.prepare(
+    "UPDATE ci_procedures SET steps_json=?, success_count=?, fail_count=?, status=?, version=version+1, last_used_at=?, updated_at=? WHERE id=?",
+  ).run(JSON.stringify(steps || []), success, fails, status, now(), now(), existing.id);
   audit("ci.procedure_updated", { admin: adminId, ids: [existing.id], status });
   return { id: existing.id, status };
 }
 
 export function listProcedures(adminId, { includeDeprecated = false } = {}) {
   return db
-    .prepare(`SELECT * FROM ci_procedures WHERE owner_admin_id = ? ${includeDeprecated ? "" : "AND status != 'deprecated'"} ORDER BY success_count DESC`)
+    .prepare(
+      `SELECT * FROM ci_procedures WHERE owner_admin_id = ? ${includeDeprecated ? "" : "AND status != 'deprecated'"} ORDER BY success_count DESC`,
+    )
     .all(adminId)
     .map((p) => ({ ...p, steps: parseJson(p.steps_json, []) }));
 }
@@ -507,8 +705,10 @@ export async function ciToolExecute(adminId, { plan_id }) {
   if (!plan) return "Erro: not_found";
   const out = await executePlan(adminId, plan.session_id, plan_id);
   if (out.error) return `Erro: ${out.error}`;
-  if (out.waiting_approval) return "Execução pausada: há ações aguardando APROVAÇÃO HUMANA no painel (D9). Elas retomam automaticamente após a decisão.";
-  if (out.replanned) return `Divergência detectada: a interface mudou — um NOVO plano foi gerado (${out.plan_id}); aprove as ações dele.`;
+  if (out.waiting_approval)
+    return "Execução pausada: há ações aguardando APROVAÇÃO HUMANA no painel (D9). Elas retomam automaticamente após a decisão.";
+  if (out.replanned)
+    return `Divergência detectada: a interface mudou — um NOVO plano foi gerado (${out.plan_id}); aprove as ações dele.`;
   if (out.done) return "Plano executado: todas as ações foram verificadas com sucesso.";
   return `Execução interrompida com segurança na ação ${out.failed_at} (verificação falhou; nada repetido às cegas).`;
 }
@@ -537,25 +737,48 @@ export function registerCiWorkflowNodes() {
       return value;
     };
     for (const [type, fn] of [
-      ["computer_session", async (node, ne, ctx) => {
-        const session = await openSession(ctx.owner, { objective: ctx.run.objective, environment: "browser" });
-        return { output: { session_id: session.id } };
-      }],
-      ["computer_observe", async (node, ne, ctx) => {
-        const sessionId = resolve(node.config?.session_id, ctx.outputs);
-        const out = await observe(ctx.owner, sessionId, {});
-        if (out.error) throw new Error(`ci_node_error:${out.error}`);
-        return { output: { observation_id: out.id, hash: out.hash, content: out.content.slice(0, 2000) } };
-      }],
-      ["computer_execute", async (node, ne, ctx) => {
-        const out = await executePlan(ctx.owner, resolve(node.config?.session_id, ctx.outputs), resolve(node.config?.plan_id, ctx.outputs));
-        if (out.error) throw new Error(`ci_node_error:${out.error}`);
-        return { output: out };
-      }],
-      ["computer_verify", async (node, ne, ctx) => {
-        const out = await ciToolVerify(ctx.owner, { session_id: resolve(node.config?.session_id, ctx.outputs) });
-        return { output: { report: out } };
-      }],
+      [
+        "computer_session",
+        async (node, ne, ctx) => {
+          const session = await openSession(ctx.owner, {
+            objective: ctx.run.objective,
+            environment: "browser",
+          });
+          return { output: { session_id: session.id } };
+        },
+      ],
+      [
+        "computer_observe",
+        async (node, ne, ctx) => {
+          const sessionId = resolve(node.config?.session_id, ctx.outputs);
+          const out = await observe(ctx.owner, sessionId, {});
+          if (out.error) throw new Error(`ci_node_error:${out.error}`);
+          return {
+            output: { observation_id: out.id, hash: out.hash, content: out.content.slice(0, 2000) },
+          };
+        },
+      ],
+      [
+        "computer_execute",
+        async (node, ne, ctx) => {
+          const out = await executePlan(
+            ctx.owner,
+            resolve(node.config?.session_id, ctx.outputs),
+            resolve(node.config?.plan_id, ctx.outputs),
+          );
+          if (out.error) throw new Error(`ci_node_error:${out.error}`);
+          return { output: out };
+        },
+      ],
+      [
+        "computer_verify",
+        async (node, ne, ctx) => {
+          const out = await ciToolVerify(ctx.owner, {
+            session_id: resolve(node.config?.session_id, ctx.outputs),
+          });
+          return { output: { report: out } };
+        },
+      ],
     ]) {
       registerNodeExecutor(type, async (node, ne, ctx) => {
         try {

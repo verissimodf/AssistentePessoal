@@ -502,6 +502,15 @@ export async function deleteConversation(id: string): Promise<void> {
   if (await ping()) await api(`/api/conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+/** Cria uma conversa vazia com título explícito (usada pelo Multimodal Studio). */
+export async function createConversation(title: string): Promise<ConversationSummary | null> {
+  if (!(await ping())) return null;
+  return await api<ConversationSummary>("/api/conversations", {
+    method: "POST",
+    body: JSON.stringify({ title }),
+  });
+}
+
 /**
  * Envia UMA mensagem e recebe a troca persistida. `clientMsgId` é gerado no cliente e reutilizado
  * em retries — o servidor nunca duplica a mesma mensagem. Com `conversationId` nulo, o servidor
@@ -2017,4 +2026,178 @@ export async function reuseCiProcedure(id: string): Promise<CiReuseResult | null
   return await api<CiReuseResult>(`/api/ci/procedures/${encodeURIComponent(id)}/reuse`, {
     method: "POST",
   });
+}
+
+// ---------- Multimodal Studio (Fase 6: voz + texto na MESMA conversa via chatExchange;
+// captura de microfone explícita; a transcrição é entrada CANDIDATA — só sai da sessão
+// com envio confirmado; a fala usa TTS e o áudio NUNCA é persistido) ----------
+export type MmSessionStatus = "active" | "closed" | string;
+
+export type MmSessionSummary = {
+  id: string;
+  conversation_id: string;
+  status: MmSessionStatus;
+  modalities: string[];
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+};
+
+/** Metadados da transcrição anexada ao turno (texto + origem: stt/manual/text). */
+export type MmTranscript = {
+  text: string;
+  corrected?: boolean;
+  engine?: string;
+  language?: string;
+  latency_ms?: number;
+} | null;
+
+export type MmTurn = {
+  id: string;
+  session_id: string;
+  conversation_id: string;
+  seq: number;
+  /** idle | listening | transcribing | processing | generating | speaking | interrupted | completed | failed */
+  state: string;
+  input_kind: "audio" | "text" | string;
+  input_text: string | null;
+  transcript: MmTranscript;
+  reply_message_id: string | null;
+  output_text: string | null;
+  audio: { type: string; bytes: number; tts_ms?: number } | null;
+  error_code: string | null;
+  latency: Record<string, number>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MmEvent = {
+  id: number;
+  turn_id: string | null;
+  kind: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export type MmSession = MmSessionSummary & {
+  state: Record<string, unknown>;
+  turns: MmTurn[];
+  events: MmEvent[];
+};
+
+export async function listMmSessions(limit = 50): Promise<MmSessionSummary[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<MmSessionSummary[]>(`/api/mm/sessions?limit=${limit}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function openMmSession(body: {
+  conversationId: string;
+  modalities?: string[];
+}): Promise<MmSession | null> {
+  if (!(await ping())) return null;
+  return await api<MmSession>("/api/mm/sessions", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getMmSession(id: string): Promise<MmSession | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<MmSession>(`/api/mm/sessions/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function closeMmSession(id: string): Promise<{ ok: true } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: true }>(`/api/mm/sessions/${encodeURIComponent(id)}/close`, {
+    method: "POST",
+  });
+}
+
+/** Cria um turno em escuta no servidor (o microfone em si SÓ é aberto no clique, no cliente). */
+export async function startMmCapture(sessionId: string): Promise<MmTurn | null> {
+  if (!(await ping())) return null;
+  return await api<MmTurn>(`/api/mm/sessions/${encodeURIComponent(sessionId)}/capture/start`, {
+    method: "POST",
+  });
+}
+
+export async function stopMmCapture(turnId: string): Promise<MmTurn | null> {
+  if (!(await ping())) return null;
+  return await api<MmTurn>(`/api/mm/turns/${encodeURIComponent(turnId)}/capture/stop`, {
+    method: "POST",
+  });
+}
+
+/** Upload de áudio (multipart) → STT; o turno vira transcrição candidata. */
+export async function submitMmAudio(
+  sessionId: string,
+  file: Blob,
+  language = "pt",
+  filename = "speech.webm",
+): Promise<MmTurn | null> {
+  if (!(await ping())) return null;
+  const fd = new FormData();
+  fd.append("file", file, filename);
+  fd.append("language", language);
+  return await api<MmTurn>(`/api/mm/sessions/${encodeURIComponent(sessionId)}/audio`, {
+    method: "POST",
+    body: fd,
+  });
+}
+
+/** Texto direto (digitação): cria turno `idle` com transcrição pronta (ainda NÃO enviada). */
+export async function submitMmText(sessionId: string, message: string): Promise<MmTurn | null> {
+  if (!(await ping())) return null;
+  return await api<MmTurn>(`/api/mm/sessions/${encodeURIComponent(sessionId)}/text`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+}
+
+/** Correção manual da transcrição (antes do envio). */
+export async function updateMmTranscript(turnId: string, text: string): Promise<MmTurn | null> {
+  if (!(await ping())) return null;
+  return await api<MmTurn>(`/api/mm/turns/${encodeURIComponent(turnId)}/transcript`, {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}
+
+/** Envia a transcrição CONFIRMADA para a conversa (mesmo caminho do chat; resposta persistida). */
+export async function sendMmTurn(turnId: string): Promise<MmTurn | null> {
+  if (!(await ping())) return null;
+  return await api<MmTurn>(`/api/mm/turns/${encodeURIComponent(turnId)}/send`, { method: "POST" });
+}
+
+/** Sintetiza a fala da resposta — a resposta é áudio binário (nunca persistido). */
+export async function speakMmTurn(turnId: string): Promise<Blob | null> {
+  if (!(await ping())) return null;
+  return await api<Blob>(`/api/mm/turns/${encodeURIComponent(turnId)}/speak`, { method: "POST" });
+}
+
+export async function interruptMmTurn(turnId: string): Promise<MmTurn | null> {
+  if (!(await ping())) return null;
+  return await api<MmTurn>(`/api/mm/turns/${encodeURIComponent(turnId)}/interrupt`, {
+    method: "POST",
+  });
+}
+
+/** Eventos novos da sessão desde `sinceId` (polling). */
+export async function listMmEvents(sessionId: string, sinceId = 0): Promise<MmEvent[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<MmEvent[]>(
+      `/api/mm/events?sessionId=${encodeURIComponent(sessionId)}&sinceId=${encodeURIComponent(sinceId)}`,
+    );
+  } catch {
+    return null;
+  }
 }

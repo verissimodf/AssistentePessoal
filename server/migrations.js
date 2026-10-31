@@ -1749,6 +1749,127 @@ BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
       },
     ],
   },
+  {
+    // Fase 6 da evolução (docs/evolution/phase-6): EXPERIÊNCIA MULTIMODAL — camada de
+    // apresentação/entrada sobre o sistema conversacional EXISTENTE (conversations.js é a
+    // fonte da verdade; NADA de histórico duplicado). Sessões multimodais com turnos
+    // persistentes e eventos tipados; transcrições com correção; referências a artefatos
+    // (NUNCA áudio bruto no banco — metadados bastam, ADR-MM-003); latência observada.
+    version: 25,
+    name: "multimodal experience: sessions, turns, typed events and transcript segments",
+    sql: `
+CREATE TABLE IF NOT EXISTS mm_sessions (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  conversation_id TEXT NOT NULL REFERENCES conversations(id),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','closed','failed')),
+  modalities_json TEXT NOT NULL DEFAULT '[]',
+  state_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  closed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_mm_sessions_owner ON mm_sessions(owner_admin_id, created_at);
+
+CREATE TABLE IF NOT EXISTS mm_turns (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES mm_sessions(id) ON DELETE CASCADE,
+  conversation_id TEXT NOT NULL REFERENCES conversations(id),
+  seq INTEGER NOT NULL,
+  state TEXT NOT NULL DEFAULT 'idle' CHECK (state IN ('idle','listening','transcribing','processing','generating','speaking','interrupted','completed','failed')),
+  input_kind TEXT NOT NULL DEFAULT 'text' CHECK (input_kind IN ('text','audio','upload')),
+  input_text TEXT,
+  transcript_json TEXT,
+  reply_message_id TEXT,
+  output_text TEXT,
+  audio_meta_json TEXT,
+  error_code TEXT,
+  latency_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mm_turns_session ON mm_turns(session_id, seq);
+
+CREATE TABLE IF NOT EXISTS mm_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL REFERENCES mm_sessions(id) ON DELETE CASCADE,
+  turn_id TEXT,
+  kind TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mm_events_session ON mm_events(session_id, id);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v24;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run','kh_library','kh_notebook','kh_source','wf_definition','wf_run','wf_policy','research_project','learn_project','ci_session','ci_procedure','mm_session')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v24;
+DROP TABLE ownership_v24;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "mm_sessions",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "conversation_id",
+          "status",
+          "modalities_json",
+          "state_json",
+          "created_at",
+          "updated_at",
+          "closed_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "mm_turns",
+        type: "table",
+        columns: [
+          "id",
+          "session_id",
+          "conversation_id",
+          "seq",
+          "state",
+          "input_kind",
+          "input_text",
+          "transcript_json",
+          "reply_message_id",
+          "output_text",
+          "audio_meta_json",
+          "error_code",
+          "latency_json",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "mm_events",
+        type: "table",
+        columns: ["id", "session_id", "turn_id", "kind", "payload_json", "created_at"],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
 ];
 
 const tableExists = (db, t) =>

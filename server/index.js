@@ -176,6 +176,24 @@ import {
   reuseProcedure,
   registerCiWorkflowNodes,
 } from "./computer.js";
+import {
+  openSession as mmOpenSession,
+  getSession as mmGetSession,
+  listSessions as mmListSessions,
+  closeSession as mmCloseSession,
+  startCapture as mmStartCapture,
+  stopCapture as mmStopCapture,
+  submitAudio as mmSubmitAudio,
+  submitText as mmSubmitText,
+  attachTranscript as mmAttachTranscript,
+  sendTurn as mmSendTurn,
+  speakTurn as mmSpeakTurn,
+  interruptTurn as mmInterruptTurn,
+  listEvents as mmListEvents,
+  recoverMmTurns,
+  tickMmSessions,
+  MmError,
+} from "./multimodal.js";
 import { listScheduledJobs } from "./jobs.js";
 import {
   memoryRetentionPolicy,
@@ -1414,7 +1432,11 @@ const ciError = (e) => {
   return new AuthError(map[code] || 400, code);
 };
 route("GET", "/api/ci/sessions", "computer:read", ({ principal }) =>
-  db.prepare("SELECT id, environment, objective, status, created_at, closed_at FROM ci_sessions WHERE owner_admin_id = ? ORDER BY created_at DESC LIMIT 100").all(me(principal)),
+  db
+    .prepare(
+      "SELECT id, environment, objective, status, created_at, closed_at FROM ci_sessions WHERE owner_admin_id = ? ORDER BY created_at DESC LIMIT 100",
+    )
+    .all(me(principal)),
 );
 route("POST", "/api/ci/sessions", "computer:run", ({ body, principal }) => {
   try {
@@ -1476,6 +1498,148 @@ route("POST", "/api/ci/procedures", "computer:run", ({ body, principal }) => {
 route("POST", "/api/ci/procedures/:id/reuse", "computer:run", ({ params, principal }) => {
   const out = reuseProcedure(me(principal), params.id);
   if (out.error) throw ciError(new Error(out.error));
+  return out;
+});
+
+// ---------- Multimodal Studio (evolução Fase 6, docs/evolution/phase-6) ----------
+// Camada de entrada/apresentação sobre o MESMO chat (chatExchange): sessões/turnos usam
+// "chat" (superfície conversacional do admin verificado) e áudio usa "voice" — os mesmos
+// escopos existentes, deny-by-default intacto. Nenhuma rotação nova de privilégios.
+const mmError = (e) => {
+  const code = e?.message || "mm_error";
+  const map = {
+    mm_owner_required: 403,
+    mm_conversation_required: 400,
+    mm_session_not_active: 409,
+    mm_turn_concurrent: 409,
+    mm_turn_limit: 429,
+    mm_turn_not_listening: 409,
+    mm_turn_not_editable: 409,
+    mm_turn_not_sendable: 409,
+    mm_turn_not_speakable: 409,
+    mm_turn_not_interruptible: 409,
+    mm_transcript_required: 400,
+    invalid_message: 400,
+    empty_message: 400,
+    message_too_long: 400,
+    not_found: 404,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+
+route("GET", "/api/mm/sessions", "chat", ({ query, principal }) =>
+  mmListSessions(me(principal), { limit: numParam(query.get("limit")) }),
+);
+route("POST", "/api/mm/sessions", "chat", ({ body, principal }) => {
+  try {
+    return mmOpenSession(me(principal), body || {});
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    throw e;
+  }
+});
+route("GET", "/api/mm/sessions/:id", "chat", ({ params, principal }) => {
+  const s = mmGetSession(me(principal), params.id);
+  if (!s) notFound();
+  return s;
+});
+route("POST", "/api/mm/sessions/:id/close", "chat", ({ params, principal }) => {
+  const out = mmCloseSession(me(principal), params.id);
+  if (out.error) throw mmError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/mm/sessions/:id/capture/start", "voice", ({ params, principal }) => {
+  try {
+    return mmStartCapture(me(principal), params.id);
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    throw e;
+  }
+});
+route("POST", "/api/mm/turns/:id/capture/stop", "voice", ({ params, principal }) => {
+  try {
+    return mmStopCapture(me(principal), params.id);
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    throw e;
+  }
+});
+// Áudio → STT (whisper.cpp local). MIME/assinatura/rate limit validados no stt.js;
+// a transcrição é entrada CANDIDATA — nunca vira mensagem sem envio explícito.
+route("POST", "/api/mm/sessions/:id/audio", "voice", async ({ params, form, principal }) => {
+  try {
+    return await mmSubmitAudio(me(principal), params.id, form?.get("file"), {
+      language: String(form?.get("language") || "pt").split("-")[0],
+    });
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    if (e?.status && e?.code) throw e;
+    throw new AuthError(503, "stt_unavailable");
+  }
+});
+route("POST", "/api/mm/sessions/:id/text", "chat", ({ params, body, principal }) => {
+  try {
+    return mmSubmitText(me(principal), params.id, body?.message);
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    if (e?.status && e?.code) throw e;
+    throw e;
+  }
+});
+route("POST", "/api/mm/turns/:id/transcript", "voice", ({ params, body, principal }) => {
+  try {
+    return mmAttachTranscript(me(principal), params.id, body?.text, { corrected: true });
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    if (e?.status && e?.code) throw e;
+    throw e;
+  }
+});
+// Envio CONFIRMADO: exatamente o caminho do /api/chat (reflex + runAgent confirm + principal) —
+// ferramentas, Policy Engine, D9 e idempotência intactos. A voz não concede privilégios.
+route("POST", "/api/mm/turns/:id/send", "chat", async ({ params, principal }) => {
+  try {
+    return await mmSendTurn(me(principal), params.id, async (args) => {
+      const reflex = await evaluateReflex(me(principal), args.messages.at(-1)?.content || "");
+      const r = await runAgent({ ...args, autonomy: "confirm", principal });
+      return reflex ? { ...r, reflex } : r;
+    });
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    throw e; // ConvError (status+code) é tratado pelo dispatcher
+  }
+});
+// Síntese da resposta: áudio volta na resposta HTTP (nunca persistido); estados recuperáveis
+// (warming_up/busy/unavailable) propagam o código estável do voice.js.
+route("POST", "/api/mm/turns/:id/speak", "voice", async ({ params, principal }) => {
+  try {
+    const a = await mmSpeakTurn(me(principal), params.id, { lang: "pt-BR" });
+    if (!a) return { interrupted: true };
+    return { __raw: a.data, __type: a.type, turn: a.turn };
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    if (e instanceof VoiceError) {
+      const err = new AuthError(e.code === "voice_busy" ? 429 : 503, e.code);
+      if (e.retryAfter) err.retryAfter = e.retryAfter;
+      err.state = e.state;
+      throw err;
+    }
+    throw e;
+  }
+});
+route("POST", "/api/mm/turns/:id/interrupt", "chat", ({ params, principal }) => {
+  try {
+    return mmInterruptTurn(me(principal), params.id);
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    throw e;
+  }
+});
+route("GET", "/api/mm/events", "chat", ({ query, principal }) => {
+  const out = mmListEvents(me(principal), String(query.get("sessionId") || ""), {
+    sinceId: numParam(query.get("sinceId")) ?? 0,
+  });
+  if (!out) notFound();
   return out;
 });
 
@@ -2145,6 +2309,10 @@ if (isMain && !process.env.JARVIS_NO_LISTEN) {
   setInterval(() => tickWfRuns().catch(() => {}), 20_000).unref();
   setInterval(() => tickCiSessions().catch(() => {}), 20_000).unref();
   registerCiWorkflowNodes(); // nós computer_* no Workflow Engine (Fase 5)
+  // Fase 6: turnos multimodais órfãos de reinício falham explicitamente; sessões ociosas
+  // além do teto são fechadas e turnos travados falham com código estável (mm_turn_timeout).
+  recoverMmTurns();
+  setInterval(() => tickMmSessions().catch(() => {}), 60_000).unref();
   // P2: inbound messages run as the admin whose own settings hold the channel credentials.
   const activeAdmins = () =>
     db

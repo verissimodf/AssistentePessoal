@@ -55,8 +55,11 @@ export function configuredProvider(adminId = 0) {
   }
   url = url || process.env.JARVIS_SEARXNG_URL || null;
   // Base validada: esquema HTTP(S) e host explícito (serviço declarado pelo operador).
-  if (url && !/^https?:\/\/[a-zA-Z0-9._:-]+(:\d+)?$/i.test(url.replace(/\/$/, ""))) return { provider: "ddg-html", base: null };
-  return url ? { provider: "searxng", base: String(url).replace(/\/$/, "") } : { provider: "ddg-html", base: null };
+  if (url && !/^https?:\/\/[a-zA-Z0-9._:-]+(:\d+)?$/i.test(url.replace(/\/$/, "")))
+    return { provider: "ddg-html", base: null };
+  return url
+    ? { provider: "searxng", base: String(url).replace(/\/$/, "") }
+    : { provider: "ddg-html", base: null };
 }
 
 /** Busca via instância searxng local (JSON API). A BASE é configurada pelo OPERADOR
@@ -75,7 +78,10 @@ async function searxngSearch(base, request) {
         // Integração do OPERADOR (base fixa em config): fetch direto na rede interna —
         // padrão de `http-integration.js`; o urlpolicy (SSRF) não se aplica pois a URL NÃO
         // vem de conteúdo/modelo, e sim da configuração administrativa.
-        const r = await fetch(u.toString(), { signal: AbortSignal.timeout(20_000), headers: { "User-Agent": "Jarvis/1.0 (+local research)" } });
+        const r = await fetch(u.toString(), {
+          signal: AbortSignal.timeout(20_000),
+          headers: { "User-Agent": "Jarvis/1.0 (+local research)" },
+        });
         if (!r.ok) throw new Error(`searxng_http_${r.status}`);
         return await r.text();
       })());
