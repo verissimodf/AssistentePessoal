@@ -1870,6 +1870,220 @@ BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
       },
     ],
   },
+  {
+    // Fase 7 da evolução (docs/evolution/phase-7): INTELIGÊNCIA PROATIVA — regras com
+    // versionamento, eventos internos com deduplicação, oportunidades rastreáveis
+    // (event→rule→opportunity→run→approval→result) e notificações internas. NENHUMA
+    // autorização paralela: execução só via Workflow Engine (políticas+D9 nativos).
+    version: 26,
+    name: "proactive intelligence: versioned rules, internal events, opportunities and notifications",
+    sql: `
+CREATE TABLE IF NOT EXISTS pr_rules (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  origin TEXT NOT NULL DEFAULT 'user' CHECK (origin IN ('user','derived')),
+  trigger_kind TEXT NOT NULL CHECK (trigger_kind IN ('event','temporal','contextual')),
+  trigger_json TEXT NOT NULL DEFAULT '{}',
+  conditions_json TEXT NOT NULL DEFAULT '[]',
+  workflow_id TEXT,
+  params_json TEXT NOT NULL DEFAULT '{}',
+  execution TEXT NOT NULL DEFAULT 'manual' CHECK (execution IN ('manual','auto')),
+  valid_from TEXT,
+  valid_until TEXT,
+  max_executions INTEGER,
+  execution_count INTEGER NOT NULL DEFAULT 0,
+  cooldown_ms INTEGER NOT NULL DEFAULT 0,
+  state TEXT NOT NULL DEFAULT 'draft' CHECK (state IN ('draft','active','paused','disabled','expired','failed')),
+  version INTEGER NOT NULL DEFAULT 1,
+  last_run_at TEXT,
+  next_run_at TEXT,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS pr_rule_versions (
+  id TEXT PRIMARY KEY,
+  rule_id TEXT NOT NULL REFERENCES pr_rules(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  snapshot_json TEXT NOT NULL,
+  author_admin_id TEXT NOT NULL REFERENCES admins(id),
+  created_at TEXT NOT NULL,
+  UNIQUE (rule_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS pr_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  source TEXT NOT NULL CHECK (source IN ('workflow','research','learning','kh','workforce','mm','computer','manual','system')),
+  kind TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  dedupe_key TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, dedupe_key)
+);
+CREATE INDEX IF NOT EXISTS idx_pr_events_owner ON pr_events(owner_admin_id, created_at);
+
+CREATE TABLE IF NOT EXISTS pr_opportunities (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  rule_id TEXT REFERENCES pr_rules(id),
+  event_id INTEGER,
+  rule_version INTEGER NOT NULL DEFAULT 0,
+  kind TEXT NOT NULL,
+  priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low','normal','high')),
+  justification TEXT NOT NULL DEFAULT '',
+  evidence_json TEXT NOT NULL DEFAULT '[]',
+  dedupe_key TEXT,
+  status TEXT NOT NULL DEFAULT 'detected' CHECK (status IN ('detected','evaluating','recommended','dismissed','snoozed','accepted','executing','completed','failed','expired')),
+  workflow_run_id TEXT,
+  snoozed_until TEXT,
+  decision_json TEXT,
+  expires_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pr_opp_owner ON pr_opportunities(owner_admin_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_opp_dedupe ON pr_opportunities(dedupe_key) WHERE dedupe_key IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS pr_notifications (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  type TEXT NOT NULL CHECK (type IN ('opportunity_identified','approval_needed','routine_started','execution_completed','execution_failed','condition_changed','rule_paused','limit_reached')),
+  priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low','normal','high')),
+  source TEXT NOT NULL DEFAULT 'proactive',
+  entity_type TEXT,
+  entity_id TEXT,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  read_at TEXT,
+  expires_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pr_notif_owner ON pr_notifications(owner_admin_id, created_at);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v25;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run','kh_library','kh_notebook','kh_source','wf_definition','wf_run','wf_policy','research_project','learn_project','ci_session','ci_procedure','mm_session','pr_rule')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v25;
+DROP TABLE ownership_v25;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "pr_rules",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "name",
+          "description",
+          "origin",
+          "trigger_kind",
+          "trigger_json",
+          "conditions_json",
+          "workflow_id",
+          "params_json",
+          "execution",
+          "valid_from",
+          "valid_until",
+          "max_executions",
+          "execution_count",
+          "cooldown_ms",
+          "state",
+          "version",
+          "last_run_at",
+          "next_run_at",
+          "last_error",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "pr_rule_versions",
+        type: "table",
+        columns: ["id", "rule_id", "version", "snapshot_json", "author_admin_id", "created_at"],
+        primaryKey: ["id"],
+      },
+      {
+        table: "pr_events",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "source",
+          "kind",
+          "payload_json",
+          "dedupe_key",
+          "created_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "pr_opportunities",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "rule_id",
+          "event_id",
+          "rule_version",
+          "kind",
+          "priority",
+          "justification",
+          "evidence_json",
+          "dedupe_key",
+          "status",
+          "workflow_run_id",
+          "snoozed_until",
+          "decision_json",
+          "expires_at",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "pr_notifications",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "type",
+          "priority",
+          "source",
+          "entity_type",
+          "entity_id",
+          "title",
+          "body",
+          "read_at",
+          "expires_at",
+          "created_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
 ];
 
 const tableExists = (db, t) =>

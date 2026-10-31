@@ -194,6 +194,33 @@ import {
   tickMmSessions,
   MmError,
 } from "./multimodal.js";
+import {
+  createRule,
+  getRule,
+  listRules,
+  updateRule,
+  setRuleState,
+  recordEvent,
+  listOpportunities,
+  getOpportunity,
+  acceptOpportunity,
+  dismissOpportunity,
+  snoozeOpportunity,
+  listNotifications,
+  markNotificationRead,
+  dismissNotification,
+  testRule,
+  runRuleManually,
+  tickProactive,
+  recoverProactive,
+  getExecutionTrail,
+  getMetrics,
+  getControls,
+  validateControls,
+  registerWorkflowEventSink,
+  listEvents as listPrEvents,
+  PrError,
+} from "./proactive.js";
 import { listScheduledJobs } from "./jobs.js";
 import {
   memoryRetentionPolicy,
@@ -1643,6 +1670,194 @@ route("GET", "/api/mm/events", "chat", ({ query, principal }) => {
   return out;
 });
 
+// ---------- Proactive Studio (evolução Fase 7, docs/evolution/phase-7) ----------
+// Gestão de regras/oportunidades/notificações/controles. NENHUMA execução nasce aqui:
+// aceites e inícios automáticos passam por startWorkflowRun (Policy Engine + D9 nativos).
+const prError = (e) => {
+  const code = e?.message || "pr_error";
+  const map = {
+    pr_owner_required: 403,
+    pr_name_required: 400,
+    pr_invalid_trigger_kind: 400,
+    pr_invalid_trigger_source: 400,
+    pr_invalid_trigger_type: 400,
+    pr_invalid_trigger_time: 400,
+    pr_invalid_trigger_weekday: 400,
+    pr_invalid_trigger_interval: 400,
+    pr_invalid_trigger_date: 400,
+    pr_invalid_conditions: 400,
+    pr_invalid_execution: 400,
+    pr_invalid_max_executions: 400,
+    pr_invalid_state: 400,
+    pr_invalid_level: 400,
+    pr_invalid_controls: 400,
+    pr_invalid_source: 400,
+    pr_invalid_kind: 400,
+    pr_invalid_transition: 409,
+    pr_rule_limit: 429,
+    pr_event_storm: 429,
+    not_found: 404,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+
+// Regras
+route("GET", "/api/pr/rules", "proactive:read", ({ query, principal }) =>
+  listRules(me(principal), { state: query.get("state") || null }),
+);
+route("POST", "/api/pr/rules", "proactive:write", ({ body, principal }) => {
+  try {
+    return createRule(me(principal), body || {});
+  } catch (e) {
+    if (e instanceof PrError) throw prError(e);
+    throw e;
+  }
+});
+route("GET", "/api/pr/rules/:id", "proactive:read", ({ params, principal }) => {
+  const r = getRule(me(principal), params.id);
+  if (!r) notFound();
+  return r;
+});
+route("PUT", "/api/pr/rules/:id", "proactive:write", ({ params, body, principal }) => {
+  const out = updateRule(me(principal), params.id, body || {});
+  if (out.error) throw prError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/pr/rules/:id/activate", "proactive:write", ({ params, principal }) => {
+  const out = setRuleState(me(principal), params.id, "active");
+  if (out.error) throw prError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/pr/rules/:id/pause", "proactive:write", ({ params, body, principal }) => {
+  const out = setRuleState(me(principal), params.id, "paused", { reason: body?.reason });
+  if (out.error) throw prError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/pr/rules/:id/resume", "proactive:write", ({ params, principal }) => {
+  const out = setRuleState(me(principal), params.id, "active");
+  if (out.error) throw prError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/pr/rules/:id/disable", "proactive:write", ({ params, principal }) => {
+  const out = setRuleState(me(principal), params.id, "disabled");
+  if (out.error) throw prError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/pr/rules/:id/test", "proactive:write", ({ params, body, principal }) => {
+  const out = testRule(me(principal), params.id, body?.facts || {});
+  if (out.error) notFound();
+  return out;
+});
+route("POST", "/api/pr/rules/:id/run", "proactive:write", async ({ params, principal }) => {
+  try {
+    return await runRuleManually(me(principal), params.id);
+  } catch (e) {
+    if (e instanceof PrError) throw prError(e);
+    throw e;
+  }
+});
+
+// Eventos internos (somente leitura; produção é interna — sink do boot)
+route("GET", "/api/pr/events", "proactive:read", ({ query, principal }) =>
+  listPrEvents(me(principal), { limit: numParam(query.get("limit")) ?? 100 }),
+);
+
+// Oportunidades
+route("GET", "/api/pr/opportunities", "proactive:read", ({ query, principal }) =>
+  listOpportunities(me(principal), {
+    status: query.get("status") || null,
+    limit: numParam(query.get("limit")) ?? 100,
+  }),
+);
+route("GET", "/api/pr/opportunities/:id", "proactive:read", ({ params, principal }) => {
+  const o = getOpportunity(me(principal), params.id);
+  if (!o) notFound();
+  return o;
+});
+route("GET", "/api/pr/opportunities/:id/trail", "proactive:read", ({ params, principal }) => {
+  const t = getExecutionTrail(me(principal), params.id);
+  if (!t) notFound();
+  return t;
+});
+route(
+  "POST",
+  "/api/pr/opportunities/:id/accept",
+  "proactive:write",
+  async ({ params, principal }) => {
+    try {
+      const out = await acceptOpportunity(me(principal), params.id);
+      if (out.error === "not_found") notFound();
+      if (out.error) throw prError(new Error(out.error));
+      return out;
+    } catch (e) {
+      if (e instanceof PrError) throw prError(e);
+      throw e;
+    }
+  },
+);
+route(
+  "POST",
+  "/api/pr/opportunities/:id/dismiss",
+  "proactive:write",
+  ({ params, body, principal }) => {
+    const out = dismissOpportunity(me(principal), params.id, { reason: body?.reason });
+    if (out.error === "not_found") notFound();
+    if (out.error) throw prError(new Error(out.error));
+    return out;
+  },
+);
+route(
+  "POST",
+  "/api/pr/opportunities/:id/snooze",
+  "proactive:write",
+  ({ params, body, principal }) => {
+    const out = snoozeOpportunity(me(principal), params.id, { untilMs: body?.untilMs });
+    if (out.error === "not_found") notFound();
+    if (out.error) throw prError(new Error(out.error));
+    return out;
+  },
+);
+
+// Notificações internas (sem canal externo — mandato §13)
+route("GET", "/api/pr/notifications", "proactive:read", ({ query, principal }) =>
+  listNotifications(me(principal), {
+    unreadOnly: query.get("unread") === "1",
+    limit: numParam(query.get("limit")) ?? 100,
+  }),
+);
+route("POST", "/api/pr/notifications/:id/read", "proactive:write", ({ params, principal }) => {
+  const out = markNotificationRead(me(principal), params.id);
+  if (out.error) notFound();
+  return out;
+});
+route("POST", "/api/pr/notifications/:id/dismiss", "proactive:write", ({ params, principal }) => {
+  const out = dismissNotification(me(principal), params.id);
+  if (out.error) notFound();
+  return out;
+});
+
+// Controles (nível de autonomia, pausa global, limites) — propriedade e validação no backend
+route("GET", "/api/pr/controls", "proactive:read", ({ principal }) => getControls(me(principal)));
+route("PUT", "/api/pr/controls", "proactive:write", ({ body, principal }) => {
+  try {
+    const valid = validateControls(body || {});
+    if (Object.keys(valid).length) {
+      const cur = getSettings(me(principal)) || {};
+      updateSettings(
+        { proactive: { ...(cur.proactive || {}), ...valid } },
+        { adminId: me(principal), allowGlobal: false },
+      );
+    }
+    return getControls(me(principal));
+  } catch (e) {
+    if (e instanceof PrError) throw prError(e);
+    throw e;
+  }
+});
+
+// Métricas reais (contagens; correlação por trail)
+route("GET", "/api/pr/metrics", "proactive:read", ({ principal }) => getMetrics(me(principal)));
+
 // ---------- Deep Research (evolução Fase 4, docs/evolution/phase-4) ----------
 const researchError = (e) => {
   const code = e?.message || "research_error";
@@ -2313,6 +2528,11 @@ if (isMain && !process.env.JARVIS_NO_LISTEN) {
   // além do teto são fechadas e turnos travados falham com código estável (mm_turn_timeout).
   recoverMmTurns();
   setInterval(() => tickMmSessions().catch(() => {}), 60_000).unref();
+  // Fase 7: inteligência proativa — sink de eventos do Workflow Engine, recuperação de
+  // oportunidades em execução e tick durável (temporais/expirações/snoozes/reconciliação).
+  registerWorkflowEventSink();
+  recoverProactive();
+  setInterval(() => tickProactive().catch(() => {}), 30_000).unref();
   // P2: inbound messages run as the admin whose own settings hold the channel credentials.
   const activeAdmins = () =>
     db

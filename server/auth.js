@@ -58,6 +58,11 @@ export const SCOPES = [
   // (read) e execução de planos (run) — escritas passam pelo D9 nativo do browser_action.
   "computer:read",
   "computer:run",
+  // Proactive Intelligence (evolução Fase 7): regras/oportunidades/notificações/controles.
+  // NUNCA concedidos a bots por padrão (fora de BOT_SCOPES); execução real permanece no
+  // Workflow Engine com políticas+D9 — o escopo só governa a superfície de gestão.
+  "proactive:read",
+  "proactive:write",
 ];
 /** Scopes reserved for a human admin session — never grantable to a token. */
 export const ADMIN_ONLY = [

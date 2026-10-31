@@ -281,6 +281,14 @@ const activeWfRuns = new Set();
 const nodeRow = (r) =>
   r && { ...r, input: parseJson(r.input_json, null), output: parseJson(r.output_json, null) };
 
+// Fase 7 (inteligência proativa): sink opcional de eventos do motor — registrado no boot
+// (index.js → proactive.registerWorkflowEventSink). Inversão de dependência: workflow.js
+// NÃO conhece o motor proativo; o sink é best-effort e nunca altera o fluxo do run.
+let wfEventSink = null;
+export const setWfEventSink = (fn) => {
+  wfEventSink = typeof fn === "function" ? fn : null;
+};
+
 function emit(runId, kind, nodeId = null, detail = {}) {
   db.prepare("INSERT INTO wf_events (run_id, at, kind, node_id, detail) VALUES (?,?,?,?,?)").run(
     runId,
@@ -289,6 +297,11 @@ function emit(runId, kind, nodeId = null, detail = {}) {
     nodeId,
     JSON.stringify(detail),
   );
+  try {
+    wfEventSink?.({ runId, kind, nodeId, detail, at: now() });
+  } catch {
+    // observabilidade proativa é best-effort; falha do sink nunca derruba o run
+  }
 }
 
 function setRunStatus(runId, from, to, extra = {}) {

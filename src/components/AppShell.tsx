@@ -16,6 +16,7 @@ import {
   Network,
   Settings,
   ShieldCheck,
+  Sparkles,
   Telescope,
   Users,
   Search,
@@ -45,6 +46,7 @@ export function AppShell() {
     { to: "/workflows", label: t("nav_workflows"), icon: GitBranch },
     { to: "/computer", label: t("nav_computer"), icon: Monitor },
     { to: "/multimodal", label: t("nav_multimodal"), icon: AudioLines },
+    { to: "/proactive", label: t("nav_proactive"), icon: Sparkles },
     { to: "/policies", label: t("nav_policies"), icon: ShieldCheck },
     { to: "/configuracoes", label: t("nav_settings"), icon: Settings },
   ] as const;

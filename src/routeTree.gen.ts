@@ -21,6 +21,7 @@ import { Route as LearningRouteImport } from './routes/learning'
 import { Route as MemoriaRouteImport } from './routes/memoria'
 import { Route as MultimodalRouteImport } from './routes/multimodal'
 import { Route as PoliciesRouteImport } from './routes/policies'
+import { Route as ProactiveRouteImport } from './routes/proactive'
 import { Route as RascunhosRouteImport } from './routes/rascunhos'
 import { Route as ResearchRouteImport } from './routes/research'
 import { Route as VisaoGeralRouteImport } from './routes/visao-geral'
@@ -87,6 +88,11 @@ const PoliciesRoute = PoliciesRouteImport.update({
   path: '/policies',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProactiveRoute = ProactiveRouteImport.update({
+  id: '/proactive',
+  path: '/proactive',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RascunhosRoute = RascunhosRouteImport.update({
   id: '/rascunhos',
   path: '/rascunhos',
@@ -126,6 +132,7 @@ export interface FileRoutesByFullPath {
   '/memoria': typeof MemoriaRoute
   '/multimodal': typeof MultimodalRoute
   '/policies': typeof PoliciesRoute
+  '/proactive': typeof ProactiveRoute
   '/rascunhos': typeof RascunhosRoute
   '/research': typeof ResearchRoute
   '/visao-geral': typeof VisaoGeralRoute
@@ -145,6 +152,7 @@ export interface FileRoutesByTo {
   '/memoria': typeof MemoriaRoute
   '/multimodal': typeof MultimodalRoute
   '/policies': typeof PoliciesRoute
+  '/proactive': typeof ProactiveRoute
   '/rascunhos': typeof RascunhosRoute
   '/research': typeof ResearchRoute
   '/visao-geral': typeof VisaoGeralRoute
@@ -165,6 +173,7 @@ export interface FileRoutesById {
   '/memoria': typeof MemoriaRoute
   '/multimodal': typeof MultimodalRoute
   '/policies': typeof PoliciesRoute
+  '/proactive': typeof ProactiveRoute
   '/rascunhos': typeof RascunhosRoute
   '/research': typeof ResearchRoute
   '/visao-geral': typeof VisaoGeralRoute
@@ -186,6 +195,7 @@ export interface FileRouteTypes {
     | '/memoria'
     | '/multimodal'
     | '/policies'
+    | '/proactive'
     | '/rascunhos'
     | '/research'
     | '/visao-geral'
@@ -205,6 +215,7 @@ export interface FileRouteTypes {
     | '/memoria'
     | '/multimodal'
     | '/policies'
+    | '/proactive'
     | '/rascunhos'
     | '/research'
     | '/visao-geral'
@@ -224,6 +235,7 @@ export interface FileRouteTypes {
     | '/memoria'
     | '/multimodal'
     | '/policies'
+    | '/proactive'
     | '/rascunhos'
     | '/research'
     | '/visao-geral'
@@ -244,6 +256,7 @@ export interface RootRouteChildren {
   MemoriaRoute: typeof MemoriaRoute
   MultimodalRoute: typeof MultimodalRoute
   PoliciesRoute: typeof PoliciesRoute
+  ProactiveRoute: typeof ProactiveRoute
   RascunhosRoute: typeof RascunhosRoute
   ResearchRoute: typeof ResearchRoute
   VisaoGeralRoute: typeof VisaoGeralRoute
@@ -337,6 +350,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PoliciesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/proactive': {
+      id: '/proactive'
+      path: '/proactive'
+      fullPath: '/proactive'
+      preLoaderRoute: typeof ProactiveRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/rascunhos': {
       id: '/rascunhos'
       path: '/rascunhos'
@@ -388,6 +408,7 @@ const rootRouteChildren: RootRouteChildren = {
   MemoriaRoute: MemoriaRoute,
   MultimodalRoute: MultimodalRoute,
   PoliciesRoute: PoliciesRoute,
+  ProactiveRoute: ProactiveRoute,
   RascunhosRoute: RascunhosRoute,
   ResearchRoute: ResearchRoute,
   VisaoGeralRoute: VisaoGeralRoute,

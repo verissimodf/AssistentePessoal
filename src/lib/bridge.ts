@@ -2201,3 +2201,366 @@ export async function listMmEvents(sessionId: string, sinceId = 0): Promise<MmEv
     return null;
   }
 }
+
+// ---------- Proactive Studio (Fase 7: regras proativas, oportunidades, notificações
+// internas e controles de autonomia — os NÍVEIS nunca sobrepõem o Policy Engine/D9) ----------
+export type PrTriggerKind = "event" | "temporal" | "contextual";
+
+export type PrConditionOp =
+  "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "contains" | "exists" | "missing" | "in";
+
+export type PrConditionLeaf = { op: PrConditionOp; fact: string; value?: unknown };
+
+export type PrConditionNode =
+  | PrConditionLeaf
+  | { all: PrConditionNode[] }
+  | { any: PrConditionNode[] }
+  | { not: PrConditionNode };
+
+export type PrTrigger =
+  | { source: string; eventKind: string }
+  | {
+      type: "daily" | "weekly" | "interval" | "date";
+      time?: string;
+      weekday?: number;
+      intervalMs?: number;
+      date?: string;
+    }
+  | Record<string, unknown>;
+
+export type PrRuleState =
+  "draft" | "active" | "paused" | "disabled" | "expired" | "failed" | string;
+
+export type PrRuleVersion = {
+  version: number;
+  created_at?: string;
+  note?: string | null;
+  [key: string]: unknown;
+};
+
+export type PrRule = {
+  id: string;
+  name: string;
+  description: string | null;
+  origin: string;
+  trigger_kind: PrTriggerKind | string;
+  trigger: PrTrigger;
+  conditions: unknown;
+  workflow_id: string | null;
+  params: Record<string, unknown> | null;
+  execution: "manual" | "auto" | string;
+  valid_from: string | null;
+  valid_until: string | null;
+  max_executions: number | null;
+  execution_count: number;
+  cooldown_ms: number | null;
+  state: PrRuleState;
+  version: number;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  last_error: string | null;
+  versions: PrRuleVersion[];
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type PrRuleBody = {
+  name: string;
+  description?: string;
+  triggerKind: PrTriggerKind;
+  trigger: PrTrigger;
+  conditions?: PrConditionNode;
+  workflowId?: string;
+  params?: Record<string, unknown>;
+  execution?: "manual" | "auto";
+  validFrom?: string;
+  validUntil?: string;
+  maxExecutions?: number;
+  cooldownMs?: number;
+};
+
+/** Dry-run SEM efeitos colaterais (POST /api/pr/rules/:id/test). */
+export type PrTestResult = {
+  wouldTrigger: boolean;
+  conditionsMet: boolean;
+  reasons: string[];
+  evaluated: unknown;
+  wouldAutoStart: boolean;
+  note?: string;
+};
+
+export type PrOpportunityStatus =
+  | "detected"
+  | "evaluating"
+  | "recommended"
+  | "dismissed"
+  | "snoozed"
+  | "accepted"
+  | "executing"
+  | "completed"
+  | "failed"
+  | "expired"
+  | string;
+
+export type PrOpportunity = {
+  id: string;
+  rule_id: string;
+  kind: string;
+  priority: number;
+  justification: string;
+  evidence: unknown[];
+  status: PrOpportunityStatus;
+  workflow_run_id: string | null;
+  snoozed_until: string | null;
+  created_at: string;
+};
+
+/** Correlação completa: oportunidade → run → aprovações. */
+export type PrTrail = {
+  opportunity: PrOpportunity;
+  run: WfRun | null;
+  approvals: { approval_id: string; node_id: string | null; status: string }[];
+};
+
+export type PrNotification = {
+  id: string;
+  type: string;
+  priority: number | string;
+  source: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  title: string;
+  body: string;
+  read_at: string | null;
+  created_at: string;
+};
+
+export type PrControls = {
+  level: number;
+  paused: boolean;
+  maxExecutionsPerHour: number;
+  cooldownMs: number;
+  maxPendingOpportunities: number;
+};
+
+export type PrControlsBody = {
+  level?: number;
+  paused?: boolean;
+  maxExecutionsPerHour?: number;
+  cooldownMs?: number;
+  maxPendingOpportunities?: number;
+};
+
+export type PrMetrics = {
+  events_received: number;
+  opportunities_produced: number;
+  opportunities_accepted: number;
+  workflows_started: number;
+  executions_completed: number;
+  executions_failed: number;
+  duplicates_blocked: number;
+  rules_active: number;
+  notifications_unread: number;
+};
+
+export type PrEvent = {
+  id: number;
+  source: string | null;
+  kind: string;
+  payload: Record<string, unknown>;
+  dedupe_key: string | null;
+  created_at: string;
+};
+
+// GETs: indisponível offline → null (nunca dados de demonstração).
+export async function listPrRules(state?: string): Promise<PrRule[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<PrRule[]>(
+      `/api/pr/rules${state ? `?state=${encodeURIComponent(state)}` : ""}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+export async function getPrRule(id: string): Promise<PrRule | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<PrRule>(`/api/pr/rules/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function createPrRule(body: PrRuleBody): Promise<PrRule | null> {
+  if (!(await ping())) return null;
+  return await api<PrRule>("/api/pr/rules", { method: "POST", body: JSON.stringify(body) });
+}
+
+/** Edição parcial → nova versão no servidor. Lança em erro de validação (ex.: pr_invalid_conditions). */
+export async function updatePrRule(id: string, body: Partial<PrRuleBody>): Promise<PrRule | null> {
+  if (!(await ping())) return null;
+  return await api<PrRule>(`/api/pr/rules/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function activatePrRule(id: string): Promise<PrRule | null> {
+  if (!(await ping())) return null;
+  return await api<PrRule>(`/api/pr/rules/${encodeURIComponent(id)}/activate`, { method: "POST" });
+}
+
+export async function pausePrRule(id: string, reason?: string): Promise<PrRule | null> {
+  if (!(await ping())) return null;
+  return await api<PrRule>(`/api/pr/rules/${encodeURIComponent(id)}/pause`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason ?? undefined }),
+  });
+}
+
+export async function resumePrRule(id: string): Promise<PrRule | null> {
+  if (!(await ping())) return null;
+  return await api<PrRule>(`/api/pr/rules/${encodeURIComponent(id)}/resume`, { method: "POST" });
+}
+
+export async function disablePrRule(id: string): Promise<PrRule | null> {
+  if (!(await ping())) return null;
+  return await api<PrRule>(`/api/pr/rules/${encodeURIComponent(id)}/disable`, { method: "POST" });
+}
+
+/** Dry-run: avalia condições sobre `facts` SEM efeitos colaterais. */
+export async function testPrRule(
+  id: string,
+  facts: Record<string, unknown>,
+): Promise<PrTestResult | null> {
+  if (!(await ping())) return null;
+  return await api<PrTestResult>(`/api/pr/rules/${encodeURIComponent(id)}/test`, {
+    method: "POST",
+    body: JSON.stringify({ facts }),
+  });
+}
+
+/** Execução manual (mesmas políticas — pode falhar com códigos estáveis). */
+export async function runPrRule(id: string): Promise<unknown | null> {
+  if (!(await ping())) return null;
+  return await api(`/api/pr/rules/${encodeURIComponent(id)}/run`, { method: "POST" });
+}
+
+export async function listPrEvents(limit = 100): Promise<PrEvent[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<PrEvent[]>(`/api/pr/events?limit=${limit}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function listPrOpportunities(
+  status?: string,
+  limit = 100,
+): Promise<PrOpportunity[] | null> {
+  if (!(await ping())) return null;
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  params.set("limit", String(limit));
+  try {
+    return await api<PrOpportunity[]>(`/api/pr/opportunities?${params.toString()}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function getPrOpportunityTrail(id: string): Promise<PrTrail | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<PrTrail>(`/api/pr/opportunities/${encodeURIComponent(id)}/trail`);
+  } catch {
+    return null;
+  }
+}
+
+/** Inicia o workflow REAL (pode falhar: wf_policy_denied, pr_level_observation, pr_no_workflow). */
+export async function acceptPrOpportunity(id: string): Promise<PrOpportunity | null> {
+  if (!(await ping())) return null;
+  return await api<PrOpportunity>(`/api/pr/opportunities/${encodeURIComponent(id)}/accept`, {
+    method: "POST",
+  });
+}
+
+export async function dismissPrOpportunity(
+  id: string,
+  reason?: string,
+): Promise<PrOpportunity | null> {
+  if (!(await ping())) return null;
+  return await api<PrOpportunity>(`/api/pr/opportunities/${encodeURIComponent(id)}/dismiss`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason || undefined }),
+  });
+}
+
+export async function snoozePrOpportunity(
+  id: string,
+  untilMs?: number,
+): Promise<PrOpportunity | null> {
+  if (!(await ping())) return null;
+  return await api<PrOpportunity>(`/api/pr/opportunities/${encodeURIComponent(id)}/snooze`, {
+    method: "POST",
+    body: JSON.stringify({ untilMs: untilMs ?? undefined }),
+  });
+}
+
+export async function listPrNotifications(
+  unread = false,
+  limit = 50,
+): Promise<PrNotification[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<PrNotification[]>(
+      `/api/pr/notifications?${unread ? "unread=1&" : ""}limit=${limit}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+export async function markPrNotificationRead(id: string): Promise<{ ok: true } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: true }>(`/api/pr/notifications/${encodeURIComponent(id)}/read`, {
+    method: "POST",
+  });
+}
+
+export async function dismissPrNotification(id: string): Promise<{ ok: true } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: true }>(`/api/pr/notifications/${encodeURIComponent(id)}/dismiss`, {
+    method: "POST",
+  });
+}
+
+export async function getPrControls(): Promise<PrControls | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<PrControls>("/api/pr/controls");
+  } catch {
+    return null;
+  }
+}
+
+export async function savePrControls(body: PrControlsBody): Promise<PrControls | null> {
+  if (!(await ping())) return null;
+  return await api<PrControls>("/api/pr/controls", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getPrMetrics(): Promise<PrMetrics | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<PrMetrics>("/api/pr/metrics");
+  } catch {
+    return null;
+  }
+}
