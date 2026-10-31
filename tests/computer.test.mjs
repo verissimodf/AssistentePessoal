@@ -189,10 +189,12 @@ async function runWithD9(sessionId, planId) {
 }
 
 before(async () => {
+  if (process.platform === "win32") return; // UDS: Linux-only (testes skipados no Windows)
   policyServer = await startBrowserPolicyServer(policySocket, policyRegistry);
   await new Promise((r) => wserver.listen(workerSocket, r));
 });
 after(() => {
+  if (process.platform === "win32") return;
   wserver.close();
   policyServer?.close?.();
 });
