@@ -183,7 +183,12 @@ test("5-7. motor de condições: operadores, AND/OR/NOT, fail-closed e limites",
   for (let i = 0; i < 10; i++) deep = { not: deep };
   assert.equal(pr.evaluateConditions(deep, facts).ok, false); // fail-closed
   // SEM eval/new Function em lugar nenhum do motor
-  const src = (await import("node:fs")).readFileSync("server/proactive.js", "utf8");
+  const { readFileSync } = await import("node:fs");
+  const { fileURLToPath } = await import("node:url");
+  const src = readFileSync(
+    fileURLToPath(new URL("../server/proactive.js", import.meta.url)),
+    "utf8",
+  );
   assert.ok(!/\beval\(|new Function/.test(src));
 });
 
