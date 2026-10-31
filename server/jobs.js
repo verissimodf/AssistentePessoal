@@ -1,11 +1,19 @@
 // SQLite-backed queue for scheduled bot runs. Payloads are encrypted and owners are canonical
 // in the ownership table. A worker may retry only a job that never entered the agent loop.
 import { randomUUID } from "node:crypto";
-import { db, now, audit } from "./db.js";
+import { db, now, audit, bots } from "./db.js";
 import { assignNew, ownerOf, tx } from "./ownership.js";
 import { encrypt, decrypt } from "./settings.js";
-import { bots } from "./db.js";
-import { runBot } from "./bots.js";
+
+// Fase 9: runner injetado por setter (bots.js registra runBot no carregamento) — elimina
+// o ciclo estático bots↔jobs (auditoria da Fase 9, docs/evolution/phase-9/architecture-audit.md).
+// PRIMEIRO registro vence: replica exatamente a semântica do import estático anterior
+// (sempre a PRIMEIRA instância de bots.js do processo — reimports de teste não trocam o
+// runner nem o estado de ocupação).
+let botRunner = null;
+export const setBotRunner = (fn) => {
+  if (!botRunner && typeof fn === "function") botRunner = fn;
+};
 
 const LEASE_MS = 90_000;
 const WORKER_ID = `${process.pid}:${randomUUID()}`;
@@ -117,8 +125,18 @@ export async function processScheduledJob(id = null, { agentRunner } = {}) {
       finish(row, "cancelled", null, "bot_unavailable");
       return { id: row.id, status: "cancelled" };
     }
+    if (!botRunner) {
+      // Sem runner registrado: falha segura com reconciliação (nunca retry cego).
+      finish(row, "needs_reconciliation", null, "bot_runner_unregistered");
+      audit("bot_schedule.failed", {
+        bot: row.bot_id,
+        trigger_type: row.trigger_type,
+        reason: "runner_missing",
+      });
+      return { id: row.id, status: "needs_reconciliation" };
+    }
     const { reason } = JSON.parse(decrypt(row.encrypted_payload));
-    const result = await runBot(bot, reason, row.trigger_type, {
+    const result = await botRunner(bot, reason, row.trigger_type, {
       ...(agentRunner ? { agentRunner } : {}),
       onRunCreated: (runId) => {
         db.prepare(

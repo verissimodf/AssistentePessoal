@@ -146,3 +146,44 @@
 @utility text-glow {
   text-shadow: 0 0 18px var(--glow);
 }
+
+/* Multimodal Studio avatar (Fase 6): animações puras em CSS para os estados do avatar.
+   Sob prefers-reduced-motion as animações param e o fallback estático (cor/forma
+   distintas por estado) permanece legível. */
+@keyframes mm-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.75; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+@keyframes mm-think {
+  0%, 100% { transform: scale(0.94); }
+  50% { transform: scale(1.04); }
+}
+@keyframes mm-ring {
+  0% { transform: scale(0.62); opacity: 0.8; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+@keyframes mm-orbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes mm-bar {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+.mm-anim {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.mm-breathe { animation: mm-breathe 4s ease-in-out infinite; }
+.mm-think { animation: mm-think 1.6s ease-in-out infinite; }
+.mm-ring { animation: mm-ring 1.6s ease-out infinite; }
+.mm-ring-2 { animation-delay: 0.8s; }
+.mm-orbit {
+  transform-box: view-box; /* orbita ao redor do centro do viewBox (50,50) */
+  transform-origin: center;
+  animation: mm-orbit 2.4s linear infinite;
+}
+.mm-bar { animation: mm-bar 900ms ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .mm-breathe, .mm-think, .mm-ring, .mm-orbit, .mm-bar { animation: none; }
+}

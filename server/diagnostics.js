@@ -240,6 +240,86 @@ export const TOOL_META = {
     limites: ["Somente leitura; restrito estritamente ao diretório do Hub de Skills."],
     testes: ["tests/skills-hub.test.mjs"],
   },
+  delegate_agent: {
+    nome: "Delegação a especialista (Workforce)",
+    portao:
+      "Escopo workforce:run no conjunto EFETIVO calculado pelo backend (interseção escopos pedidos ∩ escopos do run pai — delegação nunca amplia privilégio). Profundidade, nº de especialistas, árvore e orçamento verificados em transação; o resultado volta como dado não confiável, nunca como autorização.",
+    deps: "Tabelas agent_definitions/agent_runs (schema 20) e definição habilitada com ownership.",
+    limites: [
+      "Sub-orçamento nunca supera o orçamento restante do pai; excedentes são recusados com código tipado.",
+      "Efeitos externos do especialista seguem D9 normalmente.",
+      "Run interrompido vira `unknown` e só sai por reconciliação auditada — nunca re-executa cego.",
+    ],
+    testes: [
+      "tests/workforce-core.test.mjs",
+      "tests/workforce-security.test.mjs",
+      "tests/workforce-migration.test.mjs",
+    ],
+  },
+  notebook_search: {
+    nome: "Pesquisa no Knowledge Hub",
+    portao:
+      "Escopo kh:read; pesquisa híbrida (FTS5 BM25 + semântico) restrita às fontes do proprietário da execução, com filtros de notebook/biblioteca aplicados no backend.",
+    deps: "Tabelas kh_* (schema 21) e pipeline de documentos existente.",
+    limites: [
+      "Conteúdo das fontes volta como DADO NÃO CONFIÁVEL — nunca instrução nem autorização.",
+      "Falha do FTS degrada para o pipeline RAG existente (sem exposição de acesso).",
+    ],
+    testes: ["tests/kh-search.test.mjs", "tests/kh-workforce.test.mjs"],
+  },
+  notebook_transform: {
+    nome: "Transformação fundamentada do Hub",
+    portao:
+      "Escopo kh:read; one-shot LLM sobre trechos autorizados; transformação registrada com fontes/versões/citações (kh_transformations).",
+    deps: "Provedor LLM configurado (fallback existente).",
+    limites: [
+      "Sem loop de ferramentas (maxSteps=1); fontes insuficientes devem ser declaradas pelo modelo.",
+      "Transformações não criam memória permanente sem escrita explícita (notebook_note).",
+    ],
+    testes: ["tests/kh-grounded.test.mjs", "tests/kh-workforce.test.mjs"],
+  },
+  notebook_note: {
+    nome: "Criar nota no Hub",
+    portao:
+      "Escopo kh:write (escrita explícita — nunca automática); fonte tipo texto com dedupe por hash no notebook.",
+    deps: "Tabelas kh_* (schema 21).",
+    limites: ["Nada é persistido sem escopo kh:write; duplicata (mesmo hash) é recusada."],
+    testes: ["tests/kh-core.test.mjs", "tests/kh-workforce.test.mjs"],
+  },
+  computer_observe: {
+    nome: "Observar sessão de Computer Intelligence",
+    portao:
+      "Escopo computer:read; sessão do próprio admin; leitura via runBrowserAction (destino validado + auditoria) — SEM D9 (leitura de baixo risco).",
+    deps: "Worker Playwright gerenciado (socket UDS) e integração browser habilitada.",
+    limites: ["Resultado é DADO NÃO CONFIÁVEL; capturas com retenção e remoção no fechamento."],
+    testes: ["tests/computer.test.mjs"],
+  },
+  computer_plan: {
+    nome: "Planejar ações (Computer Intelligence)",
+    portao:
+      "Escopo computer:run; plano gerado por one-shot com regra anti-ações-proibidas (pagamento/compra/transferência) reforçada no backend.",
+    deps: "Provedor LLM configurado; sessão ativa do próprio admin.",
+    limites: ["Plano é proposta (dado não confiável); nenhuma ação executa sem autorização."],
+    testes: ["tests/computer.test.mjs"],
+  },
+  computer_execute: {
+    nome: "Executar plano (Computer Intelligence)",
+    portao:
+      "Escopo computer:run; LEITURAS diretas; ESCRITAS (navigate/click/fill) SEMPRE com APROVAÇÃO HUMANA D9 (review+fingerprint); bloqueio embutido de categorias proibidas sem bypass.",
+    deps: "Worker gerenciado + Policy Engine (Fase 3) + approvals D9.",
+    limites: [
+      "Aprovação D9 ≠ prova de resultado: verificação pelo critério do plano com observação pós.",
+      "Divergência → replan limitado (≤2) e interrupção segura; nunca replay às cegas.",
+    ],
+    testes: ["tests/computer.test.mjs"],
+  },
+  computer_verify: {
+    nome: "Verificar estado da sessão (Computer Intelligence)",
+    portao: "Escopo computer:read; nova observação + resumo dos estados das ações.",
+    deps: "Worker gerenciado.",
+    limites: ["Sem dump de DOM estruturado no worker v1 (limitação documentada)."],
+    testes: ["tests/computer.test.mjs"],
+  },
 };
 
 const PROVIDER_NOMES = {

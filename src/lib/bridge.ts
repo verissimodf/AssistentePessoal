@@ -502,6 +502,15 @@ export async function deleteConversation(id: string): Promise<void> {
   if (await ping()) await api(`/api/conversations/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+/** Cria uma conversa vazia com título explícito (usada pelo Multimodal Studio). */
+export async function createConversation(title: string): Promise<ConversationSummary | null> {
+  if (!(await ping())) return null;
+  return await api<ConversationSummary>("/api/conversations", {
+    method: "POST",
+    body: JSON.stringify({ title }),
+  });
+}
+
 /**
  * Envia UMA mensagem e recebe a troca persistida. `clientMsgId` é gerado no cliente e reutilizado
  * em retries — o servidor nunca duplica a mesma mensagem. Com `conversationId` nulo, o servidor
@@ -848,6 +857,1987 @@ export async function getRouterTelemetry(): Promise<ProviderTelemetry | null> {
   if (!(await ping())) return null;
   try {
     return await api<ProviderTelemetry>("/api/router/telemetry");
+  } catch {
+    return null;
+  }
+}
+
+// ---------- agent workforce ----------
+export type WorkforceRole = "orchestrator" | "specialist" | "worker";
+export type WorkforceRunStatus =
+  "queued" | "running" | "awaiting_approval" | "completed" | "failed" | "cancelled" | "unknown";
+export type WorkforceVerification = "verified" | "unverified" | "partial" | "none";
+
+export type WorkforceDefinition = {
+  id: string;
+  name: string;
+  role: WorkforceRole;
+  description: string;
+  version: number;
+  instructions: string;
+  model_preferences: { provider: string | null; model: string | null };
+  permitted_tools: string[];
+  permission_scopes: string[];
+  resource_budget: {
+    max_depth: number;
+    max_children: number;
+    max_tree_runs: number;
+    max_tool_calls: number;
+    max_model_calls: number;
+    max_tokens: number | null;
+    runtime_ms: number;
+    max_retries: number;
+    max_concurrent_children: number;
+  };
+  execution_limits: Record<string, unknown>;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WorkforceRunChild = {
+  id: string;
+  definition: string | null;
+  status: string;
+  verification: string;
+  depth: number;
+  created_at: string;
+};
+
+export type WorkforceRun = {
+  id: string;
+  definition_id: string;
+  parent_run_id: string | null;
+  correlation_id: string;
+  objective: string;
+  status: WorkforceRunStatus;
+  depth: number;
+  usage: { tool_calls?: number; model_calls?: number; estimated_tokens?: number };
+  result: {
+    status: string;
+    output: string;
+    tool_names: string[];
+    children: { id: string; definition: string; status: string }[];
+    limitations: string[];
+  } | null;
+  error_code: string | null;
+  verification: WorkforceVerification;
+  definition: { name: string; role: string } | null;
+  children: WorkforceRunChild[];
+  created_at: string;
+  finished_at: string | null;
+};
+
+export type WorkforceTemplate = {
+  key: string;
+  name: string;
+  role: WorkforceRole;
+  description: string;
+  permitted_tools: string[];
+  permission_scopes: string[];
+};
+
+export type WorkforceDefinitionBody = Omit<Partial<WorkforceDefinition>, "resource_budget"> & {
+  name: string;
+  resource_budget?: Partial<WorkforceDefinition["resource_budget"]>;
+};
+
+export async function listWorkforceAgents(): Promise<WorkforceDefinition[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<WorkforceDefinition[]>("/api/workforce/agents");
+  } catch {
+    return null;
+  }
+}
+
+export async function createWorkforceAgent(
+  body: WorkforceDefinitionBody,
+): Promise<WorkforceDefinition | null> {
+  if (!(await ping())) return null;
+  return await api<WorkforceDefinition>("/api/workforce/agents", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updateWorkforceAgent(
+  id: string,
+  body: WorkforceDefinitionBody,
+): Promise<WorkforceDefinition | null> {
+  if (!(await ping())) return null;
+  return await api<WorkforceDefinition>(`/api/workforce/agents/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteWorkforceAgent(id: string): Promise<{ ok: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: boolean }>(`/api/workforce/agents/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function runWorkforceAgent(
+  id: string,
+  objective: string,
+): Promise<{ run: WorkforceRun; deduplicated: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ run: WorkforceRun; deduplicated: boolean }>(
+    `/api/workforce/agents/${encodeURIComponent(id)}/run`,
+    { method: "POST", body: JSON.stringify({ objective }) },
+  );
+}
+
+export async function listWorkforceRuns(): Promise<{
+  items: WorkforceRun[];
+  has_more: boolean;
+} | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<{ items: WorkforceRun[]; has_more: boolean }>("/api/workforce/runs?limit=50");
+  } catch {
+    return null;
+  }
+}
+
+export async function getWorkforceRun(id: string): Promise<WorkforceRun | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<WorkforceRun>(`/api/workforce/runs/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function cancelWorkforceRun(id: string): Promise<WorkforceRun | null> {
+  if (!(await ping())) return null;
+  return await api<WorkforceRun>(`/api/workforce/runs/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+  });
+}
+
+export async function reconcileWorkforceRun(
+  id: string,
+  decision?: string,
+): Promise<WorkforceRun | null> {
+  if (!(await ping())) return null;
+  return await api<WorkforceRun>(`/api/workforce/runs/${encodeURIComponent(id)}/reconcile`, {
+    method: "POST",
+    body: JSON.stringify({ decision: decision ?? null }),
+  });
+}
+
+export async function listWorkforceTemplates(): Promise<WorkforceTemplate[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<WorkforceTemplate[]>("/api/workforce/templates");
+  } catch {
+    return null;
+  }
+}
+
+// ---------- Knowledge Hub (Fase 2: acervo pessoal de conhecimento) ----------
+export type KhLibraryKind = "personal" | "project";
+export type KhLibrary = {
+  id: string;
+  name: string;
+  kind: KhLibraryKind;
+  description: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type KhNotebook = {
+  id: string;
+  library_id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  source_count: number;
+};
+
+export type KhIngestStatus =
+  "pending" | "processing" | "indexed" | "partial" | "failed" | "deleted";
+export type KhIndexStatus = "pending" | "indexed" | "partial" | "lexical_only";
+
+export type KhSourceVersion = {
+  version: number;
+  content_hash: string;
+  size: number;
+  note: string | null;
+  created_at: string;
+};
+
+export type KhSource = {
+  id: string;
+  notebook_id: string;
+  type: "file" | "url" | "text";
+  title: string;
+  description: string | null;
+  origin: string;
+  content_hash: string | null;
+  size: number;
+  mime: string | null;
+  version: number;
+  ingest_status: KhIngestStatus;
+  index_status: KhIndexStatus;
+  error_code: string | null;
+  provenance: unknown;
+  has_document: boolean;
+  versions: KhSourceVersion[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type KhCitation = {
+  source_id: string;
+  source_title: string;
+  document_id: string;
+  chunk_id: string;
+  chunk_index: number;
+  mode: string;
+  score: number;
+  at: string;
+};
+
+export type KhSearchItem = {
+  source_id: string;
+  source_title: string;
+  notebook_id: string;
+  document_id: string;
+  chunk_id: string;
+  chunk_index: number;
+  score: number;
+  fts_score: number;
+  rag_score: number;
+  snippet: string;
+  content: string;
+  citation: KhCitation | null;
+};
+
+export type KhSearchResponse = { items: KhSearchItem[]; modes: { fts: boolean; rag: boolean } };
+export type KhAskResponse = { answer: string; citations: KhCitation[]; sufficient: boolean };
+
+export type KhTransformOp = "summary" | "topics" | "concepts" | "compare" | "synthesize";
+export type KhTransformResult = {
+  id: string;
+  op: KhTransformOp;
+  result: string;
+  citations: KhCitation[];
+  sources: unknown[];
+  created_at: string;
+};
+
+export async function listKhLibraries(): Promise<KhLibrary[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<KhLibrary[]>("/api/kh/libraries");
+  } catch {
+    return null;
+  }
+}
+
+export async function createKhLibrary(body: {
+  name: string;
+  kind?: KhLibraryKind;
+  description?: string;
+}): Promise<KhLibrary | null> {
+  if (!(await ping())) return null;
+  return await api<KhLibrary>("/api/kh/libraries", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updateKhLibrary(
+  id: string,
+  body: { name?: string; kind?: KhLibraryKind; description?: string },
+): Promise<KhLibrary | null> {
+  if (!(await ping())) return null;
+  return await api<KhLibrary>(`/api/kh/libraries/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteKhLibrary(id: string): Promise<{ ok: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: boolean }>(`/api/kh/libraries/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function listKhNotebooks(libraryId: string): Promise<KhNotebook[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<KhNotebook[]>(`/api/kh/notebooks?library_id=${encodeURIComponent(libraryId)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function createKhNotebook(body: {
+  library_id: string;
+  name: string;
+  description?: string;
+  tags?: string[];
+}): Promise<KhNotebook | null> {
+  if (!(await ping())) return null;
+  return await api<KhNotebook>("/api/kh/notebooks", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteKhNotebook(id: string): Promise<{ ok: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: boolean }>(`/api/kh/notebooks/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function listKhSources(
+  notebookId: string,
+): Promise<{ items: KhSource[]; has_more: boolean } | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<{ items: KhSource[]; has_more: boolean }>(
+      `/api/kh/sources?notebook_id=${encodeURIComponent(notebookId)}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** Fonte do tipo texto (conteúdo digitado/colado vai no corpo JSON). */
+export async function createKhSourceText(
+  notebookId: string,
+  title: string,
+  content: string,
+): Promise<KhSource | null> {
+  if (!(await ping())) return null;
+  return await api<KhSource>("/api/kh/sources", {
+    method: "POST",
+    body: JSON.stringify({ notebook_id: notebookId, type: "text", title, content }),
+  });
+}
+
+/** Fonte do tipo URL. */
+export async function createKhSourceUrl(
+  notebookId: string,
+  title: string,
+  url: string,
+): Promise<KhSource | null> {
+  if (!(await ping())) return null;
+  return await api<KhSource>("/api/kh/sources", {
+    method: "POST",
+    body: JSON.stringify({ notebook_id: notebookId, type: "url", title, url }),
+  });
+}
+
+/** Upload de arquivo via multipart (api() não define content-type quando o body é FormData). */
+export async function createKhSourceFile(
+  notebookId: string,
+  title: string,
+  file: File,
+): Promise<KhSource | null> {
+  if (!(await ping())) return null;
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("notebook_id", notebookId);
+  fd.append("title", title);
+  return await api<KhSource>("/api/kh/sources", { method: "POST", body: fd });
+}
+
+export async function deleteKhSource(id: string): Promise<{ ok: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: boolean }>(`/api/kh/sources/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function khSearch(body: {
+  query: string;
+  notebook_id?: string;
+  library_id?: string;
+  limit?: number;
+}): Promise<KhSearchResponse | null> {
+  if (!(await ping())) return null;
+  return await api<KhSearchResponse>("/api/kh/search", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function khAsk(body: {
+  question: string;
+  notebook_id?: string;
+  library_id?: string;
+}): Promise<KhAskResponse | null> {
+  if (!(await ping())) return null;
+  return await api<KhAskResponse>("/api/kh/ask", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function khTransform(body: {
+  op: KhTransformOp;
+  source_ids: string[];
+  prompt?: string;
+}): Promise<KhTransformResult | null> {
+  if (!(await ping())) return null;
+  return await api<KhTransformResult>("/api/kh/transform", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+// ---------- Workflow Studio (Fase 3: workflows duráveis com grafo versionado) ----------
+export type WfNodeType =
+  | "start"
+  | "end"
+  | "agent"
+  | "tool"
+  | "condition"
+  | "transform"
+  | "knowledge_search"
+  | "approval"
+  | "wait"
+  | "subworkflow";
+
+export type WfGraphNode = {
+  id: string;
+  type: WfNodeType | string;
+  config?: Record<string, unknown>;
+};
+export type WfGraphEdge = { from: string; to: string; when?: "true" | "false" | string };
+export type WfGraph = { nodes: WfGraphNode[]; edges: WfGraphEdge[] };
+
+export type WfDefinition = {
+  id: string;
+  name: string;
+  description: string | null;
+  status: "draft" | "published";
+  current_version: number;
+  allowed_tools: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type WfDefinitionVersion = { version: number; created_at: string; graph: WfGraph | null };
+
+export type WfRunStatus =
+  | "queued"
+  | "running"
+  | "waiting_approval"
+  | "waiting_dependency"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "unknown";
+
+export type WfNodeExecution = {
+  id: string;
+  node_id: string;
+  node_type: string;
+  status: string;
+  attempt: number;
+  output: unknown;
+  error_code: string | null;
+  approval_id: string | null;
+  agent_run_id: string | null;
+  wake_at: string | null;
+};
+
+export type WfRunEvent = {
+  id: number;
+  at: string;
+  kind: string;
+  node_id: string | null;
+  detail: Record<string, unknown>;
+};
+
+export type WfRun = {
+  id: string;
+  definition_id: string;
+  definition_version: number;
+  status: WfRunStatus;
+  objective: string;
+  error_code: string | null;
+  budget: Record<string, unknown>;
+  usage: Record<string, number>;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  nodes: WfNodeExecution[];
+  events: WfRunEvent[];
+};
+
+/** Item de listagem: o servidor não inclui nodes/events no índice (só no detalhe). */
+export type WfRunSummary = Omit<WfRun, "nodes" | "events">;
+
+export type WfBody = {
+  name?: string;
+  description?: string;
+  allowed_tools?: string[];
+  graph?: WfGraph;
+};
+
+export async function listWorkflows(): Promise<WfDefinition[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<WfDefinition[]>("/api/workflows");
+  } catch {
+    return null;
+  }
+}
+
+export async function createWorkflow(body: WfBody): Promise<WfDefinition | null> {
+  if (!(await ping())) return null;
+  return await api<WfDefinition>("/api/workflows", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updateWorkflow(id: string, body: WfBody): Promise<WfDefinition | null> {
+  if (!(await ping())) return null;
+  return await api<WfDefinition>(`/api/workflows/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteWorkflow(id: string): Promise<{ ok: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: boolean }>(`/api/workflows/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+/** Publica a versão de trabalho atual — ela se torna imutável. */
+export async function publishWorkflow(id: string): Promise<WfDefinition | null> {
+  if (!(await ping())) return null;
+  return await api<WfDefinition>(`/api/workflows/${encodeURIComponent(id)}/publish`, {
+    method: "POST",
+  });
+}
+
+export async function listWorkflowVersions(id: string): Promise<WfDefinitionVersion[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<WfDefinitionVersion[]>(`/api/workflows/${encodeURIComponent(id)}/versions`);
+  } catch {
+    return null;
+  }
+}
+
+export async function runWorkflow(
+  id: string,
+  objective: string,
+  idempotencyKey?: string,
+): Promise<{ run: WfRun; deduplicated: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ run: WfRun; deduplicated: boolean }>(
+    `/api/workflows/${encodeURIComponent(id)}/run`,
+    {
+      method: "POST",
+      body: JSON.stringify({ objective, idempotency_key: idempotencyKey || undefined }),
+    },
+  );
+}
+
+export async function listWorkflowRuns(query?: {
+  limit?: number;
+  status?: string;
+  definition_id?: string;
+}): Promise<{ items: WfRunSummary[]; has_more: boolean } | null> {
+  if (!(await ping())) return null;
+  const params = new URLSearchParams();
+  if (query?.limit) params.set("limit", String(query.limit));
+  if (query?.status) params.set("status", query.status);
+  if (query?.definition_id) params.set("definition_id", query.definition_id);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  try {
+    return await api<{ items: WfRunSummary[]; has_more: boolean }>(`/api/workflow-runs${qs}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function getWorkflowRun(id: string): Promise<WfRun | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<WfRun>(`/api/workflow-runs/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function cancelWorkflowRun(id: string): Promise<WfRun | null> {
+  if (!(await ping())) return null;
+  return await api<WfRun>(`/api/workflow-runs/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+  });
+}
+
+export async function reconcileWorkflowRun(
+  id: string,
+): Promise<{ outcome: string; run: WfRun } | null> {
+  if (!(await ping())) return null;
+  return await api<{ outcome: string; run: WfRun }>(
+    `/api/workflow-runs/${encodeURIComponent(id)}/reconcile`,
+    { method: "POST" },
+  );
+}
+
+// ---------- Policy Studio (Fase 3: políticas comportamentais avaliadas no servidor) ----------
+export type PolicyScope = "tool" | "workflow" | "agent";
+export type PolicyEffect = "allow" | "deny" | "require_approval";
+export type PolicyOp = "eq" | "ne" | "in" | "not_in" | "exists";
+
+export type PolicyCondition = { field: string; op: PolicyOp; value?: unknown };
+
+export type Policy = {
+  id: string;
+  name: string;
+  description: string | null;
+  version: number;
+  priority: number;
+  scope: PolicyScope;
+  target: string;
+  conditions: PolicyCondition[];
+  effect: PolicyEffect;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PolicyBody = {
+  name?: string;
+  description?: string;
+  scope?: PolicyScope;
+  target?: string;
+  conditions?: PolicyCondition[];
+  effect?: PolicyEffect;
+  priority?: number;
+  enabled?: boolean;
+};
+
+export type PolicySimResult = { decision: string; matched: string | null; reason?: string | null };
+
+export async function listPolicies(): Promise<Policy[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<Policy[]>("/api/policies");
+  } catch {
+    return null;
+  }
+}
+
+export async function createPolicy(body: PolicyBody): Promise<Policy | null> {
+  if (!(await ping())) return null;
+  return await api<Policy>("/api/policies", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function updatePolicy(id: string, body: PolicyBody): Promise<Policy | null> {
+  if (!(await ping())) return null;
+  return await api<Policy>(`/api/policies/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deletePolicy(id: string): Promise<{ ok: boolean } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: boolean }>(`/api/policies/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+/** Avalia políticas sobre o contexto informado SEM executar nada — decisão explicada. */
+export async function simulatePolicy(body: {
+  kind: PolicyScope;
+  target: string;
+  tool?: string | undefined;
+  scope?: string | undefined;
+}): Promise<PolicySimResult | null> {
+  if (!(await ping())) return null;
+  return await api<PolicySimResult>("/api/policies/simulate", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+// ---------- Deep Research (Fase 4: investigações com plano, evidências e relatório) ----------
+export type ResearchStatus =
+  | "draft"
+  | "planning"
+  | "running"
+  | "waiting"
+  | "completed"
+  | "partial"
+  | "inconclusive"
+  | "failed"
+  | "unknown";
+
+export type ResearchSource = {
+  id: string;
+  origin: "web" | "hub" | string;
+  title: string;
+  url: string | null;
+  domain: string | null;
+  snippet?: string | null;
+  quality: "full" | "partial" | "snippet_only" | "failed" | string;
+  fetched_at?: string | null;
+};
+
+export type ResearchEvidence = {
+  id: string;
+  source_id: string;
+  quote: string;
+  location: string | null;
+  type: "direct" | "indirect" | "inference" | "hypothesis" | "gap" | string;
+};
+
+export type ResearchClaim = {
+  id: string;
+  statement: string;
+  evidence_ids: string[];
+  status: "supported" | "unsupported" | "contested" | "inferred" | string;
+};
+
+export type ResearchConflict = {
+  id: string;
+  claim_a_id: string | null;
+  claim_b_id: string | null;
+  description: string;
+  resolution: string | null;
+};
+
+export type ResearchReportSummary = {
+  id: string;
+  version: number;
+  title: string;
+  created_at: string;
+};
+
+export type ResearchPlan = {
+  subquestions: string[];
+  strategy: string;
+  sufficiency: string;
+  kind: "hypothesis" | string;
+};
+
+export type ResearchProject = {
+  id: string;
+  question: string;
+  scope_text: string | null;
+  status: ResearchStatus;
+  plan: ResearchPlan | null;
+  sources: ResearchSource[];
+  evidence: ResearchEvidence[];
+  claims: ResearchClaim[];
+  conflicts: ResearchConflict[];
+  reports: ResearchReportSummary[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type ResearchReport = {
+  version: number;
+  title: string;
+  content: string;
+  citations: {
+    n: number;
+    source_id: string;
+    origin: "web" | "hub" | string;
+    title: string;
+    url: string | null;
+    domain: string | null;
+  }[];
+};
+
+export async function listResearch(): Promise<{
+  items: ResearchProject[];
+  has_more: boolean;
+} | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<{ items: ResearchProject[]; has_more: boolean }>("/api/research");
+  } catch {
+    return null;
+  }
+}
+
+export async function createResearch(body: {
+  question: string;
+  scope?: string;
+}): Promise<ResearchProject | null> {
+  if (!(await ping())) return null;
+  return await api<ResearchProject>("/api/research", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getResearch(id: string): Promise<ResearchProject | null> {
+  if (!(await ping())) return null;
+  return await api<ResearchProject>(`/api/research/${encodeURIComponent(id)}`);
+}
+
+export async function planResearch(id: string): Promise<ResearchProject | null> {
+  if (!(await ping())) return null;
+  return await api<ResearchProject>(`/api/research/${encodeURIComponent(id)}/plan`, {
+    method: "POST",
+  });
+}
+
+export async function executeResearch(id: string): Promise<ResearchProject | null> {
+  if (!(await ping())) return null;
+  return await api<ResearchProject>(`/api/research/${encodeURIComponent(id)}/execute`, {
+    method: "POST",
+  });
+}
+
+export async function deepenResearch(
+  id: string,
+  question: string,
+): Promise<ResearchProject | null> {
+  if (!(await ping())) return null;
+  return await api<ResearchProject>(`/api/research/${encodeURIComponent(id)}/deepen`, {
+    method: "POST",
+    body: JSON.stringify({ question }),
+  });
+}
+
+export async function getResearchReport(id: string): Promise<ResearchReport | null> {
+  if (!(await ping())) return null;
+  return await api<ResearchReport>(`/api/research/${encodeURIComponent(id)}/report`);
+}
+
+// ---------- Learning Studio (Fase 4: jornadas, tutor, diário e progresso) ----------
+export type LearnLesson = {
+  id: string;
+  title: string;
+  content: string;
+  references: string[];
+  activity_count: number;
+};
+
+export type LearnModule = {
+  id: string;
+  title: string;
+  description: string | null;
+  lessons: LearnLesson[];
+};
+
+export type LearnProject = {
+  id: string;
+  goal: string;
+  level: string | null;
+  status: "draft" | "ready" | string;
+  sources: string[];
+  research_project_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LearnProjectDetail = LearnProject & { modules: LearnModule[] };
+
+export type LearnActivity = {
+  id: string;
+  lesson_id: string;
+  type: string;
+  question: string;
+  options: string[];
+  expected_answer: string | null;
+  concept: string | null;
+};
+
+export type LearnJournalEntry = { id: string; kind: string; content: string; created_at: string };
+
+export type LearnProgressRow = {
+  module: string;
+  lessons: {
+    lesson: string;
+    activities: number;
+    attempts: number;
+    correct: number;
+    incorrect: number;
+    undetermined: number;
+  }[];
+};
+
+export async function listLearning(): Promise<LearnProject[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<LearnProject[]>("/api/learn");
+  } catch {
+    return null;
+  }
+}
+
+export async function createLearning(body: {
+  goal: string;
+  level?: string;
+  sourceIds?: string[];
+}): Promise<LearnProject | null> {
+  if (!(await ping())) return null;
+  return await api<LearnProject>("/api/learn", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getLearning(id: string): Promise<LearnProjectDetail | null> {
+  if (!(await ping())) return null;
+  return await api<LearnProjectDetail>(`/api/learn/${encodeURIComponent(id)}`);
+}
+
+export async function generateLearningPath(id: string): Promise<LearnProjectDetail | null> {
+  if (!(await ping())) return null;
+  return await api<LearnProjectDetail>(`/api/learn/${encodeURIComponent(id)}/path`, {
+    method: "POST",
+  });
+}
+
+export async function tutorAsk(
+  id: string,
+  body: { question: string; lesson_id?: string },
+): Promise<{ answer: string; references: string[] } | null> {
+  if (!(await ping())) return null;
+  return await api<{ answer: string; references: string[] }>(
+    `/api/learn/${encodeURIComponent(id)}/tutor`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export async function generateLearningActivities(
+  lessonId: string,
+  count?: number,
+): Promise<{ created: number | string[] } | null> {
+  if (!(await ping())) return null;
+  return await api<{ created: number | string[] }>(
+    `/api/learn/lessons/${encodeURIComponent(lessonId)}/activities`,
+    { method: "POST", body: JSON.stringify(count ? { count } : {}) },
+  );
+}
+
+export async function listLearningActivities(lessonId: string): Promise<LearnActivity[] | null> {
+  if (!(await ping())) return null;
+  return await api<LearnActivity[]>(
+    `/api/learn/lessons/${encodeURIComponent(lessonId)}/activities`,
+  );
+}
+
+export async function submitLearningAttempt(
+  activityId: string,
+  answer: string,
+): Promise<{ correct: boolean | null; feedback: string } | null> {
+  if (!(await ping())) return null;
+  return await api<{ correct: boolean | null; feedback: string }>(
+    `/api/learn/activities/${encodeURIComponent(activityId)}/attempt`,
+    { method: "POST", body: JSON.stringify({ answer }) },
+  );
+}
+
+export async function addJournalEntry(
+  id: string,
+  body: { kind: string; content: string },
+): Promise<LearnJournalEntry | null> {
+  if (!(await ping())) return null;
+  return await api<LearnJournalEntry>(`/api/learn/${encodeURIComponent(id)}/journal`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function listJournal(id: string): Promise<LearnJournalEntry[] | null> {
+  if (!(await ping())) return null;
+  return await api<LearnJournalEntry[]>(`/api/learn/${encodeURIComponent(id)}/journal`);
+}
+
+export async function getLearningProgress(id: string): Promise<LearnProgressRow[] | null> {
+  if (!(await ping())) return null;
+  return await api<LearnProgressRow[]>(`/api/learn/${encodeURIComponent(id)}/progress`);
+}
+
+// ---------- Computer Studio (Fase 5: sessões de navegador observáveis, planos one-shot
+// com verificação e memória procedural — escritas sempre sob aprovação D9) ----------
+export type CiSessionStatus = "active" | "closed" | "failed";
+
+/** Item da listagem: sem plans/observations (só no detalhe). */
+export type CiSessionSummary = {
+  id: string;
+  environment: string;
+  objective: string;
+  status: CiSessionStatus | string;
+  created_at: string;
+  closed_at: string | null;
+};
+
+export type CiObservation = {
+  id: string;
+  kind: string;
+  observation_hash: string;
+  dims: Record<string, unknown>;
+  artifact_path: string | null;
+  created_at: string;
+};
+
+/** Passo de plano: alvo e verificação vêm do modelo como objetos (ou string). */
+export type CiPlanStep = { action: string; target: unknown; expected: unknown; why: string };
+
+export type CiPlan = {
+  id: string;
+  objective: string;
+  status: string;
+  observation_id: string | null;
+  created_at: string;
+  steps: CiPlanStep[];
+};
+
+export type CiSession = CiSessionSummary & {
+  config: Record<string, unknown>;
+  usage: Record<string, number>;
+  plans: CiPlan[];
+  observations: CiObservation[];
+};
+
+export type CiObserveResult = {
+  id: string;
+  hash: string;
+  dims: Record<string, unknown>;
+  content: string;
+};
+
+export type CiPlanResult = { plan_id: string; steps: CiPlanStep[] };
+
+/** Execução é parcial por desenho: done / waiting_approval (D9) / replanned / failed_at. */
+export type CiExecuteResult = {
+  done?: boolean;
+  waiting_approval?: boolean;
+  replanned?: boolean;
+  failed_at?: number | string | null;
+};
+
+export type CiProcedure = {
+  id: string;
+  name: string;
+  goal: string;
+  status: "observed" | "inferred" | "tested" | "validated" | "deprecated" | string;
+  version: number;
+  success_count: number;
+  fail_count: number;
+  steps: CiPlanStep[];
+  last_used_at: string | null;
+};
+
+export type CiReuseResult = { id: string; steps: CiPlanStep[]; status: string; note: string };
+
+export async function listCiSessions(): Promise<CiSessionSummary[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<CiSessionSummary[]>("/api/ci/sessions");
+  } catch {
+    return null;
+  }
+}
+
+export async function openCiSession(body: {
+  objective: string;
+  environment?: string;
+}): Promise<CiSession | null> {
+  if (!(await ping())) return null;
+  return await api<CiSession>("/api/ci/sessions", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getCiSession(id: string): Promise<CiSession | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<CiSession>(`/api/ci/sessions/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function closeCiSession(id: string): Promise<{ ok: true } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: true }>(`/api/ci/sessions/${encodeURIComponent(id)}/close`, {
+    method: "POST",
+  });
+}
+
+export async function observeCiSession(id: string): Promise<CiObserveResult | null> {
+  if (!(await ping())) return null;
+  return await api<CiObserveResult>(`/api/ci/sessions/${encodeURIComponent(id)}/observe`, {
+    method: "POST",
+  });
+}
+
+export async function planCiSession(id: string): Promise<CiPlanResult | null> {
+  if (!(await ping())) return null;
+  return await api<CiPlanResult>(`/api/ci/sessions/${encodeURIComponent(id)}/plan`, {
+    method: "POST",
+  });
+}
+
+export async function executeCiPlan(planId: string): Promise<CiExecuteResult | null> {
+  if (!(await ping())) return null;
+  return await api<CiExecuteResult>(`/api/ci/plans/${encodeURIComponent(planId)}/execute`, {
+    method: "POST",
+  });
+}
+
+export async function listCiProcedures(): Promise<CiProcedure[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<CiProcedure[]>("/api/ci/procedures");
+  } catch {
+    return null;
+  }
+}
+
+export async function createCiProcedure(body: {
+  name: string;
+  goal: string;
+  steps: CiPlanStep[];
+  verified?: boolean;
+}): Promise<{ id: string; status: string } | null> {
+  if (!(await ping())) return null;
+  return await api<{ id: string; status: string }>("/api/ci/procedures", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function reuseCiProcedure(id: string): Promise<CiReuseResult | null> {
+  if (!(await ping())) return null;
+  return await api<CiReuseResult>(`/api/ci/procedures/${encodeURIComponent(id)}/reuse`, {
+    method: "POST",
+  });
+}
+
+// ---------- Multimodal Studio (Fase 6: voz + texto na MESMA conversa via chatExchange;
+// captura de microfone explícita; a transcrição é entrada CANDIDATA — só sai da sessão
+// com envio confirmado; a fala usa TTS e o áudio NUNCA é persistido) ----------
+export type MmSessionStatus = "active" | "closed" | string;
+
+export type MmSessionSummary = {
+  id: string;
+  conversation_id: string;
+  status: MmSessionStatus;
+  modalities: string[];
+  created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+};
+
+/** Metadados da transcrição anexada ao turno (texto + origem: stt/manual/text). */
+export type MmTranscript = {
+  text: string;
+  corrected?: boolean;
+  engine?: string;
+  language?: string;
+  latency_ms?: number;
+} | null;
+
+export type MmTurn = {
+  id: string;
+  session_id: string;
+  conversation_id: string;
+  seq: number;
+  /** idle | listening | transcribing | processing | generating | speaking | interrupted | completed | failed */
+  state: string;
+  input_kind: "audio" | "text" | string;
+  input_text: string | null;
+  transcript: MmTranscript;
+  reply_message_id: string | null;
+  output_text: string | null;
+  audio: { type: string; bytes: number; tts_ms?: number } | null;
+  error_code: string | null;
+  latency: Record<string, number>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MmEvent = {
+  id: number;
+  turn_id: string | null;
+  kind: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+export type MmSession = MmSessionSummary & {
+  state: Record<string, unknown>;
+  turns: MmTurn[];
+  events: MmEvent[];
+};
+
+export async function listMmSessions(limit = 50): Promise<MmSessionSummary[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<MmSessionSummary[]>(`/api/mm/sessions?limit=${limit}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function openMmSession(body: {
+  conversationId: string;
+  modalities?: string[];
+}): Promise<MmSession | null> {
+  if (!(await ping())) return null;
+  return await api<MmSession>("/api/mm/sessions", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getMmSession(id: string): Promise<MmSession | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<MmSession>(`/api/mm/sessions/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function closeMmSession(id: string): Promise<{ ok: true } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: true }>(`/api/mm/sessions/${encodeURIComponent(id)}/close`, {
+    method: "POST",
+  });
+}
+
+/** Cria um turno em escuta no servidor (o microfone em si SÓ é aberto no clique, no cliente). */
+export async function startMmCapture(sessionId: string): Promise<MmTurn | null> {
+  if (!(await ping())) return null;
+  return await api<MmTurn>(`/api/mm/sessions/${encodeURIComponent(sessionId)}/capture/start`, {
+    method: "POST",
+  });
+}
+
+export async function stopMmCapture(turnId: string): Promise<MmTurn | null> {
+  if (!(await ping())) return null;
+  return await api<MmTurn>(`/api/mm/turns/${encodeURIComponent(turnId)}/capture/stop`, {
+    method: "POST",
+  });
+}
+
+/** Upload de áudio (multipart) → STT; o turno vira transcrição candidata. */
+export async function submitMmAudio(
+  sessionId: string,
+  file: Blob,
+  language = "pt",
+  filename = "speech.webm",
+): Promise<MmTurn | null> {
+  if (!(await ping())) return null;
+  const fd = new FormData();
+  fd.append("file", file, filename);
+  fd.append("language", language);
+  return await api<MmTurn>(`/api/mm/sessions/${encodeURIComponent(sessionId)}/audio`, {
+    method: "POST",
+    body: fd,
+  });
+}
+
+/** Texto direto (digitação): cria turno `idle` com transcrição pronta (ainda NÃO enviada). */
+export async function submitMmText(sessionId: string, message: string): Promise<MmTurn | null> {
+  if (!(await ping())) return null;
+  return await api<MmTurn>(`/api/mm/sessions/${encodeURIComponent(sessionId)}/text`, {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+}
+
+/** Correção manual da transcrição (antes do envio). */
+export async function updateMmTranscript(turnId: string, text: string): Promise<MmTurn | null> {
+  if (!(await ping())) return null;
+  return await api<MmTurn>(`/api/mm/turns/${encodeURIComponent(turnId)}/transcript`, {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}
+
+/** Envia a transcrição CONFIRMADA para a conversa (mesmo caminho do chat; resposta persistida). */
+export async function sendMmTurn(turnId: string): Promise<MmTurn | null> {
+  if (!(await ping())) return null;
+  return await api<MmTurn>(`/api/mm/turns/${encodeURIComponent(turnId)}/send`, { method: "POST" });
+}
+
+/** Sintetiza a fala da resposta — a resposta é áudio binário (nunca persistido). */
+export async function speakMmTurn(turnId: string): Promise<Blob | null> {
+  if (!(await ping())) return null;
+  return await api<Blob>(`/api/mm/turns/${encodeURIComponent(turnId)}/speak`, { method: "POST" });
+}
+
+export async function interruptMmTurn(turnId: string): Promise<MmTurn | null> {
+  if (!(await ping())) return null;
+  return await api<MmTurn>(`/api/mm/turns/${encodeURIComponent(turnId)}/interrupt`, {
+    method: "POST",
+  });
+}
+
+/** Eventos novos da sessão desde `sinceId` (polling). */
+export async function listMmEvents(sessionId: string, sinceId = 0): Promise<MmEvent[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<MmEvent[]>(
+      `/api/mm/events?sessionId=${encodeURIComponent(sessionId)}&sinceId=${encodeURIComponent(sinceId)}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+// ---------- Proactive Studio (Fase 7: regras proativas, oportunidades, notificações
+// internas e controles de autonomia — os NÍVEIS nunca sobrepõem o Policy Engine/D9) ----------
+export type PrTriggerKind = "event" | "temporal" | "contextual";
+
+export type PrConditionOp =
+  "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "contains" | "exists" | "missing" | "in";
+
+export type PrConditionLeaf = { op: PrConditionOp; fact: string; value?: unknown };
+
+export type PrConditionNode =
+  | PrConditionLeaf
+  | { all: PrConditionNode[] }
+  | { any: PrConditionNode[] }
+  | { not: PrConditionNode };
+
+export type PrTrigger =
+  | { source: string; eventKind: string }
+  | {
+      type: "daily" | "weekly" | "interval" | "date";
+      time?: string;
+      weekday?: number;
+      intervalMs?: number;
+      date?: string;
+    }
+  | Record<string, unknown>;
+
+export type PrRuleState =
+  "draft" | "active" | "paused" | "disabled" | "expired" | "failed" | string;
+
+export type PrRuleVersion = {
+  version: number;
+  created_at?: string;
+  note?: string | null;
+  [key: string]: unknown;
+};
+
+export type PrRule = {
+  id: string;
+  name: string;
+  description: string | null;
+  origin: string;
+  trigger_kind: PrTriggerKind | string;
+  trigger: PrTrigger;
+  conditions: unknown;
+  workflow_id: string | null;
+  params: Record<string, unknown> | null;
+  execution: "manual" | "auto" | string;
+  valid_from: string | null;
+  valid_until: string | null;
+  max_executions: number | null;
+  execution_count: number;
+  cooldown_ms: number | null;
+  state: PrRuleState;
+  version: number;
+  /** Fase 8: timezone IANA da regra (temporal intelligence com DST). */
+  timezone?: string | null;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  last_error: string | null;
+  versions: PrRuleVersion[];
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type PrRuleBody = {
+  name: string;
+  description?: string;
+  triggerKind: PrTriggerKind;
+  trigger: PrTrigger;
+  conditions?: PrConditionNode;
+  workflowId?: string;
+  params?: Record<string, unknown>;
+  execution?: "manual" | "auto";
+  validFrom?: string;
+  validUntil?: string;
+  maxExecutions?: number;
+  cooldownMs?: number;
+};
+
+/** Dry-run SEM efeitos colaterais (POST /api/pr/rules/:id/test). */
+export type PrTestResult = {
+  wouldTrigger: boolean;
+  conditionsMet: boolean;
+  reasons: string[];
+  evaluated: unknown;
+  wouldAutoStart: boolean;
+  note?: string;
+};
+
+export type PrOpportunityStatus =
+  | "detected"
+  | "evaluating"
+  | "recommended"
+  | "dismissed"
+  | "snoozed"
+  | "accepted"
+  | "executing"
+  | "completed"
+  | "failed"
+  | "expired"
+  | string;
+
+export type PrOpportunity = {
+  id: string;
+  rule_id: string;
+  kind: string;
+  priority: number;
+  justification: string;
+  evidence: unknown[];
+  status: PrOpportunityStatus;
+  workflow_run_id: string | null;
+  snoozed_until: string | null;
+  created_at: string;
+};
+
+/** Correlação completa: oportunidade → run → aprovações. */
+export type PrTrail = {
+  opportunity: PrOpportunity;
+  run: WfRun | null;
+  approvals: { approval_id: string; node_id: string | null; status: string }[];
+};
+
+export type PrNotification = {
+  id: string;
+  type: string;
+  priority: number | string;
+  source: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  title: string;
+  body: string;
+  read_at: string | null;
+  created_at: string;
+};
+
+export type PrControls = {
+  level: number;
+  paused: boolean;
+  /** Fase 8: timezone IANA do usuário (fail-closed — inválida nunca é aceita). */
+  timezone?: string;
+  maxExecutionsPerHour: number;
+  cooldownMs: number;
+  maxPendingOpportunities: number;
+};
+
+export type PrControlsBody = {
+  level?: number;
+  paused?: boolean;
+  /** Fase 8: timezone IANA do usuário (erro estável: pr_invalid_timezone). */
+  timezone?: string;
+  maxExecutionsPerHour?: number;
+  cooldownMs?: number;
+  maxPendingOpportunities?: number;
+};
+
+export type PrMetrics = {
+  events_received: number;
+  opportunities_produced: number;
+  opportunities_accepted: number;
+  workflows_started: number;
+  executions_completed: number;
+  executions_failed: number;
+  duplicates_blocked: number;
+  rules_active: number;
+  notifications_unread: number;
+};
+
+export type PrEvent = {
+  id: number;
+  source: string | null;
+  kind: string;
+  payload: Record<string, unknown>;
+  dedupe_key: string | null;
+  created_at: string;
+};
+
+// GETs: indisponível offline → null (nunca dados de demonstração).
+export async function listPrRules(state?: string): Promise<PrRule[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<PrRule[]>(
+      `/api/pr/rules${state ? `?state=${encodeURIComponent(state)}` : ""}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+export async function getPrRule(id: string): Promise<PrRule | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<PrRule>(`/api/pr/rules/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function createPrRule(body: PrRuleBody): Promise<PrRule | null> {
+  if (!(await ping())) return null;
+  return await api<PrRule>("/api/pr/rules", { method: "POST", body: JSON.stringify(body) });
+}
+
+/** Edição parcial → nova versão no servidor. Lança em erro de validação (ex.: pr_invalid_conditions). */
+export async function updatePrRule(id: string, body: Partial<PrRuleBody>): Promise<PrRule | null> {
+  if (!(await ping())) return null;
+  return await api<PrRule>(`/api/pr/rules/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function activatePrRule(id: string): Promise<PrRule | null> {
+  if (!(await ping())) return null;
+  return await api<PrRule>(`/api/pr/rules/${encodeURIComponent(id)}/activate`, { method: "POST" });
+}
+
+export async function pausePrRule(id: string, reason?: string): Promise<PrRule | null> {
+  if (!(await ping())) return null;
+  return await api<PrRule>(`/api/pr/rules/${encodeURIComponent(id)}/pause`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason ?? undefined }),
+  });
+}
+
+export async function resumePrRule(id: string): Promise<PrRule | null> {
+  if (!(await ping())) return null;
+  return await api<PrRule>(`/api/pr/rules/${encodeURIComponent(id)}/resume`, { method: "POST" });
+}
+
+export async function disablePrRule(id: string): Promise<PrRule | null> {
+  if (!(await ping())) return null;
+  return await api<PrRule>(`/api/pr/rules/${encodeURIComponent(id)}/disable`, { method: "POST" });
+}
+
+/** Dry-run: avalia condições sobre `facts` SEM efeitos colaterais. */
+export async function testPrRule(
+  id: string,
+  facts: Record<string, unknown>,
+): Promise<PrTestResult | null> {
+  if (!(await ping())) return null;
+  return await api<PrTestResult>(`/api/pr/rules/${encodeURIComponent(id)}/test`, {
+    method: "POST",
+    body: JSON.stringify({ facts }),
+  });
+}
+
+/** Execução manual (mesmas políticas — pode falhar com códigos estáveis). */
+export async function runPrRule(id: string): Promise<unknown | null> {
+  if (!(await ping())) return null;
+  return await api(`/api/pr/rules/${encodeURIComponent(id)}/run`, { method: "POST" });
+}
+
+export async function listPrEvents(limit = 100): Promise<PrEvent[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<PrEvent[]>(`/api/pr/events?limit=${limit}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function listPrOpportunities(
+  status?: string,
+  limit = 100,
+): Promise<PrOpportunity[] | null> {
+  if (!(await ping())) return null;
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  params.set("limit", String(limit));
+  try {
+    return await api<PrOpportunity[]>(`/api/pr/opportunities?${params.toString()}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function getPrOpportunityTrail(id: string): Promise<PrTrail | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<PrTrail>(`/api/pr/opportunities/${encodeURIComponent(id)}/trail`);
+  } catch {
+    return null;
+  }
+}
+
+/** Inicia o workflow REAL (pode falhar: wf_policy_denied, pr_level_observation, pr_no_workflow). */
+export async function acceptPrOpportunity(id: string): Promise<PrOpportunity | null> {
+  if (!(await ping())) return null;
+  return await api<PrOpportunity>(`/api/pr/opportunities/${encodeURIComponent(id)}/accept`, {
+    method: "POST",
+  });
+}
+
+export async function dismissPrOpportunity(
+  id: string,
+  reason?: string,
+): Promise<PrOpportunity | null> {
+  if (!(await ping())) return null;
+  return await api<PrOpportunity>(`/api/pr/opportunities/${encodeURIComponent(id)}/dismiss`, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason || undefined }),
+  });
+}
+
+export async function snoozePrOpportunity(
+  id: string,
+  untilMs?: number,
+): Promise<PrOpportunity | null> {
+  if (!(await ping())) return null;
+  return await api<PrOpportunity>(`/api/pr/opportunities/${encodeURIComponent(id)}/snooze`, {
+    method: "POST",
+    body: JSON.stringify({ untilMs: untilMs ?? undefined }),
+  });
+}
+
+export async function listPrNotifications(
+  unread = false,
+  limit = 50,
+): Promise<PrNotification[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<PrNotification[]>(
+      `/api/pr/notifications?${unread ? "unread=1&" : ""}limit=${limit}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+export async function markPrNotificationRead(id: string): Promise<{ ok: true } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: true }>(`/api/pr/notifications/${encodeURIComponent(id)}/read`, {
+    method: "POST",
+  });
+}
+
+export async function dismissPrNotification(id: string): Promise<{ ok: true } | null> {
+  if (!(await ping())) return null;
+  return await api<{ ok: true }>(`/api/pr/notifications/${encodeURIComponent(id)}/dismiss`, {
+    method: "POST",
+  });
+}
+
+export async function getPrControls(): Promise<PrControls | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<PrControls>("/api/pr/controls");
+  } catch {
+    return null;
+  }
+}
+
+export async function savePrControls(body: PrControlsBody): Promise<PrControls | null> {
+  if (!(await ping())) return null;
+  return await api<PrControls>("/api/pr/controls", {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getPrMetrics(): Promise<PrMetrics | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<PrMetrics>("/api/pr/metrics");
+  } catch {
+    return null;
+  }
+}
+
+// ---------- Integration Studio (Fase 8: Integration Fabric — webhooks HMAC-SHA256,
+// calendários com provider abstrato e Event Inspector; o segredo do produtor é exibido
+// UMA única vez e nunca mais (§13); indisponibilidade do provider real é explícita) ----------
+export type IfKind = "webhook" | "calendar";
+
+export type IfCatalogEntry = {
+  kind: IfKind | string;
+  capabilities: string[];
+  description: string;
+  providers?: string[];
+};
+
+export type IfIntegrationStatus =
+  "unconfigured" | "configured" | "active" | "degraded" | "disabled" | "error" | string;
+
+export type IfProducer = {
+  id: string;
+  integration_id: string;
+  name: string;
+  allowed_event_types: string[];
+  event_count: number;
+  rejected_count: number;
+  disabled_at: string | null;
+  last_event_at: string | null;
+  created_at: string;
+};
+
+/** Resposta da criação de produtor: `secret` aparece UMA vez (depois NUNCA — §13). */
+export type IfProducerSecret = {
+  id: string;
+  name: string;
+  integration_id: string;
+  secret: string;
+  note: string;
+};
+
+export type IfIntegration = {
+  id: string;
+  kind: IfKind | string;
+  adapter: string;
+  name: string;
+  version: number;
+  capabilities: string[];
+  config: Record<string, unknown>;
+  policy: Record<string, unknown>;
+  status: IfIntegrationStatus;
+  health: Record<string, unknown>;
+  last_contact_at: string | null;
+  last_error: string | null;
+  producers?: IfProducer[];
+  accounts?: IfCalendarAccount[];
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type IfEventStatus =
+  "received" | "normalized" | "forwarded" | "duplicate" | "rejected" | "error" | string;
+
+export type IfEvent = {
+  id: number;
+  producer_id: string;
+  producer_name: string;
+  event_id: string;
+  event_type: string;
+  schema_version: string;
+  occurred_at: string | null;
+  received_at: string;
+  correlation_id: string | null;
+  idempotency_key: string | null;
+  trust_level: string;
+  status: IfEventStatus;
+  error_code: string | null;
+  payload: Record<string, unknown>;
+};
+
+export type IfCalendarAccount = {
+  id: string;
+  integration_id: string;
+  provider: string;
+  provider_account: string;
+  status: string;
+  sync_cursor: number | string | null;
+  last_sync_at: string | null;
+  last_error: string | null;
+  /** Provider de TESTE (ex.: fixture) — sempre marcado; NUNCA apresentar como real. */
+  provider_test_only: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type IfSyncResult = {
+  upserted: number;
+  cancelled: number;
+  cursor: number | string | null;
+  testOnly: boolean;
+  proactive?: string;
+};
+
+export type IfCalendarEvent = {
+  id?: string;
+  external_id: string;
+  title: string;
+  starts_at_utc: string | null;
+  ends_at_utc: string | null;
+  timezone: string | null;
+  recurrence: unknown;
+  status: string;
+};
+
+export type IfConflictSide = {
+  external_id: string;
+  title: string;
+  starts_at_utc: string | null;
+} | null;
+
+export type IfConflict = {
+  id: string;
+  account_id: string;
+  kind: string;
+  detected_at: string;
+  resolved_at: string | null;
+  eventA: IfConflictSide;
+  eventB: IfConflictSide;
+};
+
+export async function listIfCatalog(): Promise<IfCatalogEntry[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfCatalogEntry[]>("/api/if/catalog");
+  } catch {
+    return null;
+  }
+}
+
+export async function listIfIntegrations(): Promise<IfIntegration[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfIntegration[]>("/api/if/integrations");
+  } catch {
+    return null;
+  }
+}
+
+export async function createIfIntegration(body: {
+  kind: string;
+  adapter: string;
+  name: string;
+  config?: Record<string, unknown>;
+}): Promise<IfIntegration | null> {
+  if (!(await ping())) return null;
+  return await api<IfIntegration>("/api/if/integrations", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getIfIntegration(id: string): Promise<IfIntegration | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfIntegration>(`/api/if/integrations/${encodeURIComponent(id)}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function activateIfIntegration(id: string): Promise<IfIntegration | null> {
+  if (!(await ping())) return null;
+  return await api<IfIntegration>(`/api/if/integrations/${encodeURIComponent(id)}/activate`, {
+    method: "POST",
+  });
+}
+
+export async function disableIfIntegration(id: string): Promise<IfIntegration | null> {
+  if (!(await ping())) return null;
+  return await api<IfIntegration>(`/api/if/integrations/${encodeURIComponent(id)}/disable`, {
+    method: "POST",
+  });
+}
+
+/** Teste de conectividade/saúde por adaptador (sem segredos na resposta). */
+export async function testIfIntegration(id: string): Promise<IfIntegration | null> {
+  if (!(await ping())) return null;
+  return await api<IfIntegration>(`/api/if/integrations/${encodeURIComponent(id)}/test`, {
+    method: "POST",
+  });
+}
+
+/** Cria produtor: a resposta contém o secret — exibido UMA vez, nunca mais recuperável. */
+export async function createIfProducer(
+  integrationId: string,
+  body: { name: string; allowedEventTypes?: string[] },
+): Promise<IfProducerSecret | null> {
+  if (!(await ping())) return null;
+  return await api<IfProducerSecret>(
+    `/api/if/integrations/${encodeURIComponent(integrationId)}/producers`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export async function listIfProducers(integrationId: string): Promise<IfProducer[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfProducer[]>(
+      `/api/if/integrations/${encodeURIComponent(integrationId)}/producers`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** Event Inspector (§14): sem payload sensível na listagem. */
+export async function listIfEvents(limit = 100): Promise<IfEvent[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfEvent[]>(`/api/if/events?limit=${limit}`);
+  } catch {
+    return null;
+  }
+}
+
+export async function listIfCalendarAccounts(): Promise<IfCalendarAccount[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfCalendarAccount[]>("/api/if/calendar/accounts");
+  } catch {
+    return null;
+  }
+}
+
+export async function createIfCalendarAccount(body: {
+  integrationId: string;
+  provider: string;
+  providerAccount: string;
+}): Promise<IfCalendarAccount | { error: string } | null> {
+  if (!(await ping())) return null;
+  return await api<IfCalendarAccount>("/api/if/calendar/accounts", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Sync incremental — indisponibilidade do provider real vem como 503 com código estável. */
+export async function syncIfCalendarAccount(id: string): Promise<IfSyncResult | null> {
+  if (!(await ping())) return null;
+  return await api<IfSyncResult>(`/api/if/calendar/accounts/${encodeURIComponent(id)}/sync`, {
+    method: "POST",
+  });
+}
+
+export async function listIfCalendarEvents(
+  id: string,
+  limit = 100,
+): Promise<IfCalendarEvent[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfCalendarEvent[]>(
+      `/api/if/calendar/accounts/${encodeURIComponent(id)}/events?limit=${limit}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+export async function listIfCalendarConflicts(id: string): Promise<IfConflict[] | null> {
+  if (!(await ping())) return null;
+  try {
+    return await api<IfConflict[]>(`/api/if/calendar/accounts/${encodeURIComponent(id)}/conflicts`);
   } catch {
     return null;
   }

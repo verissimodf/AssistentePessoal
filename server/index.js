@@ -81,6 +81,170 @@ import {
 } from "./conversations.js";
 import { evaluateReflex } from "./reflex.js";
 import { runBot, listRuns, startScheduler, triggerByText, auditLegacyBlocked } from "./bots.js";
+import {
+  createDefinition,
+  listDefinitions,
+  getDefinition,
+  updateDefinition,
+  deleteDefinition,
+  listTemplates,
+  startRun,
+  getRun,
+  listRuns as listWorkforceRuns,
+  cancelWorkforceRun,
+  reconcileRun,
+  recoverWorkforceRuns,
+} from "./workforce.js";
+import {
+  createLibrary,
+  listLibraries,
+  getLibrary,
+  updateLibrary,
+  deleteLibrary,
+  createNotebook,
+  listNotebooks,
+  getNotebook,
+  updateNotebook,
+  deleteNotebook,
+  createSource,
+  listKhSources,
+  getKhSource,
+  deleteKhSource,
+  khSearch,
+  khTransform,
+  khAsk,
+  recoverKhJobs,
+  KH_LIMITS,
+} from "./knowledge.js";
+import {
+  createDefinition as createWfDefinition,
+  listDefinitions as listWfDefinitions,
+  getDefinition as getWfDefinition,
+  updateDefinition as updateWfDefinition,
+  publishDefinition,
+  deleteDefinition as deleteWfDefinition,
+  getDefinitionVersion,
+  startWorkflowRun,
+  getWfRun,
+  listWfRuns,
+  cancelWfRun,
+  reconcileWfRun,
+  recoverWfRuns,
+  tickWfRuns,
+  validateGraph,
+} from "./workflow.js";
+import {
+  createPolicy,
+  listPolicies,
+  getPolicy,
+  updatePolicy,
+  deletePolicy,
+  evaluatePolicies,
+} from "./policies.js";
+import {
+  createResearch,
+  getResearch,
+  listResearch,
+  generatePlan as generateResearchPlan,
+  executeResearch as executeResearchProject,
+  deepenResearch,
+} from "./research.js";
+import {
+  createLearningProject,
+  getLearningProject,
+  listLearningProjects,
+  generateLearningPath,
+  tutorAsk,
+  generateActivities as generateLearningActivities,
+  listActivities as listLearningActivities,
+  submitAttempt as submitLearningAttempt,
+  addJournalEntry,
+  listJournal,
+  learningProgress,
+  deleteLearningProject,
+} from "./learning.js";
+import {
+  openSession,
+  getSession,
+  closeSession,
+  observe as ciObserve,
+  planActions,
+  executePlan,
+  tickCiSessions,
+  recordProcedure,
+  listProcedures,
+  reuseProcedure,
+  registerCiWorkflowNodes,
+} from "./computer.js";
+import {
+  openSession as mmOpenSession,
+  getSession as mmGetSession,
+  listSessions as mmListSessions,
+  closeSession as mmCloseSession,
+  startCapture as mmStartCapture,
+  stopCapture as mmStopCapture,
+  submitAudio as mmSubmitAudio,
+  submitText as mmSubmitText,
+  attachTranscript as mmAttachTranscript,
+  sendTurn as mmSendTurn,
+  speakTurn as mmSpeakTurn,
+  interruptTurn as mmInterruptTurn,
+  listEvents as mmListEvents,
+  recoverMmTurns,
+  tickMmSessions,
+  MmError,
+} from "./multimodal.js";
+import {
+  createRule,
+  getRule,
+  listRules,
+  updateRule,
+  setRuleState,
+  recordEvent,
+  listOpportunities,
+  getOpportunity,
+  acceptOpportunity,
+  dismissOpportunity,
+  snoozeOpportunity,
+  listNotifications,
+  markNotificationRead,
+  dismissNotification,
+  testRule,
+  runRuleManually,
+  tickProactive,
+  recoverProactive,
+  getExecutionTrail,
+  getMetrics,
+  getControls,
+  validateControls,
+  registerWorkflowEventSink,
+  listEvents as listPrEvents,
+  PrError,
+} from "./proactive.js";
+import {
+  createIntegration,
+  getIntegration,
+  listIntegrations,
+  setIntegrationState,
+  deactivateIntegration,
+  checkIntegration,
+  createProducer,
+  listProducers,
+  ingestWebhook,
+  forwardIntegrationEvents,
+  listEvents as listIfEvents,
+  IfError,
+  ADAPTERS,
+} from "./integrations.js";
+import {
+  listCalendarProviders,
+  connectCalendarAccount,
+  getCalendarAccount,
+  listCalendarAccounts,
+  syncCalendarAccount,
+  listCalendarEvents,
+  listConflicts,
+} from "./calendar.js";
 import { listScheduledJobs } from "./jobs.js";
 import {
   memoryRetentionPolicy,
@@ -893,6 +1057,1143 @@ route("GET", "/api/bots/:id/runs", "bots:read", ({ params, principal }) => {
   return listRuns(params.id, me(principal));
 });
 route("GET", "/api/jobs", "bots:read", ({ principal }) => listScheduledJobs(me(principal)));
+
+// ---------- Workforce (evolução Fase 1, docs/evolution/phase-1) ----------
+// AgentDefinition/AgentRun persistentes com orçamento hierárquico e reconciliação. Toda rota
+// passa pelo dispatcher (sessão/escopo/CSRF) e toda leitura/escrita respeita ownership.
+const workforceError = (e) => {
+  const code = e?.message || "workforce_error";
+  const map = {
+    workforce_name_invalid: 400,
+    workforce_role_invalid: 400,
+    workforce_tools_invalid: 400,
+    workforce_scopes_invalid: 400,
+    workforce_owner_required: 403,
+    workforce_agent_disabled: 409,
+    workforce_definition_active_runs: 409,
+    workforce_reconcile_required: 409,
+    workforce_reconcile_not_unknown: 409,
+    workforce_reconcile_no_evidence: 409,
+    workforce_objective_required: 400,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+route("GET", "/api/workforce/templates", "workforce:read", () => listTemplates());
+route("GET", "/api/workforce/agents", "workforce:read", ({ principal }) =>
+  listDefinitions(me(principal)),
+);
+route("POST", "/api/workforce/agents", "workforce:write", ({ body, principal }) => {
+  const adminId = me(principal);
+  if (!adminId) throw new AuthError(403, "owner_required");
+  try {
+    return createDefinition(adminId, body || {});
+  } catch (e) {
+    throw workforceError(e);
+  }
+});
+route("GET", "/api/workforce/agents/:id", "workforce:read", ({ params, principal }) => {
+  const def = getDefinition(me(principal), params.id);
+  if (!def) notFound();
+  return def;
+});
+route("PUT", "/api/workforce/agents/:id", "workforce:write", ({ params, body, principal }) => {
+  try {
+    const out = updateDefinition(me(principal), params.id, body || {});
+    if (!out) notFound();
+    return out;
+  } catch (e) {
+    throw workforceError(e);
+  }
+});
+route("DELETE", "/api/workforce/agents/:id", "workforce:write", ({ params, principal }) => {
+  try {
+    if (!deleteDefinition(me(principal), params.id)) notFound();
+    return { ok: true };
+  } catch (e) {
+    throw workforceError(e);
+  }
+});
+route("POST", "/api/workforce/agents/:id/run", "workforce:run", ({ params, body, principal }) => {
+  const started = startRun({
+    adminId: me(principal),
+    definitionId: params.id,
+    objective: body?.objective,
+    idempotencyKey: body?.idempotency_key ?? null,
+    principal,
+  });
+  if (started.error === "not_found") notFound();
+  if (started.error) throw workforceError(new Error(started.error));
+  return { run: started.run, deduplicated: !!started.deduplicated };
+});
+route("GET", "/api/workforce/runs", "workforce:read", ({ query, principal }) =>
+  listWorkforceRuns(me(principal), {
+    limit: query?.limit,
+    offset: query?.offset,
+    status: query?.status,
+    definitionId: query?.definition_id,
+  }),
+);
+route("GET", "/api/workforce/runs/:id", "workforce:read", ({ params, principal }) => {
+  const run = getRun(me(principal), params.id);
+  if (!run) notFound();
+  return run;
+});
+route("POST", "/api/workforce/runs/:id/cancel", "workforce:run", ({ params, principal }) => {
+  const out = cancelWorkforceRun(me(principal), params.id);
+  if (out.error === "not_found") notFound();
+  if (out.error) throw workforceError(new Error(out.error));
+  return out.run || out;
+});
+route("POST", "/api/workforce/runs/:id/reconcile", "session", ({ params, body, principal }) => {
+  const out = reconcileRun(me(principal), params.id, { decision: body?.decision ?? null });
+  if (out.error === "not_found") notFound();
+  if (out.error) throw workforceError(new Error(out.error));
+  return out;
+});
+
+// ---------- Knowledge Hub (evolução Fase 2, docs/evolution/phase-2) ----------
+const khError = (e) => {
+  const code = e?.message || "kh_error";
+  const map = {
+    kh_owner_required: 403,
+    kh_library_not_found: 404,
+    kh_notebook_not_found: 404,
+    kh_name_required: 400,
+    kh_kind_invalid: 400,
+    kh_tags_invalid: 400,
+    kh_notebook_limit: 409,
+    kh_source_limit: 409,
+    kh_source_not_found: 404,
+    kh_content_required: 400,
+    kh_url_invalid: 400,
+    kh_too_large: 413,
+    kh_op_invalid: 400,
+    kh_sources_required: 400,
+    kh_no_indexed_sources: 409,
+    kh_content_missing: 409,
+    kh_unsupported_mime: 415,
+    unsupported_type: 415,
+    kh_fetch_failed: 502,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+route("GET", "/api/kh/libraries", "kh:read", ({ principal }) => listLibraries(me(principal)));
+route("POST", "/api/kh/libraries", "kh:write", ({ body, principal }) => {
+  try {
+    return createLibrary(me(principal), body || {});
+  } catch (e) {
+    throw khError(e);
+  }
+});
+route("GET", "/api/kh/libraries/:id", "kh:read", ({ params, principal }) => {
+  const lib = getLibrary(me(principal), params.id);
+  if (!lib) notFound();
+  return lib;
+});
+route("PUT", "/api/kh/libraries/:id", "kh:write", ({ params, body, principal }) => {
+  const out = updateLibrary(me(principal), params.id, body || {});
+  if (!out) notFound();
+  return out;
+});
+route("DELETE", "/api/kh/libraries/:id", "kh:write", ({ params, principal }) => {
+  if (!deleteLibrary(me(principal), params.id)) notFound();
+  return { ok: true };
+});
+route("GET", "/api/kh/notebooks", "kh:read", ({ query, principal }) =>
+  listNotebooks(me(principal), { libraryId: query?.library_id || null }),
+);
+route("POST", "/api/kh/notebooks", "kh:write", ({ body, principal }) => {
+  try {
+    return createNotebook(me(principal), {
+      libraryId: body?.library_id,
+      name: body?.name,
+      description: body?.description,
+      tags: body?.tags,
+    });
+  } catch (e) {
+    if (e?.message === "kh_library_not_found") notFound();
+    throw khError(e);
+  }
+});
+route("GET", "/api/kh/notebooks/:id", "kh:read", ({ params, principal }) => {
+  const nb = getNotebook(me(principal), params.id);
+  if (!nb) notFound();
+  return nb;
+});
+route("PUT", "/api/kh/notebooks/:id", "kh:write", ({ params, body, principal }) => {
+  const out = updateNotebook(me(principal), params.id, body || {});
+  if (!out) notFound();
+  return out;
+});
+route("DELETE", "/api/kh/notebooks/:id", "kh:write", ({ params, principal }) => {
+  if (!deleteNotebook(me(principal), params.id)) notFound();
+  return { ok: true };
+});
+route("GET", "/api/kh/sources", "kh:read", ({ query, principal }) =>
+  listKhSources(me(principal), {
+    notebookId: query?.notebook_id || null,
+    status: query?.status || null,
+    limit: query?.limit,
+    offset: query?.offset,
+  }),
+);
+route("POST", "/api/kh/sources", "kh:write", async ({ body, form, principal }) => {
+  try {
+    const owner = me(principal);
+    if (form) {
+      const file = form.get("file");
+      if (!file || typeof file === "string") throw new AuthError(400, "file_required");
+      const buf = Buffer.from(await file.arrayBuffer());
+      const out = await createSource(owner, {
+        notebookId: String(form.get("notebook_id") || ""),
+        type: "file",
+        title: String(form.get("title") || file.name || "documento"),
+        description: String(form.get("description") || ""),
+        buffer: buf,
+        mime: String(form.get("mime") || file.type || "text/plain"),
+      });
+      if (out.duplicate) throw new AuthError(409, "kh_duplicate");
+      return out.source;
+    }
+    const out = await createSource(owner, {
+      notebookId: body?.notebook_id,
+      type: body?.type === "url" ? "url" : body?.type === "file" ? "file" : "text",
+      title: body?.title,
+      description: body?.description,
+      content: body?.content ?? null,
+      buffer:
+        body?.encoding === "base64" && body?.content
+          ? Buffer.from(String(body.content), "base64")
+          : null,
+      mime: body?.mime,
+      url: body?.url,
+    });
+    if (out.duplicate) throw new AuthError(409, "kh_duplicate");
+    return out.source;
+  } catch (e) {
+    if (e instanceof AuthError) throw e;
+    throw khError(e);
+  }
+});
+route("GET", "/api/kh/sources/:id", "kh:read", ({ params, principal }) => {
+  const src = getKhSource(me(principal), params.id);
+  if (!src) notFound();
+  return src;
+});
+route("DELETE", "/api/kh/sources/:id", "kh:write", ({ params, principal }) => {
+  if (!deleteKhSource(me(principal), params.id)) notFound();
+  return { ok: true };
+});
+route("POST", "/api/kh/sources/:id/ingest", "kh:write", async ({ params, principal }) => {
+  // Reingestão/reprocessamento manual (falha anterior ou nova versão).
+  const src = getKhSource(me(principal), params.id);
+  if (!src) notFound();
+  const { processIngest } = await import("./knowledge.js");
+  return processIngest(params.id);
+});
+route("POST", "/api/kh/search", "kh:read", async ({ body, principal }) => {
+  return khSearch(me(principal), {
+    query: body?.query,
+    notebookId: body?.notebook_id || null,
+    libraryId: body?.library_id || null,
+    limit: body?.limit,
+  });
+});
+route("POST", "/api/kh/transform", "kh:read", async ({ body, principal }) => {
+  try {
+    return await khTransform(me(principal), {
+      op: body?.op,
+      sourceIds: body?.source_ids,
+      prompt: body?.prompt,
+      notebookId: body?.notebook_id || null,
+    });
+  } catch (e) {
+    throw khError(e);
+  }
+});
+route("POST", "/api/kh/ask", "kh:read", async ({ body, principal }) => {
+  try {
+    return await khAsk(me(principal), {
+      question: body?.question,
+      notebookId: body?.notebook_id || null,
+      libraryId: body?.library_id || null,
+    });
+  } catch (e) {
+    throw khError(e);
+  }
+});
+
+// ---------- Workflow Studio (evolução Fase 3, docs/evolution/phase-3) ----------
+const wfError = (e) => {
+  const msg = String(e?.message || "wf_error");
+  if (msg.startsWith("wf_graph_invalid")) return new AuthError(400, msg.slice(0, 80));
+  const map = {
+    wf_owner_required: 403,
+    wf_name_required: 400,
+    wf_not_published: 409,
+    wf_definition_active_runs: 409,
+    wf_policy_denied: 403,
+    wf_require_approval_unsupported: 403,
+    wf_reconcile_required: 409,
+    wf_reconcile_not_unknown: 409,
+    wf_policy_denied_code: 403,
+  };
+  return new AuthError(map[msg] || 400, msg.slice(0, 60));
+};
+route("GET", "/api/workflows", "workflow:read", ({ principal }) =>
+  listWfDefinitions(me(principal)),
+);
+route("POST", "/api/workflows", "workflow:write", ({ body, principal }) => {
+  try {
+    return createWfDefinition(me(principal), body || {});
+  } catch (e) {
+    throw wfError(e);
+  }
+});
+route("GET", "/api/workflows/:id", "workflow:read", ({ params, principal }) => {
+  const def = getWfDefinition(me(principal), params.id);
+  if (!def) notFound();
+  return def;
+});
+route("PUT", "/api/workflows/:id", "workflow:write", ({ params, body, principal }) => {
+  try {
+    const out = updateWfDefinition(me(principal), params.id, body || {});
+    if (!out) notFound();
+    return out;
+  } catch (e) {
+    throw wfError(e);
+  }
+});
+route("POST", "/api/workflows/:id/publish", "workflow:write", ({ params, principal }) => {
+  try {
+    const out = publishDefinition(me(principal), params.id);
+    if (!out) notFound();
+    return out;
+  } catch (e) {
+    throw wfError(e);
+  }
+});
+route("DELETE", "/api/workflows/:id", "workflow:write", ({ params, principal }) => {
+  try {
+    if (!deleteWfDefinition(me(principal), params.id)) notFound();
+    return { ok: true };
+  } catch (e) {
+    throw wfError(e);
+  }
+});
+route("GET", "/api/workflows/:id/versions", "workflow:read", ({ params, principal }) => {
+  if (!getWfDefinition(me(principal), params.id)) notFound();
+  const rows = db
+    .prepare(
+      "SELECT version, created_at FROM wf_definition_versions WHERE definition_id = ? ORDER BY version",
+    )
+    .all(params.id);
+  return rows.map((r) => ({
+    ...r,
+    graph: getDefinitionVersion(me(principal), params.id, r.version).graph,
+  }));
+});
+route("POST", "/api/workflows/:id/run", "workflow:run", async ({ params, body, principal }) => {
+  const out = await startWorkflowRun(me(principal), params.id, {
+    objective: body?.objective,
+    idempotencyKey: body?.idempotency_key ?? null,
+    principal,
+  });
+  if (out.error === "not_found") notFound();
+  if (out.error) throw wfError(new Error(out.error));
+  return { run: out.run, deduplicated: !!out.deduplicated };
+});
+route("GET", "/api/workflow-runs", "workflow:read", ({ query, principal }) =>
+  listWfRuns(me(principal), {
+    limit: query?.limit,
+    offset: query?.offset,
+    status: query?.status || null,
+    definitionId: query?.definition_id || null,
+  }),
+);
+route("GET", "/api/workflow-runs/:id", "workflow:read", ({ params, principal }) => {
+  const run = getWfRun(me(principal), params.id);
+  if (!run) notFound();
+  return run;
+});
+route("POST", "/api/workflow-runs/:id/cancel", "workflow:run", ({ params, principal }) => {
+  const out = cancelWfRun(me(principal), params.id);
+  if (out.error === "not_found") notFound();
+  if (out.error) throw wfError(new Error(out.error));
+  return out.run || out;
+});
+route("POST", "/api/workflow-runs/:id/reconcile", "session", ({ params, principal }) => {
+  const out = reconcileWfRun(me(principal), params.id);
+  if (out.error === "not_found") notFound();
+  if (out.error) throw wfError(new Error(out.error));
+  return out;
+});
+
+// ---------- Policy Studio (evolução Fase 3) — administração por sessão verificada ----------
+route("GET", "/api/policies", "session", ({ principal }) => listPolicies(me(principal)));
+route("POST", "/api/policies", "session", ({ body, principal }) => {
+  try {
+    return createPolicy(me(principal), body || {});
+  } catch (e) {
+    throw wfError(e);
+  }
+});
+route("GET", "/api/policies/:id", "session", ({ params, principal }) => {
+  const p = getPolicy(me(principal), params.id);
+  if (!p) notFound();
+  return p;
+});
+route("PUT", "/api/policies/:id", "session", ({ params, body, principal }) => {
+  try {
+    const out = updatePolicy(me(principal), params.id, body || {});
+    if (!out) notFound();
+    return out;
+  } catch (e) {
+    throw wfError(e);
+  }
+});
+route("DELETE", "/api/policies/:id", "session", ({ params, principal }) => {
+  if (!deletePolicy(me(principal), params.id)) notFound();
+  return { ok: true };
+});
+route("POST", "/api/policies/simulate", "session", ({ body, principal }) => {
+  // Simulação SEM executar ações: avalia contexto informado e explica a decisão.
+  const out = evaluatePolicies(me(principal), {
+    kind: body?.kind === "workflow" ? "workflow" : body?.kind === "agent" ? "agent" : "tool",
+    target: String(body?.target || "*"),
+    tool: body?.tool,
+    scope: body?.scope,
+  });
+  return out;
+});
+
+// ---------- Computer Studio (evolução Fase 5, docs/evolution/phase-5) ----------
+const ciError = (e) => {
+  const code = e?.message || "ci_error";
+  const map = {
+    ci_owner_required: 403,
+    ci_browser_disabled: 409,
+    ci_session_not_active: 409,
+    ci_plan_invalid: 502,
+    ci_plan_not_planned: 409,
+    ci_procedure_deprecated: 409,
+    ci_name_required: 400,
+    not_found: 404,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+route("GET", "/api/ci/sessions", "computer:read", ({ principal }) =>
+  db
+    .prepare(
+      "SELECT id, environment, objective, status, created_at, closed_at FROM ci_sessions WHERE owner_admin_id = ? ORDER BY created_at DESC LIMIT 100",
+    )
+    .all(me(principal)),
+);
+route("POST", "/api/ci/sessions", "computer:run", ({ body, principal }) => {
+  try {
+    return openSession(me(principal), body || {});
+  } catch (e) {
+    throw ciError(e);
+  }
+});
+route("GET", "/api/ci/sessions/:id", "computer:read", ({ params, principal }) => {
+  const s = getSession(me(principal), params.id);
+  if (!s) notFound();
+  return s;
+});
+route("POST", "/api/ci/sessions/:id/close", "computer:run", ({ params, principal }) => {
+  const out = closeSession(me(principal), params.id);
+  if (out.error) throw ciError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/ci/sessions/:id/observe", "computer:read", async ({ params, principal }) => {
+  try {
+    const out = await ciObserve(me(principal), params.id);
+    if (out.error) throw ciError(new Error(out.error));
+    return { id: out.id, hash: out.hash, dims: out.dims, content: out.content.slice(0, 4000) };
+  } catch (e) {
+    throw ciError(e);
+  }
+});
+route("POST", "/api/ci/sessions/:id/plan", "computer:run", async ({ params, principal }) => {
+  try {
+    const out = await planActions(me(principal), params.id);
+    if (out.error) throw ciError(new Error(out.error));
+    return { plan_id: out.plan_id, steps: out.steps };
+  } catch (e) {
+    throw ciError(e);
+  }
+});
+route("POST", "/api/ci/plans/:id/execute", "computer:run", async ({ params, principal }) => {
+  try {
+    const plan = db.prepare("SELECT session_id FROM ci_plans WHERE id = ?").get(params.id);
+    if (!plan || !owns(me(principal), "ci_session", plan.session_id)) notFound();
+    const out = await executePlan(me(principal), plan.session_id, params.id);
+    if (out.error) throw ciError(new Error(out.error));
+    return out;
+  } catch (e) {
+    if (e instanceof AuthError) throw e;
+    throw ciError(e);
+  }
+});
+route("GET", "/api/ci/procedures", "computer:read", ({ query, principal }) =>
+  listProcedures(me(principal), { includeDeprecated: query?.include === "deprecated" }),
+);
+route("POST", "/api/ci/procedures", "computer:run", ({ body, principal }) => {
+  try {
+    return recordProcedure(me(principal), body || {});
+  } catch (e) {
+    throw ciError(e);
+  }
+});
+route("POST", "/api/ci/procedures/:id/reuse", "computer:run", ({ params, principal }) => {
+  const out = reuseProcedure(me(principal), params.id);
+  if (out.error) throw ciError(new Error(out.error));
+  return out;
+});
+
+// ---------- Multimodal Studio (evolução Fase 6, docs/evolution/phase-6) ----------
+// Camada de entrada/apresentação sobre o MESMO chat (chatExchange): sessões/turnos usam
+// "chat" (superfície conversacional do admin verificado) e áudio usa "voice" — os mesmos
+// escopos existentes, deny-by-default intacto. Nenhuma rotação nova de privilégios.
+const mmError = (e) => {
+  const code = e?.message || "mm_error";
+  const map = {
+    mm_owner_required: 403,
+    mm_conversation_required: 400,
+    mm_session_not_active: 409,
+    mm_turn_concurrent: 409,
+    mm_turn_limit: 429,
+    mm_turn_not_listening: 409,
+    mm_turn_not_editable: 409,
+    mm_turn_not_sendable: 409,
+    mm_turn_not_speakable: 409,
+    mm_turn_not_interruptible: 409,
+    mm_transcript_required: 400,
+    invalid_message: 400,
+    empty_message: 400,
+    message_too_long: 400,
+    not_found: 404,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+
+route("GET", "/api/mm/sessions", "chat", ({ query, principal }) =>
+  mmListSessions(me(principal), { limit: numParam(query.get("limit")) }),
+);
+route("POST", "/api/mm/sessions", "chat", ({ body, principal }) => {
+  try {
+    return mmOpenSession(me(principal), body || {});
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    throw e;
+  }
+});
+route("GET", "/api/mm/sessions/:id", "chat", ({ params, principal }) => {
+  const s = mmGetSession(me(principal), params.id);
+  if (!s) notFound();
+  return s;
+});
+route("POST", "/api/mm/sessions/:id/close", "chat", ({ params, principal }) => {
+  const out = mmCloseSession(me(principal), params.id);
+  if (out.error) throw mmError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/mm/sessions/:id/capture/start", "voice", ({ params, principal }) => {
+  try {
+    return mmStartCapture(me(principal), params.id);
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    throw e;
+  }
+});
+route("POST", "/api/mm/turns/:id/capture/stop", "voice", ({ params, principal }) => {
+  try {
+    return mmStopCapture(me(principal), params.id);
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    throw e;
+  }
+});
+// Áudio → STT (whisper.cpp local). MIME/assinatura/rate limit validados no stt.js;
+// a transcrição é entrada CANDIDATA — nunca vira mensagem sem envio explícito.
+route("POST", "/api/mm/sessions/:id/audio", "voice", async ({ params, form, principal }) => {
+  try {
+    return await mmSubmitAudio(me(principal), params.id, form?.get("file"), {
+      language: String(form?.get("language") || "pt").split("-")[0],
+    });
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    if (e?.status && e?.code) throw e;
+    throw new AuthError(503, "stt_unavailable");
+  }
+});
+route("POST", "/api/mm/sessions/:id/text", "chat", ({ params, body, principal }) => {
+  try {
+    return mmSubmitText(me(principal), params.id, body?.message);
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    if (e?.status && e?.code) throw e;
+    throw e;
+  }
+});
+route("POST", "/api/mm/turns/:id/transcript", "voice", ({ params, body, principal }) => {
+  try {
+    return mmAttachTranscript(me(principal), params.id, body?.text, { corrected: true });
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    if (e?.status && e?.code) throw e;
+    throw e;
+  }
+});
+// Envio CONFIRMADO: exatamente o caminho do /api/chat (reflex + runAgent confirm + principal) —
+// ferramentas, Policy Engine, D9 e idempotência intactos. A voz não concede privilégios.
+route("POST", "/api/mm/turns/:id/send", "chat", async ({ params, principal }) => {
+  try {
+    return await mmSendTurn(me(principal), params.id, async (args) => {
+      const reflex = await evaluateReflex(me(principal), args.messages.at(-1)?.content || "");
+      const r = await runAgent({ ...args, autonomy: "confirm", principal });
+      return reflex ? { ...r, reflex } : r;
+    });
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    throw e; // ConvError (status+code) é tratado pelo dispatcher
+  }
+});
+// Síntese da resposta: áudio volta na resposta HTTP (nunca persistido); estados recuperáveis
+// (warming_up/busy/unavailable) propagam o código estável do voice.js.
+route("POST", "/api/mm/turns/:id/speak", "voice", async ({ params, principal }) => {
+  try {
+    const a = await mmSpeakTurn(me(principal), params.id, { lang: "pt-BR" });
+    if (!a) return { interrupted: true };
+    return { __raw: a.data, __type: a.type, turn: a.turn };
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    if (e instanceof VoiceError) {
+      const err = new AuthError(e.code === "voice_busy" ? 429 : 503, e.code);
+      if (e.retryAfter) err.retryAfter = e.retryAfter;
+      err.state = e.state;
+      throw err;
+    }
+    throw e;
+  }
+});
+route("POST", "/api/mm/turns/:id/interrupt", "chat", ({ params, principal }) => {
+  try {
+    return mmInterruptTurn(me(principal), params.id);
+  } catch (e) {
+    if (e instanceof MmError) throw mmError(e);
+    throw e;
+  }
+});
+route("GET", "/api/mm/events", "chat", ({ query, principal }) => {
+  const out = mmListEvents(me(principal), String(query.get("sessionId") || ""), {
+    sinceId: numParam(query.get("sinceId")) ?? 0,
+  });
+  if (!out) notFound();
+  return out;
+});
+
+// ---------- Proactive Studio (evolução Fase 7, docs/evolution/phase-7) ----------
+// Gestão de regras/oportunidades/notificações/controles. NENHUMA execução nasce aqui:
+// aceites e inícios automáticos passam por startWorkflowRun (Policy Engine + D9 nativos).
+const prError = (e) => {
+  const code = e?.message || "pr_error";
+  const map = {
+    pr_owner_required: 403,
+    pr_name_required: 400,
+    pr_invalid_trigger_kind: 400,
+    pr_invalid_trigger_source: 400,
+    pr_invalid_trigger_type: 400,
+    pr_invalid_trigger_time: 400,
+    pr_invalid_trigger_weekday: 400,
+    pr_invalid_trigger_interval: 400,
+    pr_invalid_trigger_date: 400,
+    pr_invalid_conditions: 400,
+    pr_invalid_execution: 400,
+    pr_invalid_max_executions: 400,
+    pr_invalid_state: 400,
+    pr_invalid_level: 400,
+    pr_invalid_controls: 400,
+    pr_invalid_source: 400,
+    pr_invalid_kind: 400,
+    pr_invalid_transition: 409,
+    pr_rule_limit: 429,
+    pr_event_storm: 429,
+    not_found: 404,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+
+// Regras
+route("GET", "/api/pr/rules", "proactive:read", ({ query, principal }) =>
+  listRules(me(principal), { state: query.get("state") || null }),
+);
+route("POST", "/api/pr/rules", "proactive:write", ({ body, principal }) => {
+  try {
+    return createRule(me(principal), body || {});
+  } catch (e) {
+    if (e instanceof PrError) throw prError(e);
+    throw e;
+  }
+});
+route("GET", "/api/pr/rules/:id", "proactive:read", ({ params, principal }) => {
+  const r = getRule(me(principal), params.id);
+  if (!r) notFound();
+  return r;
+});
+route("PUT", "/api/pr/rules/:id", "proactive:write", ({ params, body, principal }) => {
+  const out = updateRule(me(principal), params.id, body || {});
+  if (out.error) throw prError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/pr/rules/:id/activate", "proactive:write", ({ params, principal }) => {
+  const out = setRuleState(me(principal), params.id, "active");
+  if (out.error) throw prError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/pr/rules/:id/pause", "proactive:write", ({ params, body, principal }) => {
+  const out = setRuleState(me(principal), params.id, "paused", { reason: body?.reason });
+  if (out.error) throw prError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/pr/rules/:id/resume", "proactive:write", ({ params, principal }) => {
+  const out = setRuleState(me(principal), params.id, "active");
+  if (out.error) throw prError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/pr/rules/:id/disable", "proactive:write", ({ params, principal }) => {
+  const out = setRuleState(me(principal), params.id, "disabled");
+  if (out.error) throw prError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/pr/rules/:id/test", "proactive:write", ({ params, body, principal }) => {
+  const out = testRule(me(principal), params.id, body?.facts || {});
+  if (out.error) notFound();
+  return out;
+});
+route("POST", "/api/pr/rules/:id/run", "proactive:write", async ({ params, principal }) => {
+  try {
+    return await runRuleManually(me(principal), params.id);
+  } catch (e) {
+    if (e instanceof PrError) throw prError(e);
+    throw e;
+  }
+});
+
+// Eventos internos (somente leitura; produção é interna — sink do boot)
+route("GET", "/api/pr/events", "proactive:read", ({ query, principal }) =>
+  listPrEvents(me(principal), { limit: numParam(query.get("limit")) ?? 100 }),
+);
+
+// Oportunidades
+route("GET", "/api/pr/opportunities", "proactive:read", ({ query, principal }) =>
+  listOpportunities(me(principal), {
+    status: query.get("status") || null,
+    limit: numParam(query.get("limit")) ?? 100,
+  }),
+);
+route("GET", "/api/pr/opportunities/:id", "proactive:read", ({ params, principal }) => {
+  const o = getOpportunity(me(principal), params.id);
+  if (!o) notFound();
+  return o;
+});
+route("GET", "/api/pr/opportunities/:id/trail", "proactive:read", ({ params, principal }) => {
+  const t = getExecutionTrail(me(principal), params.id);
+  if (!t) notFound();
+  return t;
+});
+route(
+  "POST",
+  "/api/pr/opportunities/:id/accept",
+  "proactive:write",
+  async ({ params, principal }) => {
+    try {
+      const out = await acceptOpportunity(me(principal), params.id);
+      if (out.error === "not_found") notFound();
+      if (out.error) throw prError(new Error(out.error));
+      return out;
+    } catch (e) {
+      if (e instanceof PrError) throw prError(e);
+      throw e;
+    }
+  },
+);
+route(
+  "POST",
+  "/api/pr/opportunities/:id/dismiss",
+  "proactive:write",
+  ({ params, body, principal }) => {
+    const out = dismissOpportunity(me(principal), params.id, { reason: body?.reason });
+    if (out.error === "not_found") notFound();
+    if (out.error) throw prError(new Error(out.error));
+    return out;
+  },
+);
+route(
+  "POST",
+  "/api/pr/opportunities/:id/snooze",
+  "proactive:write",
+  ({ params, body, principal }) => {
+    const out = snoozeOpportunity(me(principal), params.id, { untilMs: body?.untilMs });
+    if (out.error === "not_found") notFound();
+    if (out.error) throw prError(new Error(out.error));
+    return out;
+  },
+);
+
+// Notificações internas (sem canal externo — mandato §13)
+route("GET", "/api/pr/notifications", "proactive:read", ({ query, principal }) =>
+  listNotifications(me(principal), {
+    unreadOnly: query.get("unread") === "1",
+    limit: numParam(query.get("limit")) ?? 100,
+  }),
+);
+route("POST", "/api/pr/notifications/:id/read", "proactive:write", ({ params, principal }) => {
+  const out = markNotificationRead(me(principal), params.id);
+  if (out.error) notFound();
+  return out;
+});
+route("POST", "/api/pr/notifications/:id/dismiss", "proactive:write", ({ params, principal }) => {
+  const out = dismissNotification(me(principal), params.id);
+  if (out.error) notFound();
+  return out;
+});
+
+// Controles (nível de autonomia, pausa global, limites) — propriedade e validação no backend
+route("GET", "/api/pr/controls", "proactive:read", ({ principal }) => getControls(me(principal)));
+route("PUT", "/api/pr/controls", "proactive:write", ({ body, principal }) => {
+  try {
+    const valid = validateControls(body || {});
+    if (Object.keys(valid).length) {
+      const cur = getSettings(me(principal)) || {};
+      updateSettings(
+        { proactive: { ...(cur.proactive || {}), ...valid } },
+        { adminId: me(principal), allowGlobal: false },
+      );
+    }
+    return getControls(me(principal));
+  } catch (e) {
+    if (e instanceof PrError) throw prError(e);
+    throw e;
+  }
+});
+
+// Métricas reais (contagens; correlação por trail)
+route("GET", "/api/pr/metrics", "proactive:read", ({ principal }) => getMetrics(me(principal)));
+
+// ---------- Integration Studio (evolução Fase 8, docs/evolution/phase-8) ----------
+// Gestão de integrações/produtores/calendários. NENHUM segredo volta pela API depois de
+// criado; webhook ingress é PUBLICO e autenticado por HMAC (credencial do produtor) —
+// nunca pelo corpo do payload. Execução permanece no Proactive/Workflow Engine.
+const ifError = (e) => {
+  const code = e?.message || "if_error";
+  const map = {
+    if_owner_required: 403,
+    if_invalid_kind: 400,
+    if_invalid_config: 400,
+    if_name_required: 400,
+    if_account_required: 400,
+    if_not_webhook: 400,
+    if_not_calendar: 400,
+    if_unknown_adapter: 400,
+    if_invalid_status: 400,
+    if_integration_limit: 429,
+    if_producer_limit: 429,
+    not_found: 404,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+
+route("GET", "/api/if/catalog", "integrations:read", () =>
+  Object.entries(ADAPTERS).map(([kind, a]) => ({ kind, ...a, providers: listCalendarProviders() })),
+);
+route("GET", "/api/if/integrations", "integrations:read", ({ principal }) =>
+  listIntegrations(me(principal)),
+);
+route("POST", "/api/if/integrations", "integrations:write", ({ body, principal }) => {
+  try {
+    return createIntegration(me(principal), body || {});
+  } catch (e) {
+    if (e instanceof IfError) throw ifError(e);
+    throw e;
+  }
+});
+route("GET", "/api/if/integrations/:id", "integrations:read", ({ params, principal }) => {
+  const it = getIntegration(me(principal), params.id);
+  if (!it) notFound();
+  return it;
+});
+route(
+  "POST",
+  "/api/if/integrations/:id/activate",
+  "integrations:write",
+  ({ params, principal }) => {
+    const out = setIntegrationState(me(principal), params.id, "active");
+    if (out.error) notFound();
+    return out;
+  },
+);
+route("POST", "/api/if/integrations/:id/disable", "integrations:write", ({ params, principal }) => {
+  const out = deactivateIntegration(me(principal), params.id);
+  if (out.error) notFound();
+  return out;
+});
+route("POST", "/api/if/integrations/:id/test", "integrations:write", ({ params, principal }) => {
+  const out = checkIntegration(me(principal), params.id);
+  if (out.error) notFound();
+  return out;
+});
+// Produtor: o segredo volta UMA vez na criação; depois NUNCA (§13).
+route(
+  "POST",
+  "/api/if/integrations/:id/producers",
+  "integrations:write",
+  ({ params, body, principal }) => {
+    try {
+      const out = createProducer(me(principal), params.id, body || {});
+      if (out.error === "not_found") notFound();
+      return out;
+    } catch (e) {
+      if (e instanceof IfError) throw ifError(e);
+      throw e;
+    }
+  },
+);
+route("GET", "/api/if/integrations/:id/producers", "integrations:read", ({ params, principal }) => {
+  const it = getIntegration(me(principal), params.id);
+  if (!it) notFound();
+  return it.producers;
+});
+
+// Webhook ingress: PUBLIC por desenho — autenticado por HMAC do produtor (§7.1);
+// nenhum cookie/principal; rejeições auditadas sem payload.
+route(
+  "POST",
+  "/api/if/webhooks/:producerId",
+  "public",
+  ({ params, rawBody, req }) => {
+    const out = ingestWebhook(params.producerId, { headers: req.headers, rawBody });
+    if (out.error) throw new AuthError(out.status, out.error);
+    return { __status: out.status, ...out };
+  },
+  { raw: true },
+);
+
+// Event Inspector (§14) — sem payload sensível: payload é dado não confiável e fica
+// sob demanda apenas para o dono.
+route("GET", "/api/if/events", "integrations:read", ({ query, principal }) =>
+  listIfEvents(me(principal), { limit: numParam(query.get("limit")) ?? 100 }),
+);
+
+// Calendários
+route("GET", "/api/if/calendar/accounts", "integrations:read", ({ principal }) =>
+  listCalendarAccounts(me(principal)),
+);
+route("POST", "/api/if/calendar/accounts", "integrations:write", ({ body, principal }) => {
+  try {
+    return connectCalendarAccount(me(principal), body?.integrationId, body || {});
+  } catch (e) {
+    if (e instanceof IfError || (e?.code && String(e.code).startsWith("if_"))) throw ifError(e);
+    if (e?.message && /^[a-z_]+$/.test(e.message)) throw new AuthError(400, e.message);
+    throw e;
+  }
+});
+route("GET", "/api/if/calendar/accounts/:id", "integrations:read", ({ params, principal }) => {
+  const a = getCalendarAccount(me(principal), params.id);
+  if (!a) notFound();
+  return a;
+});
+route(
+  "POST",
+  "/api/if/calendar/accounts/:id/sync",
+  "integrations:write",
+  async ({ params, principal }) => {
+    const out = await syncCalendarAccount(me(principal), params.id);
+    if (out.error === "not_found") notFound();
+    if (out.error) throw new AuthError(503, out.error);
+    return out;
+  },
+);
+route(
+  "GET",
+  "/api/if/calendar/accounts/:id/events",
+  "integrations:read",
+  ({ params, query, principal }) => {
+    const evs = listCalendarEvents(me(principal), params.id, {
+      limit: numParam(query.get("limit")) ?? 100,
+    });
+    if (evs === null) notFound();
+    return evs;
+  },
+);
+route(
+  "GET",
+  "/api/if/calendar/accounts/:id/conflicts",
+  "integrations:read",
+  ({ params, principal }) => {
+    const c = listConflicts(me(principal), params.id);
+    if (c === null) notFound();
+    return c;
+  },
+);
+
+// ---------- Deep Research (evolução Fase 4, docs/evolution/phase-4) ----------
+const researchError = (e) => {
+  const code = e?.message || "research_error";
+  const map = {
+    research_owner_required: 403,
+    research_question_required: 400,
+    research_already_planned: 409,
+    research_already_running: 409,
+    research_plan_required: 409,
+    research_plan_invalid: 502,
+    research_plan_empty: 502,
+    not_found: 404,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+route("GET", "/api/research", "research:read", ({ query, principal }) =>
+  listResearch(me(principal), { limit: query?.limit, offset: query?.offset }),
+);
+route("POST", "/api/research", "research:write", ({ body, principal }) => {
+  try {
+    return createResearch(me(principal), body || {});
+  } catch (e) {
+    throw researchError(e);
+  }
+});
+route("GET", "/api/research/:id", "research:read", ({ params, principal }) => {
+  const r = getResearch(me(principal), params.id);
+  if (!r) notFound();
+  return r;
+});
+route("POST", "/api/research/:id/plan", "research:write", async ({ params, principal }) => {
+  const out = await generateResearchPlan(me(principal), params.id);
+  if (out.error === "not_found") notFound();
+  if (out.error) throw researchError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/research/:id/execute", "research:write", async ({ params, principal }) => {
+  const out = await executeResearchProject(me(principal), params.id);
+  if (out.error === "not_found") notFound();
+  if (out.error) throw researchError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/research/:id/deepen", "research:write", async ({ params, body, principal }) => {
+  const out = await deepenResearch(me(principal), params.id, body?.question);
+  if (out.error === "not_found") notFound();
+  if (out.error) throw researchError(new Error(out.error));
+  return out;
+});
+route("GET", "/api/research/:id/report", "research:read", ({ params, principal }) => {
+  const proj = getResearch(me(principal), params.id);
+  if (!proj) notFound();
+  const reports = db
+    .prepare("SELECT * FROM research_reports WHERE project_id = ? ORDER BY version DESC")
+    .all(params.id);
+  if (!reports.length) notFound();
+  return { ...reports[0], citations: JSON.parse(reports[0].citations_json) };
+});
+
+// ---------- Learning Studio (evolução Fase 4) ----------
+const learnError = (e) => {
+  const code = e?.message || "learn_error";
+  const map = {
+    learn_owner_required: 403,
+    learn_goal_required: 400,
+    learn_question_required: 400,
+    learn_answer_required: 400,
+    learn_already_generated: 409,
+    learn_generation_invalid: 502,
+    learn_generation_empty: 502,
+    learn_journal_kind_invalid: 400,
+    learn_content_required: 400,
+    not_found: 404,
+  };
+  return new AuthError(map[code] || 400, code);
+};
+route("GET", "/api/learn", "learn:read", ({ principal }) => listLearningProjects(me(principal)));
+route("POST", "/api/learn", "learn:write", ({ body, principal }) => {
+  try {
+    return createLearningProject(me(principal), body || {});
+  } catch (e) {
+    throw learnError(e);
+  }
+});
+route("GET", "/api/learn/:id", "learn:read", ({ params, principal }) => {
+  const p = getLearningProject(me(principal), params.id);
+  if (!p) notFound();
+  return p;
+});
+route("DELETE", "/api/learn/:id", "learn:write", ({ params, principal }) => {
+  if (!deleteLearningProject(me(principal), params.id)) notFound();
+  return { ok: true };
+});
+route("POST", "/api/learn/:id/path", "learn:write", async ({ params, principal }) => {
+  const out = await generateLearningPath(me(principal), params.id);
+  if (out.error === "not_found") notFound();
+  if (out.error) throw learnError(new Error(out.error));
+  return out;
+});
+route("POST", "/api/learn/:id/tutor", "learn:read", async ({ params, body, principal }) => {
+  try {
+    return await tutorAsk(me(principal), params.id, {
+      question: body?.question,
+      lessonId: body?.lesson_id || null,
+    });
+  } catch (e) {
+    throw learnError(e);
+  }
+});
+route("POST", "/api/learn/:id/journal", "learn:write", ({ params, body, principal }) => {
+  try {
+    return addJournalEntry(me(principal), params.id, body || {});
+  } catch (e) {
+    throw learnError(e);
+  }
+});
+route("GET", "/api/learn/:id/journal", "learn:read", ({ params, principal }) => {
+  const j = listJournal(me(principal), params.id);
+  if (j === null) notFound();
+  return j;
+});
+route("GET", "/api/learn/:id/progress", "learn:read", ({ params, principal }) => {
+  const p = learningProgress(me(principal), params.id);
+  if (p === null) notFound();
+  return p;
+});
+route(
+  "POST",
+  "/api/learn/lessons/:id/activities",
+  "learn:write",
+  async ({ params, body, principal }) => {
+    const out = await generateLearningActivities(me(principal), params.id, { count: body?.count });
+    if (out.error === "not_found") notFound();
+    if (out.error) throw learnError(new Error(out.error));
+    return out;
+  },
+);
+route("GET", "/api/learn/lessons/:id/activities", "learn:read", ({ params, principal }) => {
+  const acts = listLearningActivities(me(principal), params.id);
+  if (acts === null) notFound();
+  return acts;
+});
+route(
+  "POST",
+  "/api/learn/activities/:id/attempt",
+  "learn:write",
+  async ({ params, body, principal }) => {
+    try {
+      const out = await submitLearningAttempt(me(principal), params.id, { answer: body?.answer });
+      if (out.error === "not_found") notFound();
+      if (out.error) throw learnError(new Error(out.error));
+      return out;
+    } catch (e) {
+      throw learnError(e);
+    }
+  },
+);
 // Cancelamento cooperativo de uma execução em andamento (checado entre passos do loop).
 route("POST", "/api/runs/:id/cancel", "bots:run", ({ params, principal }) => {
   if (!owns(me(principal), "run", params.id)) notFound();
@@ -1341,6 +2642,15 @@ export function createApp(opts = {}) {
         return res.end();
       }
       if (out?.__raw) return send(res, 200, out.__raw, origin, out.__type, extra);
+      if (out?.__status)
+        return send(
+          res,
+          out.__status,
+          { ...out, __status: undefined },
+          origin,
+          "application/json",
+          extra,
+        );
       return send(res, 200, out ?? { ok: true }, origin, "application/json", extra);
     } catch (e) {
       if (
@@ -1395,6 +2705,26 @@ if (isMain && !process.env.JARVIS_NO_LISTEN) {
   });
   setInterval(() => auth.purgeAttempts(), 3600_000).unref();
   startScheduler();
+  recoverWorkforceRuns();
+  recoverKhJobs();
+  recoverWfRuns();
+  // Tick do Workflow Studio: retoma runs de aprovações resolvidas e waits expirados;
+  // tick da Computer Intelligence: ações verification_pending após resolução D9.
+  setInterval(() => tickWfRuns().catch(() => {}), 20_000).unref();
+  setInterval(() => tickCiSessions().catch(() => {}), 20_000).unref();
+  registerCiWorkflowNodes(); // nós computer_* no Workflow Engine (Fase 5)
+  // Fase 6: turnos multimodais órfãos de reinício falham explicitamente; sessões ociosas
+  // além do teto são fechadas e turnos travados falham com código estável (mm_turn_timeout).
+  recoverMmTurns();
+  setInterval(() => tickMmSessions().catch(() => {}), 60_000).unref();
+  // Fase 7: inteligência proativa — sink de eventos do Workflow Engine, recuperação de
+  // oportunidades em execução e tick durável (temporais/expirações/snoozes/reconciliação).
+  registerWorkflowEventSink();
+  recoverProactive();
+  setInterval(() => tickProactive().catch(() => {}), 30_000).unref();
+  // Fase 8: encaminhamento assíncrono de eventos externos aceitos (ingress responde 202
+  // após aceitação durável; o Proactive Engine processa no tick — nunca na fila HTTP).
+  setInterval(() => forwardIntegrationEvents(null).catch(() => {}), 15_000).unref();
   // P2: inbound messages run as the admin whose own settings hold the channel credentials.
   const activeAdmins = () =>
     db

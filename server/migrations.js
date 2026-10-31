@@ -760,6 +760,1608 @@ BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
       }
     },
   },
+  {
+    // Fase 1 da evolução (docs/evolution/phase-1): Workforce de agentes. Tabelas novas — a
+    // legada `agents` (store JSON, PRESERVED) permanece intocada. O ownership é recriado para
+    // estender o CHECK com os tipos novos; linhas existentes são preservadas integralmente.
+    version: 20,
+    name: "workforce: persistent agent definitions and runs with hierarchical budgets",
+    sql: `
+CREATE TABLE IF NOT EXISTS agent_definitions (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'specialist' CHECK (role IN ('orchestrator','specialist','worker')),
+  description TEXT NOT NULL DEFAULT '',
+  version INTEGER NOT NULL DEFAULT 1,
+  instructions TEXT NOT NULL DEFAULT '',
+  instruction_ref TEXT,
+  instruction_checksum TEXT,
+  model_preferences TEXT NOT NULL DEFAULT '{}',
+  permitted_tools TEXT NOT NULL DEFAULT '[]',
+  permission_scopes TEXT NOT NULL DEFAULT '[]',
+  resource_budget TEXT NOT NULL DEFAULT '{}',
+  execution_limits TEXT NOT NULL DEFAULT '{}',
+  enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_agent_definitions_owner ON agent_definitions(owner_admin_id);
+
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id TEXT PRIMARY KEY,
+  definition_id TEXT NOT NULL REFERENCES agent_definitions(id) ON DELETE CASCADE,
+  definition_version INTEGER NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  parent_run_id TEXT REFERENCES agent_runs(id) ON DELETE SET NULL,
+  correlation_id TEXT NOT NULL,
+  idempotency_key TEXT,
+  objective TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','awaiting_approval','completed','failed','cancelled','unknown')),
+  depth INTEGER NOT NULL DEFAULT 0 CHECK (depth >= 0),
+  budget_json TEXT NOT NULL DEFAULT '{}',
+  usage_json TEXT NOT NULL DEFAULT '{}',
+  result_json TEXT,
+  error_code TEXT,
+  checkpoint_json TEXT,
+  evidence_ids TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_runs_idem ON agent_runs(owner_admin_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_agent_runs_owner ON agent_runs(owner_admin_id, status);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_parent ON agent_runs(parent_run_id);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_corr ON agent_runs(correlation_id);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v19;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v19;
+DROP TABLE ownership_v19;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "agent_definitions",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "name",
+          "role",
+          "description",
+          "version",
+          "instructions",
+          "instruction_ref",
+          "instruction_checksum",
+          "model_preferences",
+          "permitted_tools",
+          "permission_scopes",
+          "resource_budget",
+          "execution_limits",
+          "enabled",
+          "metadata",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "agent_runs",
+        type: "table",
+        columns: [
+          "id",
+          "definition_id",
+          "definition_version",
+          "owner_admin_id",
+          "parent_run_id",
+          "correlation_id",
+          "idempotency_key",
+          "objective",
+          "status",
+          "depth",
+          "budget_json",
+          "usage_json",
+          "result_json",
+          "error_code",
+          "checkpoint_json",
+          "evidence_ids",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
+  {
+    // Fase 2 da evolução (docs/evolution/phase-2): Personal Knowledge Hub. Organização
+    // (bibliotecas/notebooks/fontes) SOBRE o pipeline de documentos existente — as fontes
+    // referenciam `documents` (chunks/embeddings/busca reutilizados). FTS5 nativo indexa os
+    // fragmentos (kh_fts, rowid controlado por kh_chunk_index para remoção determinística).
+    // Jobs de ingestão duráveis (kh_jobs) seguem o padrão de durable_jobs. O ownership é
+    // recriado para estender o CHECK com os tipos kh_*; linhas existentes são preservadas.
+    version: 21,
+    name: "knowledge hub: libraries, notebooks, sources, relationships, transforms and durable ingestion jobs",
+    sql: `
+CREATE TABLE IF NOT EXISTS kh_libraries (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'personal' CHECK (kind IN ('personal','project')),
+  project_ref TEXT,
+  description TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS kh_notebooks (
+  id TEXT PRIMARY KEY,
+  library_id TEXT NOT NULL REFERENCES kh_libraries(id) ON DELETE CASCADE,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  tags TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (library_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_kh_notebooks_library ON kh_notebooks(library_id);
+
+CREATE TABLE IF NOT EXISTS kh_sources (
+  id TEXT PRIMARY KEY,
+  notebook_id TEXT NOT NULL REFERENCES kh_notebooks(id) ON DELETE CASCADE,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  document_id TEXT,
+  type TEXT NOT NULL DEFAULT 'file' CHECK (type IN ('file','url','text')),
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  origin TEXT NOT NULL DEFAULT '',
+  content_hash TEXT,
+  size INTEGER NOT NULL DEFAULT 0,
+  mime TEXT NOT NULL DEFAULT '',
+  version INTEGER NOT NULL DEFAULT 1,
+  ingest_status TEXT NOT NULL DEFAULT 'pending' CHECK (ingest_status IN ('pending','processing','indexed','partial','failed','deleted')),
+  index_status TEXT NOT NULL DEFAULT 'pending' CHECK (index_status IN ('pending','indexed','partial','lexical_only')),
+  error_code TEXT,
+  provenance TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kh_sources_notebook ON kh_sources(notebook_id);
+CREATE INDEX IF NOT EXISTS idx_kh_sources_doc ON kh_sources(document_id);
+CREATE INDEX IF NOT EXISTS idx_kh_sources_hash ON kh_sources(notebook_id, content_hash) WHERE content_hash IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS kh_source_content (
+  source_id TEXT PRIMARY KEY REFERENCES kh_sources(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  mime TEXT NOT NULL DEFAULT 'text/plain'
+);
+
+CREATE TABLE IF NOT EXISTS kh_source_versions (
+  id TEXT PRIMARY KEY,
+  source_id TEXT NOT NULL REFERENCES kh_sources(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  document_id TEXT NOT NULL,
+  content_hash TEXT NOT NULL,
+  size INTEGER NOT NULL DEFAULT 0,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  UNIQUE (source_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS kh_chunk_index (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id TEXT NOT NULL REFERENCES kh_sources(id) ON DELETE CASCADE,
+  document_id TEXT NOT NULL,
+  chunk_id TEXT NOT NULL UNIQUE
+);
+CREATE INDEX IF NOT EXISTS idx_kh_chunk_index_doc ON kh_chunk_index(document_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS kh_fts USING fts5(text, title);
+
+CREATE TABLE IF NOT EXISTS kh_relationships (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  from_type TEXT NOT NULL CHECK (from_type IN ('source','notebook','library','memory','entity','chunk')),
+  from_id TEXT NOT NULL,
+  relation TEXT NOT NULL,
+  to_type TEXT NOT NULL CHECK (to_type IN ('source','notebook','library','memory','entity','chunk')),
+  to_id TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'explicit' CHECK (kind IN ('explicit','inferred')),
+  confidence REAL,
+  provenance TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kh_rel_from ON kh_relationships(from_type, from_id);
+CREATE INDEX IF NOT EXISTS idx_kh_rel_to ON kh_relationships(to_type, to_id);
+
+CREATE TABLE IF NOT EXISTS kh_transformations (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  op TEXT NOT NULL CHECK (op IN ('summary','topics','concepts','compare','synthesize')),
+  source_ids TEXT NOT NULL DEFAULT '[]',
+  params TEXT NOT NULL DEFAULT '{}',
+  result TEXT NOT NULL DEFAULT '',
+  citations TEXT NOT NULL DEFAULT '[]',
+  executor TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kh_transformations_owner ON kh_transformations(owner_admin_id, created_at);
+
+CREATE TABLE IF NOT EXISTS kh_jobs (
+  id TEXT PRIMARY KEY,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  source_id TEXT NOT NULL REFERENCES kh_sources(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','succeeded','failed')),
+  attempts INTEGER NOT NULL DEFAULT 0,
+  lease_until TEXT,
+  checkpoint_json TEXT NOT NULL DEFAULT '{}',
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kh_jobs_claim ON kh_jobs(status, created_at);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v20;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run','kh_library','kh_notebook','kh_source')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v20;
+DROP TABLE ownership_v20;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "kh_libraries",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "name",
+          "kind",
+          "project_ref",
+          "description",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "kh_notebooks",
+        type: "table",
+        columns: [
+          "id",
+          "library_id",
+          "owner_admin_id",
+          "name",
+          "description",
+          "tags",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "kh_sources",
+        type: "table",
+        columns: [
+          "id",
+          "notebook_id",
+          "owner_admin_id",
+          "document_id",
+          "type",
+          "title",
+          "description",
+          "origin",
+          "content_hash",
+          "size",
+          "mime",
+          "version",
+          "ingest_status",
+          "index_status",
+          "error_code",
+          "provenance",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "kh_jobs",
+        type: "table",
+        columns: [
+          "id",
+          "idempotency_key",
+          "source_id",
+          "status",
+          "attempts",
+          "lease_until",
+          "checkpoint_json",
+          "last_error",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
+  {
+    // Fase 3 da evolução (docs/evolution/phase-3): Workflow & Behavior Studio. Definições
+    // versionadas/imutáveis, execuções persistentes por nó, eventos, aprovações D9 e
+    // políticas comportamentais. SEM terceira fila: o motor executa in-process com estado
+    // persistido e recuperação no boot (ADR-WF-001). Ownership recriado com os tipos wf_*.
+    version: 22,
+    name: "workflow studio: versioned definitions, durable runs, node executions, events and behavior policies",
+    sql: `
+CREATE TABLE IF NOT EXISTS wf_definitions (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published')),
+  current_version INTEGER NOT NULL DEFAULT 0,
+  allowed_tools TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS wf_definition_versions (
+  id TEXT PRIMARY KEY,
+  definition_id TEXT NOT NULL REFERENCES wf_definitions(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  graph TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (definition_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS wf_runs (
+  id TEXT PRIMARY KEY,
+  definition_id TEXT NOT NULL REFERENCES wf_definitions(id) ON DELETE CASCADE,
+  definition_version INTEGER NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  objective TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','waiting_approval','waiting_dependency','completed','failed','cancelled','unknown')),
+  budget_json TEXT NOT NULL DEFAULT '{}',
+  usage_json TEXT NOT NULL DEFAULT '{}',
+  error_code TEXT,
+  idempotency_key TEXT,
+  created_at TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wf_runs_idem ON wf_runs(owner_admin_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_wf_runs_owner ON wf_runs(owner_admin_id, status);
+
+CREATE TABLE IF NOT EXISTS wf_node_executions (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES wf_runs(id) ON DELETE CASCADE,
+  node_id TEXT NOT NULL,
+  node_type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','running','waiting_approval','waiting_dependency','completed','failed','cancelled','skipped','unknown')),
+  attempt INTEGER NOT NULL DEFAULT 0,
+  input_json TEXT,
+  output_json TEXT,
+  error_code TEXT,
+  approval_id TEXT,
+  agent_run_id TEXT,
+  wake_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (run_id, node_id)
+);
+CREATE INDEX IF NOT EXISTS idx_wf_nodes_run ON wf_node_executions(run_id, status);
+
+CREATE TABLE IF NOT EXISTS wf_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id TEXT NOT NULL REFERENCES wf_runs(id) ON DELETE CASCADE,
+  at TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  node_id TEXT,
+  detail TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_wf_events_run ON wf_events(run_id, id);
+
+CREATE TABLE IF NOT EXISTS wf_policies (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  version INTEGER NOT NULL DEFAULT 1,
+  priority INTEGER NOT NULL DEFAULT 0,
+  scope TEXT NOT NULL CHECK (scope IN ('tool','workflow','agent')),
+  target TEXT NOT NULL DEFAULT '*',
+  conditions TEXT NOT NULL DEFAULT '[]',
+  effect TEXT NOT NULL CHECK (effect IN ('allow','deny','require_approval')),
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS wf_policy_revisions (
+  id TEXT PRIMARY KEY,
+  policy_id TEXT NOT NULL REFERENCES wf_policies(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  snapshot TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (policy_id, version)
+);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v21;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run','kh_library','kh_notebook','kh_source','wf_definition','wf_run','wf_policy')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v21;
+DROP TABLE ownership_v21;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "wf_definitions",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "name",
+          "description",
+          "status",
+          "current_version",
+          "allowed_tools",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "wf_definition_versions",
+        type: "table",
+        columns: ["id", "definition_id", "version", "graph", "created_at"],
+        primaryKey: ["id"],
+      },
+      {
+        table: "wf_runs",
+        type: "table",
+        columns: [
+          "id",
+          "definition_id",
+          "definition_version",
+          "owner_admin_id",
+          "objective",
+          "status",
+          "budget_json",
+          "usage_json",
+          "error_code",
+          "idempotency_key",
+          "created_at",
+          "started_at",
+          "finished_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "wf_node_executions",
+        type: "table",
+        columns: [
+          "id",
+          "run_id",
+          "node_id",
+          "node_type",
+          "status",
+          "attempt",
+          "input_json",
+          "output_json",
+          "error_code",
+          "approval_id",
+          "agent_run_id",
+          "wake_at",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "wf_policies",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "name",
+          "description",
+          "version",
+          "priority",
+          "scope",
+          "target",
+          "conditions",
+          "effect",
+          "enabled",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
+  {
+    // Fase 4 da evolução (docs/evolution/phase-4): Deep Research & Learning. Pesquisas com
+    // fontes (web/hub) e evidências com citação verbatim; relatórios versionados; jornadas de
+    // aprendizagem com módulos/lições/atividades/tentativas/diário. Reusa Hub (fontes internas),
+    // Workforce (análise) e Workflow Engine (execução durável — registry de nós de pesquisa).
+    // Ownership recriado com research_project/learn_project.
+    version: 23,
+    name: "deep research and learning: research projects, sources, evidence, claims, conflicts, reports; learning projects, modules, lessons, activities, attempts, journal",
+    sql: `
+CREATE TABLE IF NOT EXISTS research_projects (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  question TEXT NOT NULL,
+  scope_text TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','planning','running','waiting','completed','partial','inconclusive','failed','unknown')),
+  plan_json TEXT,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  workflow_run_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_owner ON research_projects(owner_admin_id, status);
+
+CREATE TABLE IF NOT EXISTS research_sources (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES research_projects(id) ON DELETE CASCADE,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  origin TEXT NOT NULL CHECK (origin IN ('web','hub','memory')),
+  url TEXT NOT NULL DEFAULT '',
+  canonical_url TEXT,
+  title TEXT NOT NULL,
+  domain TEXT NOT NULL DEFAULT '',
+  content_hash TEXT,
+  snippet TEXT NOT NULL DEFAULT '',
+  content TEXT,
+  quality TEXT NOT NULL DEFAULT 'snippet_only' CHECK (quality IN ('full','partial','snippet_only','failed')),
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  fetched_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_sources_project ON research_sources(project_id);
+CREATE INDEX IF NOT EXISTS idx_research_sources_hash ON research_sources(project_id, content_hash) WHERE content_hash IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS research_evidence (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES research_projects(id) ON DELETE CASCADE,
+  source_id TEXT REFERENCES research_sources(id) ON DELETE CASCADE,
+  quote TEXT NOT NULL,
+  location TEXT NOT NULL DEFAULT '',
+  type TEXT NOT NULL DEFAULT 'direct' CHECK (type IN ('direct','indirect','inference','hypothesis','gap')),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_evidence_project ON research_evidence(project_id);
+CREATE INDEX IF NOT EXISTS idx_research_evidence_source ON research_evidence(source_id);
+
+CREATE TABLE IF NOT EXISTS research_claims (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES research_projects(id) ON DELETE CASCADE,
+  statement TEXT NOT NULL,
+  evidence_ids TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'inferred' CHECK (status IN ('supported','unsupported','contested','inferred')),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_research_claims_project ON research_claims(project_id);
+
+CREATE TABLE IF NOT EXISTS research_conflicts (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES research_projects(id) ON DELETE CASCADE,
+  claim_a_id TEXT REFERENCES research_claims(id) ON DELETE CASCADE,
+  claim_b_id TEXT REFERENCES research_claims(id) ON DELETE CASCADE,
+  description TEXT NOT NULL,
+  resolution TEXT NOT NULL DEFAULT 'unresolved' CHECK (resolution IN ('unresolved','resolved_a','resolved_b','insufficient')),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS research_reports (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES research_projects(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  citations_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  UNIQUE (project_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS learn_projects (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  goal TEXT NOT NULL,
+  level TEXT NOT NULL DEFAULT '',
+  sources_json TEXT NOT NULL DEFAULT '[]',
+  plan_json TEXT,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','ready','archived')),
+  research_project_id TEXT REFERENCES research_projects(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learn_owner ON learn_projects(owner_admin_id);
+
+CREATE TABLE IF NOT EXISTS learn_modules (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES learn_projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  order_index INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learn_modules_project ON learn_modules(project_id);
+
+CREATE TABLE IF NOT EXISTS learn_lessons (
+  id TEXT PRIMARY KEY,
+  module_id TEXT NOT NULL REFERENCES learn_modules(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  references_json TEXT NOT NULL DEFAULT '[]',
+  order_index INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learn_lessons_module ON learn_lessons(module_id);
+
+CREATE TABLE IF NOT EXISTS learn_activities (
+  id TEXT PRIMARY KEY,
+  lesson_id TEXT NOT NULL REFERENCES learn_lessons(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('comprehension','multiple_choice','open_ended','application','comparison','review')),
+  question TEXT NOT NULL,
+  options_json TEXT NOT NULL DEFAULT '[]',
+  expected_answer TEXT NOT NULL DEFAULT '',
+  concept TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learn_activities_lesson ON learn_activities(lesson_id);
+
+CREATE TABLE IF NOT EXISTS learn_attempts (
+  id TEXT PRIMARY KEY,
+  activity_id TEXT NOT NULL REFERENCES learn_activities(id) ON DELETE CASCADE,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  answer TEXT NOT NULL,
+  feedback TEXT NOT NULL DEFAULT '',
+  correct INTEGER,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learn_attempts_activity ON learn_attempts(activity_id);
+CREATE INDEX IF NOT EXISTS idx_learn_attempts_owner ON learn_attempts(owner_admin_id, created_at);
+
+CREATE TABLE IF NOT EXISTS learn_journal (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES learn_projects(id) ON DELETE CASCADE,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  kind TEXT NOT NULL CHECK (kind IN ('note','doubt','discovery','difficulty','review')),
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_learn_journal_project ON learn_journal(project_id);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v22;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run','kh_library','kh_notebook','kh_source','wf_definition','wf_run','wf_policy','research_project','learn_project')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v22;
+DROP TABLE ownership_v22;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "research_projects",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "question",
+          "scope_text",
+          "status",
+          "plan_json",
+          "config_json",
+          "workflow_run_id",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "research_sources",
+        type: "table",
+        columns: [
+          "id",
+          "project_id",
+          "owner_admin_id",
+          "origin",
+          "url",
+          "canonical_url",
+          "title",
+          "domain",
+          "content_hash",
+          "snippet",
+          "content",
+          "quality",
+          "metadata_json",
+          "fetched_at",
+          "created_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "research_evidence",
+        type: "table",
+        columns: ["id", "project_id", "source_id", "quote", "location", "type", "created_at"],
+        primaryKey: ["id"],
+      },
+      {
+        table: "learn_projects",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "goal",
+          "level",
+          "sources_json",
+          "plan_json",
+          "status",
+          "research_project_id",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
+  {
+    // Fase 5 da evolução (docs/evolution/phase-5): Computer Intelligence — SESSÕES de
+    // navegador isoladas (reuso do worker Playwright com D9/política existentes), capturas
+    // controladas com retenção, planos/ações com verificação e recuperação, memória
+    // procedural (testada/validada por execução verificada). SEM controle de desktop nativo
+    // (ADR-EVO-008). Ownership recriado com ci_session/ci_procedure.
+    version: 24,
+    name: "computer intelligence: sessions, observations, plans, actions with verification and procedural memory",
+    sql: `
+CREATE TABLE IF NOT EXISTS ci_sessions (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  environment TEXT NOT NULL DEFAULT 'browser' CHECK (environment IN ('browser','fixture')),
+  objective TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','closed','failed')),
+  config_json TEXT NOT NULL DEFAULT '{}',
+  usage_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  closed_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS ci_observations (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES ci_sessions(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL CHECK (kind IN ('screenshot','extract')),
+  observation_hash TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  dims_json TEXT NOT NULL DEFAULT '{}',
+  artifact_path TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ci_obs_session ON ci_observations(session_id, created_at);
+
+CREATE TABLE IF NOT EXISTS ci_plans (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES ci_sessions(id) ON DELETE CASCADE,
+  objective TEXT NOT NULL,
+  steps_json TEXT NOT NULL DEFAULT '[]',
+  observation_id TEXT,
+  status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned','executing','done','failed','stale')),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS ci_actions (
+  id TEXT PRIMARY KEY,
+  plan_id TEXT NOT NULL REFERENCES ci_plans(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL REFERENCES ci_sessions(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL,
+  action_type TEXT NOT NULL CHECK (action_type IN ('navigate','click','fill','select','scroll','wait_for','screenshot','read','close')),
+  target_json TEXT NOT NULL DEFAULT '{}',
+  expected_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned','running','succeeded','failed','verification_pending','unknown','reconciling','cancelled','blocked')),
+  verification_json TEXT,
+  error_code TEXT,
+  approval_id TEXT,
+  observation_before TEXT,
+  observation_after TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ci_actions_plan ON ci_actions(plan_id, seq);
+
+CREATE TABLE IF NOT EXISTS ci_procedures (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  name TEXT NOT NULL,
+  goal TEXT NOT NULL,
+  environment TEXT NOT NULL DEFAULT 'browser',
+  steps_json TEXT NOT NULL DEFAULT '[]',
+  criteria TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'observed' CHECK (status IN ('observed','inferred','tested','validated','deprecated')),
+  version INTEGER NOT NULL DEFAULT 1,
+  success_count INTEGER NOT NULL DEFAULT 0,
+  fail_count INTEGER NOT NULL DEFAULT 0,
+  last_used_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, name)
+);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v23;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run','kh_library','kh_notebook','kh_source','wf_definition','wf_run','wf_policy','research_project','learn_project','ci_session','ci_procedure')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v23;
+DROP TABLE ownership_v23;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "ci_sessions",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "environment",
+          "objective",
+          "status",
+          "config_json",
+          "usage_json",
+          "created_at",
+          "updated_at",
+          "closed_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ci_procedures",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "name",
+          "goal",
+          "environment",
+          "steps_json",
+          "criteria",
+          "status",
+          "version",
+          "success_count",
+          "fail_count",
+          "last_used_at",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ci_actions",
+        type: "table",
+        columns: [
+          "id",
+          "plan_id",
+          "session_id",
+          "seq",
+          "action_type",
+          "target_json",
+          "expected_json",
+          "status",
+          "verification_json",
+          "error_code",
+          "approval_id",
+          "observation_before",
+          "observation_after",
+          "attempts",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
+  {
+    // Fase 6 da evolução (docs/evolution/phase-6): EXPERIÊNCIA MULTIMODAL — camada de
+    // apresentação/entrada sobre o sistema conversacional EXISTENTE (conversations.js é a
+    // fonte da verdade; NADA de histórico duplicado). Sessões multimodais com turnos
+    // persistentes e eventos tipados; transcrições com correção; referências a artefatos
+    // (NUNCA áudio bruto no banco — metadados bastam, ADR-MM-003); latência observada.
+    version: 25,
+    name: "multimodal experience: sessions, turns, typed events and transcript segments",
+    sql: `
+CREATE TABLE IF NOT EXISTS mm_sessions (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  conversation_id TEXT NOT NULL REFERENCES conversations(id),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','closed','failed')),
+  modalities_json TEXT NOT NULL DEFAULT '[]',
+  state_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  closed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_mm_sessions_owner ON mm_sessions(owner_admin_id, created_at);
+
+CREATE TABLE IF NOT EXISTS mm_turns (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES mm_sessions(id) ON DELETE CASCADE,
+  conversation_id TEXT NOT NULL REFERENCES conversations(id),
+  seq INTEGER NOT NULL,
+  state TEXT NOT NULL DEFAULT 'idle' CHECK (state IN ('idle','listening','transcribing','processing','generating','speaking','interrupted','completed','failed')),
+  input_kind TEXT NOT NULL DEFAULT 'text' CHECK (input_kind IN ('text','audio','upload')),
+  input_text TEXT,
+  transcript_json TEXT,
+  reply_message_id TEXT,
+  output_text TEXT,
+  audio_meta_json TEXT,
+  error_code TEXT,
+  latency_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mm_turns_session ON mm_turns(session_id, seq);
+
+CREATE TABLE IF NOT EXISTS mm_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL REFERENCES mm_sessions(id) ON DELETE CASCADE,
+  turn_id TEXT,
+  kind TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mm_events_session ON mm_events(session_id, id);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v24;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run','kh_library','kh_notebook','kh_source','wf_definition','wf_run','wf_policy','research_project','learn_project','ci_session','ci_procedure','mm_session')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v24;
+DROP TABLE ownership_v24;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "mm_sessions",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "conversation_id",
+          "status",
+          "modalities_json",
+          "state_json",
+          "created_at",
+          "updated_at",
+          "closed_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "mm_turns",
+        type: "table",
+        columns: [
+          "id",
+          "session_id",
+          "conversation_id",
+          "seq",
+          "state",
+          "input_kind",
+          "input_text",
+          "transcript_json",
+          "reply_message_id",
+          "output_text",
+          "audio_meta_json",
+          "error_code",
+          "latency_json",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "mm_events",
+        type: "table",
+        columns: ["id", "session_id", "turn_id", "kind", "payload_json", "created_at"],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
+  {
+    // Fase 7 da evolução (docs/evolution/phase-7): INTELIGÊNCIA PROATIVA — regras com
+    // versionamento, eventos internos com deduplicação, oportunidades rastreáveis
+    // (event→rule→opportunity→run→approval→result) e notificações internas. NENHUMA
+    // autorização paralela: execução só via Workflow Engine (políticas+D9 nativos).
+    version: 26,
+    name: "proactive intelligence: versioned rules, internal events, opportunities and notifications",
+    sql: `
+CREATE TABLE IF NOT EXISTS pr_rules (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  origin TEXT NOT NULL DEFAULT 'user' CHECK (origin IN ('user','derived')),
+  trigger_kind TEXT NOT NULL CHECK (trigger_kind IN ('event','temporal','contextual')),
+  trigger_json TEXT NOT NULL DEFAULT '{}',
+  conditions_json TEXT NOT NULL DEFAULT '[]',
+  workflow_id TEXT,
+  params_json TEXT NOT NULL DEFAULT '{}',
+  execution TEXT NOT NULL DEFAULT 'manual' CHECK (execution IN ('manual','auto')),
+  valid_from TEXT,
+  valid_until TEXT,
+  max_executions INTEGER,
+  execution_count INTEGER NOT NULL DEFAULT 0,
+  cooldown_ms INTEGER NOT NULL DEFAULT 0,
+  state TEXT NOT NULL DEFAULT 'draft' CHECK (state IN ('draft','active','paused','disabled','expired','failed')),
+  version INTEGER NOT NULL DEFAULT 1,
+  last_run_at TEXT,
+  next_run_at TEXT,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS pr_rule_versions (
+  id TEXT PRIMARY KEY,
+  rule_id TEXT NOT NULL REFERENCES pr_rules(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  snapshot_json TEXT NOT NULL,
+  author_admin_id TEXT NOT NULL REFERENCES admins(id),
+  created_at TEXT NOT NULL,
+  UNIQUE (rule_id, version)
+);
+
+CREATE TABLE IF NOT EXISTS pr_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  source TEXT NOT NULL CHECK (source IN ('workflow','research','learning','kh','workforce','mm','computer','manual','system')),
+  kind TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  dedupe_key TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, dedupe_key)
+);
+CREATE INDEX IF NOT EXISTS idx_pr_events_owner ON pr_events(owner_admin_id, created_at);
+
+CREATE TABLE IF NOT EXISTS pr_opportunities (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  rule_id TEXT REFERENCES pr_rules(id),
+  event_id INTEGER,
+  rule_version INTEGER NOT NULL DEFAULT 0,
+  kind TEXT NOT NULL,
+  priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low','normal','high')),
+  justification TEXT NOT NULL DEFAULT '',
+  evidence_json TEXT NOT NULL DEFAULT '[]',
+  dedupe_key TEXT,
+  status TEXT NOT NULL DEFAULT 'detected' CHECK (status IN ('detected','evaluating','recommended','dismissed','snoozed','accepted','executing','completed','failed','expired')),
+  workflow_run_id TEXT,
+  snoozed_until TEXT,
+  decision_json TEXT,
+  expires_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pr_opp_owner ON pr_opportunities(owner_admin_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_opp_dedupe ON pr_opportunities(dedupe_key) WHERE dedupe_key IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS pr_notifications (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  type TEXT NOT NULL CHECK (type IN ('opportunity_identified','approval_needed','routine_started','execution_completed','execution_failed','condition_changed','rule_paused','limit_reached')),
+  priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('low','normal','high')),
+  source TEXT NOT NULL DEFAULT 'proactive',
+  entity_type TEXT,
+  entity_id TEXT,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  read_at TEXT,
+  expires_at TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pr_notif_owner ON pr_notifications(owner_admin_id, created_at);
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v25;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run','kh_library','kh_notebook','kh_source','wf_definition','wf_run','wf_policy','research_project','learn_project','ci_session','ci_procedure','mm_session','pr_rule')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v25;
+DROP TABLE ownership_v25;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "pr_rules",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "name",
+          "description",
+          "origin",
+          "trigger_kind",
+          "trigger_json",
+          "conditions_json",
+          "workflow_id",
+          "params_json",
+          "execution",
+          "valid_from",
+          "valid_until",
+          "max_executions",
+          "execution_count",
+          "cooldown_ms",
+          "state",
+          "version",
+          "last_run_at",
+          "next_run_at",
+          "last_error",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "pr_rule_versions",
+        type: "table",
+        columns: ["id", "rule_id", "version", "snapshot_json", "author_admin_id", "created_at"],
+        primaryKey: ["id"],
+      },
+      {
+        table: "pr_events",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "source",
+          "kind",
+          "payload_json",
+          "dedupe_key",
+          "created_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "pr_opportunities",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "rule_id",
+          "event_id",
+          "rule_version",
+          "kind",
+          "priority",
+          "justification",
+          "evidence_json",
+          "dedupe_key",
+          "status",
+          "workflow_run_id",
+          "snoozed_until",
+          "decision_json",
+          "expires_at",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "pr_notifications",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "type",
+          "priority",
+          "source",
+          "entity_type",
+          "entity_id",
+          "title",
+          "body",
+          "read_at",
+          "expires_at",
+          "created_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
+  {
+    // Fase 8 da evolução (docs/evolution/phase-8): INTEGRATION FABRIC & TEMPORAL
+    // INTELLIGENCE — registro de integrações com credenciais cifradas (secret-crypto
+    // EXISTENTE), produtores de webhook autenticados por HMAC, eventos externos canônicos
+    // (dados NÃO CONFIÁVEIS; nunca instrução), contas de calendário (provider abstrato)
+    // e gatilhos temporais com timezone IANA (regra pr_rules ganha timezone + tipos de
+    // recorrência estendidos). NENHUMA execução/autorização paralela: Proactive Engine +
+    // Workflow Engine + D9 permanecem as únicas portas.
+    version: 27,
+    name: "integration fabric: integrations, webhook producers, external events, calendar accounts and tz-aware temporal triggers",
+    sql: `
+CREATE TABLE IF NOT EXISTS if_integrations (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  kind TEXT NOT NULL CHECK (kind IN ('webhook','calendar','custom')),
+  adapter TEXT NOT NULL,
+  name TEXT NOT NULL,
+  version TEXT NOT NULL DEFAULT '1',
+  capabilities_json TEXT NOT NULL DEFAULT '[]',
+  config_json TEXT NOT NULL DEFAULT '{}',
+  policy_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'unconfigured' CHECK (status IN ('unconfigured','configured','active','degraded','disabled','error')),
+  health_json TEXT NOT NULL DEFAULT '{}',
+  last_contact_at TEXT,
+  last_error TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, kind, name)
+);
+
+CREATE TABLE IF NOT EXISTS if_producers (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  integration_id TEXT NOT NULL REFERENCES if_integrations(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  secret_encrypted TEXT NOT NULL,
+  allowed_event_types_json TEXT NOT NULL DEFAULT '[]',
+  last_event_at TEXT,
+  event_count INTEGER NOT NULL DEFAULT 0,
+  rejected_count INTEGER NOT NULL DEFAULT 0,
+  disabled_at TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (integration_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS if_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  producer_id TEXT NOT NULL REFERENCES if_producers(id),
+  event_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  schema_version TEXT NOT NULL,
+  occurred_at TEXT,
+  received_at TEXT NOT NULL,
+  correlation_id TEXT,
+  idempotency_key TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  trust_level TEXT NOT NULL DEFAULT 'untrusted' CHECK (trust_level IN ('authenticated','untrusted')),
+  provenance_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('received','normalized','forwarded','duplicate','rejected','error')),
+  error_code TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS idx_if_events_owner ON if_events(owner_admin_id, created_at);
+
+CREATE TABLE IF NOT EXISTS cal_accounts (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  integration_id TEXT NOT NULL REFERENCES if_integrations(id) ON DELETE CASCADE,
+  provider TEXT NOT NULL CHECK (provider IN ('fixture','google')),
+  provider_account TEXT NOT NULL,
+  config_json TEXT NOT NULL DEFAULT '{}',
+  sync_cursor TEXT,
+  last_sync_at TEXT,
+  last_error TEXT,
+  status TEXT NOT NULL DEFAULT 'configured' CHECK (status IN ('configured','active','degraded','disabled','error')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE (integration_id, provider_account)
+);
+
+CREATE TABLE IF NOT EXISTS cal_events (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  account_id TEXT NOT NULL REFERENCES cal_accounts(id) ON DELETE CASCADE,
+  external_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  starts_at_utc TEXT NOT NULL,
+  ends_at_utc TEXT,
+  timezone TEXT NOT NULL DEFAULT 'UTC',
+  recurrence_json TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed','cancelled')),
+  checksum TEXT,
+  updated_at TEXT NOT NULL,
+  UNIQUE (account_id, external_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cal_events_account ON cal_events(account_id, starts_at_utc);
+
+CREATE TABLE IF NOT EXISTS cal_conflicts (
+  id TEXT PRIMARY KEY,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  account_id TEXT NOT NULL REFERENCES cal_accounts(id) ON DELETE CASCADE,
+  event_a TEXT NOT NULL,
+  event_b TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'overlap' CHECK (kind IN ('overlap','moved','missing_update')),
+  detected_at TEXT NOT NULL,
+  resolved_at TEXT
+);
+
+-- pr_events: fonte CHECK ampliada para produtores do Integration Fabric (tabela recriada
+-- preservando linhas; UNIQUE(owner, dedupe_key) mantida).
+ALTER TABLE pr_events RENAME TO pr_events_v26;
+CREATE TABLE pr_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  source TEXT NOT NULL CHECK (source IN ('workflow','research','learning','kh','workforce','mm','computer','manual','system','integrations','calendar')),
+  kind TEXT NOT NULL,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  dedupe_key TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (owner_admin_id, dedupe_key)
+);
+INSERT INTO pr_events (id, owner_admin_id, source, kind, payload_json, dedupe_key, created_at)
+  SELECT id, owner_admin_id, source, kind, payload_json, dedupe_key, created_at FROM pr_events_v26;
+DROP TABLE pr_events_v26;
+CREATE INDEX IF NOT EXISTS idx_pr_events_owner ON pr_events(owner_admin_id, created_at);
+
+-- pr_rules: gatilhos temporais com timezone IANA do usuário (instantes continuam em UTC).
+ALTER TABLE pr_rules ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC';
+
+DROP TRIGGER IF EXISTS trg_ownership_immutable;
+DROP INDEX IF EXISTS idx_ownership_owner;
+ALTER TABLE ownership RENAME TO ownership_v26;
+CREATE TABLE ownership (
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('memory','agent','bot','run','approval','document','agentmail_inbox','job','integration_connection','agent_definition','agent_run','kh_library','kh_notebook','kh_source','wf_definition','wf_run','wf_policy','research_project','learn_project','ci_session','ci_procedure','mm_session','pr_rule','if_integration','cal_account')),
+  resource_id TEXT NOT NULL,
+  owner_admin_id TEXT NOT NULL REFERENCES admins(id),
+  assigned_at TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('created','migrated','claimed','transferred')),
+  PRIMARY KEY (resource_type, resource_id)
+);
+INSERT INTO ownership SELECT resource_type, resource_id, owner_admin_id, assigned_at, origin FROM ownership_v26;
+DROP TABLE ownership_v26;
+CREATE INDEX idx_ownership_owner ON ownership(owner_admin_id, resource_type);
+CREATE TRIGGER trg_ownership_immutable BEFORE UPDATE ON ownership
+BEGIN SELECT RAISE(ABORT, 'ownership_immutable'); END;
+`,
+    expect: [
+      {
+        table: "if_integrations",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "kind",
+          "adapter",
+          "name",
+          "version",
+          "capabilities_json",
+          "config_json",
+          "policy_json",
+          "status",
+          "health_json",
+          "last_contact_at",
+          "last_error",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "if_events",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "producer_id",
+          "event_id",
+          "event_type",
+          "schema_version",
+          "occurred_at",
+          "received_at",
+          "correlation_id",
+          "idempotency_key",
+          "payload_json",
+          "trust_level",
+          "provenance_json",
+          "status",
+          "error_code",
+          "created_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "cal_accounts",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "integration_id",
+          "provider",
+          "provider_account",
+          "config_json",
+          "sync_cursor",
+          "last_sync_at",
+          "last_error",
+          "status",
+          "created_at",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "cal_events",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "account_id",
+          "external_id",
+          "title",
+          "starts_at_utc",
+          "ends_at_utc",
+          "timezone",
+          "recurrence_json",
+          "status",
+          "checksum",
+          "updated_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "cal_conflicts",
+        type: "table",
+        columns: [
+          "id",
+          "owner_admin_id",
+          "account_id",
+          "event_a",
+          "event_b",
+          "kind",
+          "detected_at",
+          "resolved_at",
+        ],
+        primaryKey: ["id"],
+      },
+      {
+        table: "ownership",
+        type: "table",
+        columns: ["resource_type", "resource_id", "owner_admin_id", "assigned_at", "origin"],
+        primaryKey: ["resource_type", "resource_id"],
+      },
+    ],
+  },
+  {
+    // Fase 9 da evolução (docs/evolution/phase-9): CONSOLIDAÇÃO — índices para as queries
+    // dos ticks periódicos (15-60 s) das fases 5-8, que faziam full scan com o crescimento
+    // das tabelas (auditoria arquitetural, docs/evolution/phase-9/migration-audit.md).
+    // ADITIVA e reversível: somente CREATE INDEX — nenhum dado tocado.
+    version: 28,
+    name: "consolidation: indexes for periodic tick queries (phases 5-8)",
+    sql: `
+CREATE INDEX IF NOT EXISTS idx_if_events_status ON if_events(status, id);
+CREATE INDEX IF NOT EXISTS idx_ci_actions_pending ON ci_actions(status, approval_id) WHERE approval_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_pr_rules_temporal ON pr_rules(state, trigger_kind, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_pr_rules_event ON pr_rules(owner_admin_id, state, trigger_kind);
+CREATE INDEX IF NOT EXISTS idx_wf_runs_status ON wf_runs(status);
+CREATE INDEX IF NOT EXISTS idx_mm_sessions_tick ON mm_sessions(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_mm_turns_tick ON mm_turns(state, updated_at);
+CREATE INDEX IF NOT EXISTS idx_ci_sessions_owner ON ci_sessions(owner_admin_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_pr_opp_dedupe ON pr_opportunities(dedupe_key) WHERE dedupe_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_pr_opp_rule ON pr_opportunities(rule_id, status);
+CREATE INDEX IF NOT EXISTS idx_cal_conflicts_account ON cal_conflicts(account_id, resolved_at);
+CREATE INDEX IF NOT EXISTS idx_pr_notif_read ON pr_notifications(owner_admin_id, read_at);
+`,
+    expect: [],
+  },
 ];
 
 const tableExists = (db, t) =>

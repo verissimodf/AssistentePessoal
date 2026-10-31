@@ -77,11 +77,15 @@ test("every non-public route rejects anonymous callers with 401", async () => {
   // O webhook AgentMail é público por natureza (o provider que entrega), MAS não confia em
   // chamador anônimo: a rota verifica a assinatura Svix com segredo administrativo e é
   // fail-closed (503) sem integração ativa — coberta por tests/agentmail.test.mjs.
+  // O ingress do Integration Fabric (Fase 8) é público pelo mesmo princípio: autenticado
+  // por HMAC-SHA256 com segredo do produtor (janela de tempo + replay protection), nunca
+  // pelo corpo do payload — coberto por tests/integrations.test.mjs.
   assert.deepEqual(publicOnes.sort(), [
     "GET /api/health",
     "GET /api/oauth/callback",
     "POST /api/auth/login",
     "POST /api/auth/setup",
+    "POST /api/if/webhooks/:producerId",
     "POST /api/integrations/agentmail/webhook",
   ]);
   for (const r of routeTable().filter((x) => x.access !== "public")) {

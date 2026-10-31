@@ -14,6 +14,8 @@ export const TYPES = {
   agentmail_inbox: "agentmail_inboxes",
   job: "durable_jobs",
   integration_connection: "oauth_connections",
+  agent_definition: "agent_definitions",
+  agent_run: "agent_runs",
 };
 const DATE_COL = {
   memory: "created_at",
@@ -21,6 +23,8 @@ const DATE_COL = {
   approval: "created_at",
   document: "created_at",
   agentmail_inbox: "created_at",
+  agent_definition: "created_at",
+  agent_run: "created_at",
 };
 
 export const ownerOf = (type, id) =>

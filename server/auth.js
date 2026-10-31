@@ -33,6 +33,40 @@ export const SCOPES = [
   "documents:read",
   "documents:write",
   "skills:read",
+  // Workforce (evolução Fase 1): catálogo de especialistas e execução/delegação de runs.
+  // Nunca concedidos a bots por padrão (fora de BOT_SCOPES); delegação de agente não herda
+  // estes escopos — o conjunto efetivo de cada run é calculado no backend.
+  "workforce:read",
+  "workforce:write",
+  "workforce:run",
+  // Knowledge Hub (evolução Fase 2): leitura/pesquisa do acervo e escrita (criar
+  // bibliotecas/notebooks/fontes/notas). Bots legados não recebem; especialistas da Workforce
+  // só obtêm via definição (interseção calculada no backend).
+  "kh:read",
+  "kh:write",
+  // Workflow Studio (evolução Fase 3): definições/versões/execução de workflows. Políticas
+  // comportamentais são administradas por sessão verificada (access "session"), sem escopo.
+  "workflow:read",
+  "workflow:write",
+  "workflow:run",
+  // Deep Research & Learning (evolução Fase 4): investigações e jornadas de aprendizagem.
+  "research:read",
+  "research:write",
+  "learn:read",
+  "learn:write",
+  // Computer Intelligence (evolução Fase 5): sessões de navegador com observação/verificação
+  // (read) e execução de planos (run) — escritas passam pelo D9 nativo do browser_action.
+  "computer:read",
+  "computer:run",
+  // Proactive Intelligence (evolução Fase 7): regras/oportunidades/notificações/controles.
+  // NUNCA concedidos a bots por padrão (fora de BOT_SCOPES); execução real permanece no
+  // Workflow Engine com políticas+D9 — o escopo só governa a superfície de gestão.
+  "proactive:read",
+  "proactive:write",
+  // Integration Fabric (evolução Fase 8): gestão de integrações/produtores/calendários.
+  // Webhook ingress é público e autenticado por HMAC — escopo governa só a GESTÃO.
+  "integrations:read",
+  "integrations:write",
 ];
 /** Scopes reserved for a human admin session — never grantable to a token. */
 export const ADMIN_ONLY = [
@@ -75,6 +109,20 @@ export const TOOL_SCOPES = {
   // D9: a ferramenta só enfileira aprovação humana (nunca dispara a API de envio diretamente).
   agentmail_read_email: "comms:read",
   agentmail_send_email: "comms:send",
+  // Workforce (evolução Fase 1): delegação a especialistas. O escopo precisa estar no conjunto
+  // EFETIVO calculado pelo backend para o run (delegação nunca amplia privilégio); os limites
+  // (profundidade, filhos, orçamento) são verificados em server/workforce.js.
+  delegate_agent: "workforce:run",
+  // Knowledge Hub (evolução Fase 2): pesquisa no acervo autorizado e anotações explícitas.
+  notebook_search: "kh:read",
+  notebook_transform: "kh:read",
+  notebook_note: "kh:write",
+  // Computer Intelligence (evolução Fase 5): observação/verificação (read) e planos/execução
+  // (run) — as ESCRITAS do navegador continuam com D9 (web:write + aprovação) dentro do fluxo.
+  computer_observe: "computer:read",
+  computer_verify: "computer:read",
+  computer_plan: "computer:run",
+  computer_execute: "computer:run",
 };
 
 /** Loopback sources (all local processes look identical here). */

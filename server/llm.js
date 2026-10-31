@@ -293,6 +293,7 @@ export function attemptTimeoutMs(remainingMs) {
  */
 export async function runAgent({
   agentId,
+  agentOverride = null,
   messages,
   autonomy = "confirm",
   maxSteps = 12,
@@ -308,7 +309,11 @@ export async function runAgent({
   const { TOOL_DEFS, callTool, recall } = await import("./tools.js");
   const adminId = principal.adminId || null;
   const s = getSettings(adminId);
-  const agent = resolveAgent(adminId, agentId, s.general?.activeAgentId);
+  // agentOverride: executores internos (ex.: Workforce, docs/evolution/phase-1) fornecem o
+  // "agente" (nome/provedor/modelo/instruções/ferramentas) resolvido pelo backend a partir de
+  // um AgentDefinition próprio — sem tocar na legada `agents`. Autorização NÃO vem daqui:
+  // callTool revalida escopos do principal a cada chamada.
+  const agent = agentOverride || resolveAgent(adminId, agentId, s.general?.activeAgentId);
   if (!agent)
     return { reply: "Agente inexistente ou sem permissão.", reasoning: "", tools: [], pending: [] };
   const cfg = providerConfig(agent.provider, adminId);

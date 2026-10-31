@@ -12,12 +12,22 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AgentesRouteImport } from './routes/agentes'
 import { Route as BotsRouteImport } from './routes/bots'
+import { Route as ComputerRouteImport } from './routes/computer'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as DocumentosRouteImport } from './routes/documentos'
 import { Route as ExecucoesRouteImport } from './routes/execucoes'
+import { Route as IntegrationsRouteImport } from './routes/integrations'
+import { Route as KnowledgeRouteImport } from './routes/knowledge'
+import { Route as LearningRouteImport } from './routes/learning'
 import { Route as MemoriaRouteImport } from './routes/memoria'
+import { Route as MultimodalRouteImport } from './routes/multimodal'
+import { Route as PoliciesRouteImport } from './routes/policies'
+import { Route as ProactiveRouteImport } from './routes/proactive'
 import { Route as RascunhosRouteImport } from './routes/rascunhos'
+import { Route as ResearchRouteImport } from './routes/research'
 import { Route as VisaoGeralRouteImport } from './routes/visao-geral'
+import { Route as WorkflowsRouteImport } from './routes/workflows'
+import { Route as WorkforceRouteImport } from './routes/workforce'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -32,6 +42,11 @@ const AgentesRoute = AgentesRouteImport.update({
 const BotsRoute = BotsRouteImport.update({
   id: '/bots',
   path: '/bots',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ComputerRoute = ComputerRouteImport.update({
+  id: '/computer',
+  path: '/computer',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
@@ -49,9 +64,39 @@ const ExecucoesRoute = ExecucoesRouteImport.update({
   path: '/execucoes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const IntegrationsRoute = IntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KnowledgeRoute = KnowledgeRouteImport.update({
+  id: '/knowledge',
+  path: '/knowledge',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LearningRoute = LearningRouteImport.update({
+  id: '/learning',
+  path: '/learning',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MemoriaRoute = MemoriaRouteImport.update({
   id: '/memoria',
   path: '/memoria',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MultimodalRoute = MultimodalRouteImport.update({
+  id: '/multimodal',
+  path: '/multimodal',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PoliciesRoute = PoliciesRouteImport.update({
+  id: '/policies',
+  path: '/policies',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProactiveRoute = ProactiveRouteImport.update({
+  id: '/proactive',
+  path: '/proactive',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RascunhosRoute = RascunhosRouteImport.update({
@@ -59,9 +104,24 @@ const RascunhosRoute = RascunhosRouteImport.update({
   path: '/rascunhos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResearchRoute = ResearchRouteImport.update({
+  id: '/research',
+  path: '/research',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VisaoGeralRoute = VisaoGeralRouteImport.update({
   id: '/visao-geral',
   path: '/visao-geral',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkflowsRoute = WorkflowsRouteImport.update({
+  id: '/workflows',
+  path: '/workflows',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkforceRoute = WorkforceRouteImport.update({
+  id: '/workforce',
+  path: '/workforce',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -69,35 +129,65 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/agentes': typeof AgentesRoute
   '/bots': typeof BotsRoute
+  '/computer': typeof ComputerRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/documentos': typeof DocumentosRoute
   '/execucoes': typeof ExecucoesRoute
+  '/integrations': typeof IntegrationsRoute
+  '/knowledge': typeof KnowledgeRoute
+  '/learning': typeof LearningRoute
   '/memoria': typeof MemoriaRoute
+  '/multimodal': typeof MultimodalRoute
+  '/policies': typeof PoliciesRoute
+  '/proactive': typeof ProactiveRoute
   '/rascunhos': typeof RascunhosRoute
+  '/research': typeof ResearchRoute
   '/visao-geral': typeof VisaoGeralRoute
+  '/workflows': typeof WorkflowsRoute
+  '/workforce': typeof WorkforceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/agentes': typeof AgentesRoute
   '/bots': typeof BotsRoute
+  '/computer': typeof ComputerRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/documentos': typeof DocumentosRoute
   '/execucoes': typeof ExecucoesRoute
+  '/integrations': typeof IntegrationsRoute
+  '/knowledge': typeof KnowledgeRoute
+  '/learning': typeof LearningRoute
   '/memoria': typeof MemoriaRoute
+  '/multimodal': typeof MultimodalRoute
+  '/policies': typeof PoliciesRoute
+  '/proactive': typeof ProactiveRoute
   '/rascunhos': typeof RascunhosRoute
+  '/research': typeof ResearchRoute
   '/visao-geral': typeof VisaoGeralRoute
+  '/workflows': typeof WorkflowsRoute
+  '/workforce': typeof WorkforceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/agentes': typeof AgentesRoute
   '/bots': typeof BotsRoute
+  '/computer': typeof ComputerRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/documentos': typeof DocumentosRoute
   '/execucoes': typeof ExecucoesRoute
+  '/integrations': typeof IntegrationsRoute
+  '/knowledge': typeof KnowledgeRoute
+  '/learning': typeof LearningRoute
   '/memoria': typeof MemoriaRoute
+  '/multimodal': typeof MultimodalRoute
+  '/policies': typeof PoliciesRoute
+  '/proactive': typeof ProactiveRoute
   '/rascunhos': typeof RascunhosRoute
+  '/research': typeof ResearchRoute
   '/visao-geral': typeof VisaoGeralRoute
+  '/workflows': typeof WorkflowsRoute
+  '/workforce': typeof WorkforceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -105,46 +195,86 @@ export interface FileRouteTypes {
     | '/'
     | '/agentes'
     | '/bots'
+    | '/computer'
     | '/configuracoes'
     | '/documentos'
     | '/execucoes'
+    | '/integrations'
+    | '/knowledge'
+    | '/learning'
     | '/memoria'
+    | '/multimodal'
+    | '/policies'
+    | '/proactive'
     | '/rascunhos'
+    | '/research'
     | '/visao-geral'
+    | '/workflows'
+    | '/workforce'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/agentes'
     | '/bots'
+    | '/computer'
     | '/configuracoes'
     | '/documentos'
     | '/execucoes'
+    | '/integrations'
+    | '/knowledge'
+    | '/learning'
     | '/memoria'
+    | '/multimodal'
+    | '/policies'
+    | '/proactive'
     | '/rascunhos'
+    | '/research'
     | '/visao-geral'
+    | '/workflows'
+    | '/workforce'
   id:
     | '__root__'
     | '/'
     | '/agentes'
     | '/bots'
+    | '/computer'
     | '/configuracoes'
     | '/documentos'
     | '/execucoes'
+    | '/integrations'
+    | '/knowledge'
+    | '/learning'
     | '/memoria'
+    | '/multimodal'
+    | '/policies'
+    | '/proactive'
     | '/rascunhos'
+    | '/research'
     | '/visao-geral'
+    | '/workflows'
+    | '/workforce'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AgentesRoute: typeof AgentesRoute
   BotsRoute: typeof BotsRoute
+  ComputerRoute: typeof ComputerRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   DocumentosRoute: typeof DocumentosRoute
   ExecucoesRoute: typeof ExecucoesRoute
+  IntegrationsRoute: typeof IntegrationsRoute
+  KnowledgeRoute: typeof KnowledgeRoute
+  LearningRoute: typeof LearningRoute
   MemoriaRoute: typeof MemoriaRoute
+  MultimodalRoute: typeof MultimodalRoute
+  PoliciesRoute: typeof PoliciesRoute
+  ProactiveRoute: typeof ProactiveRoute
   RascunhosRoute: typeof RascunhosRoute
+  ResearchRoute: typeof ResearchRoute
   VisaoGeralRoute: typeof VisaoGeralRoute
+  WorkflowsRoute: typeof WorkflowsRoute
+  WorkforceRoute: typeof WorkforceRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -170,6 +300,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BotsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/computer': {
+      id: '/computer'
+      path: '/computer'
+      fullPath: '/computer'
+      preLoaderRoute: typeof ComputerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/configuracoes': {
       id: '/configuracoes'
       path: '/configuracoes'
@@ -191,11 +328,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ExecucoesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/integrations': {
+      id: '/integrations'
+      path: '/integrations'
+      fullPath: '/integrations'
+      preLoaderRoute: typeof IntegrationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/knowledge': {
+      id: '/knowledge'
+      path: '/knowledge'
+      fullPath: '/knowledge'
+      preLoaderRoute: typeof KnowledgeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/learning': {
+      id: '/learning'
+      path: '/learning'
+      fullPath: '/learning'
+      preLoaderRoute: typeof LearningRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/memoria': {
       id: '/memoria'
       path: '/memoria'
       fullPath: '/memoria'
       preLoaderRoute: typeof MemoriaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/multimodal': {
+      id: '/multimodal'
+      path: '/multimodal'
+      fullPath: '/multimodal'
+      preLoaderRoute: typeof MultimodalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/policies': {
+      id: '/policies'
+      path: '/policies'
+      fullPath: '/policies'
+      preLoaderRoute: typeof PoliciesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/proactive': {
+      id: '/proactive'
+      path: '/proactive'
+      fullPath: '/proactive'
+      preLoaderRoute: typeof ProactiveRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/rascunhos': {
@@ -205,11 +384,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RascunhosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/research': {
+      id: '/research'
+      path: '/research'
+      fullPath: '/research'
+      preLoaderRoute: typeof ResearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/visao-geral': {
       id: '/visao-geral'
       path: '/visao-geral'
       fullPath: '/visao-geral'
       preLoaderRoute: typeof VisaoGeralRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workflows': {
+      id: '/workflows'
+      path: '/workflows'
+      fullPath: '/workflows'
+      preLoaderRoute: typeof WorkflowsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workforce': {
+      id: '/workforce'
+      path: '/workforce'
+      fullPath: '/workforce'
+      preLoaderRoute: typeof WorkforceRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -219,12 +419,22 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AgentesRoute: AgentesRoute,
   BotsRoute: BotsRoute,
+  ComputerRoute: ComputerRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
   DocumentosRoute: DocumentosRoute,
   ExecucoesRoute: ExecucoesRoute,
+  IntegrationsRoute: IntegrationsRoute,
+  KnowledgeRoute: KnowledgeRoute,
+  LearningRoute: LearningRoute,
   MemoriaRoute: MemoriaRoute,
+  MultimodalRoute: MultimodalRoute,
+  PoliciesRoute: PoliciesRoute,
+  ProactiveRoute: ProactiveRoute,
   RascunhosRoute: RascunhosRoute,
+  ResearchRoute: ResearchRoute,
   VisaoGeralRoute: VisaoGeralRoute,
+  WorkflowsRoute: WorkflowsRoute,
+  WorkforceRoute: WorkforceRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

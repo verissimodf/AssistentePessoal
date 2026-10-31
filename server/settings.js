@@ -72,6 +72,9 @@ export function personalPart(s = {}) {
   if (s.providers && typeof s.providers === "object") out.providers = s.providers;
   if (s.comms && typeof s.comms === "object") out.comms = s.comms;
   if (s.reflex && typeof s.reflex === "object") out.reflex = s.reflex;
+  // Fase 7: controles de inteligência proativa por admin (nível de autonomia, pausa,
+  // limites). Validados no backend pelo motor (proactive.validateControls) antes de salvar.
+  if (s.proactive && typeof s.proactive === "object") out.proactive = s.proactive;
   return out;
 }
 
@@ -176,6 +179,8 @@ function compose(personal, global, walk) {
     voice: { ...PERSONAL_DEFAULTS.voice, ...(p.voice || {}), localVoiceUrl: g.localVoiceUrl },
     integrations: g.integrations || {},
     host: g.host,
+    // Fase 7: controles de inteligência proativa (por admin; defaults no motor).
+    proactive: p.proactive || {},
   };
 }
 

@@ -60,6 +60,17 @@ entrega, especificações superadas e fotografias de releases anteriores estão 
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md)                                                                    | fluxo de contribuição e política por risco                  |
 | [`AGENTS.md`](../AGENTS.md)                                                                                | regras do repositório para agentes                          |
 
+## Evolução (programa multi-fase)
+
+| Documento | Para quê |
+|---|---|
+| [`evolution/phase-0/README.md`](evolution/phase-0/README.md) | Fase 0 — arquitetura e segurança da evolução: inventário, alvo, contratos, ameaças, ADRs, backlog |
+| [`evolution/phase-1/README.md`](evolution/phase-1/README.md) | Fase 1 — Agent Workforce: definições, runs, orçamento hierárquico, delegação e reconciliação |
+| [`evolution/phase-2/README.md`](evolution/phase-2/README.md) | Fase 2 — Personal Knowledge Hub: bibliotecas/notebooks/fontes, ingestão durável, pesquisa híbrida e respostas fundamentadas |
+| [`evolution/phase-3/README.md`](evolution/phase-3/README.md) | Fase 3 — Workflow & Behavior Studio: motor durável, aprovações D9, policy engine e studios |
+| [`evolution/phase-4/README.md`](evolution/phase-4/README.md) | Fase 4 — Deep Research & Learning: investigação com evidências verbatim, relatórios e jornadas de aprendizagem |
+| [`evolution/phase-5/README.md`](evolution/phase-5/README.md) | Fase 5 — Computer Intelligence: sessões de navegador, planos com D9, verificação e memória procedural |
+
 ## Histórico
 
 | Documento                                   | Para quê                                                              |
